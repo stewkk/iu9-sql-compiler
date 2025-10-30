@@ -5,13 +5,19 @@ add_definitions(-DANTLR4CPP_STATIC)
 
 add_executable(sql
   main.cpp
-  codegen/TParser.cpp
-  codegen/TLexer.cpp
-  codegen/TParserBaseVisitor.cpp
-  codegen/TParserVisitor.cpp
-  logic/llvm_ir_builder.cpp
+  logic/parser/codegen/PostgreSQLLexer.cpp
+  logic/parser/codegen/PostgreSQLParser.cpp
+  logic/parser/codegen/PostgreSQLParserBaseListener.cpp
+  logic/parser/codegen/PostgreSQLParserBaseVisitor.cpp
+  logic/parser/codegen/PostgreSQLParserListener.cpp
+  logic/parser/codegen/PostgreSQLParserVisitor.cpp
+  logic/parser/PostgreSQLLexerBase.cpp
+  logic/parser/PostgreSQLParserBase.cpp
 )
-
+target_include_directories(sql PRIVATE
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/stewkk/sql/logic/parser>
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/stewkk/sql/logic/parser/codegen>
+)
 target_compile_features(sql PRIVATE cxx_std_20)
 set_target_properties(sql PROPERTIES
   CXX_STANDART 20
