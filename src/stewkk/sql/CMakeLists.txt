@@ -18,9 +18,9 @@ target_include_directories(sql PRIVATE
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/stewkk/sql/logic/parser>
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/stewkk/sql/logic/parser/codegen>
 )
-target_compile_features(sql PRIVATE cxx_std_20)
+target_compile_features(sql PRIVATE cxx_std_23)
 set_target_properties(sql PROPERTIES
-  CXX_STANDART 20
+  CXX_STANDART 23
   CXX_STANDART_REQUIRED YES
   CXX_EXTENSIONS YES
 )
