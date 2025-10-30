@@ -27,6 +27,10 @@
           buildInputs = with pkgs; [
             code-cursor-fhs
             pythonEnv
+            antlr
+            cmake
+            zlib
+            zlib.dev
           ];
 
           nativeBuildInputs = [
@@ -36,6 +40,7 @@
           NIX_LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
             pkgs.stdenv.cc.cc
             pkgs.zlib
+            pkgs.zlib.dev
           ];
 
           NIX_LD = pkgs.lib.fileContents "${pkgs.stdenv.cc}/nix-support/dynamic-linker";

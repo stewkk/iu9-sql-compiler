@@ -1,0 +1,4 @@
+/.cache/
+/build/
+/CMakeFiles/
+/src/stewkk/sql/codegen/
