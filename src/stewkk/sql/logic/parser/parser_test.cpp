@@ -1,5 +1,7 @@
 #include <gmock/gmock.h>
 
+#include <stewkk/sql/logic/parser/parser.hpp>
+
 using ::testing::Eq;
 using ::testing::Optional;
 
@@ -8,8 +10,8 @@ using std::string_view_literals::operator""sv;
 
 namespace stewkk::sql {
 
-TEST(ExampleTest, APlusB) {
-  ASSERT_THAT(2*2, Eq(4));
+TEST(ParserTest, APlusB) {
+
 }
 
 }  // namespace stewkk::sql
