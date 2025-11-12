@@ -5,15 +5,16 @@
 #include <stewkk/sql/logic/parser/parser.hpp>
 
 using ::testing::Eq;
+using ::testing::VariantWith;
 
 namespace stewkk::sql {
 
-TEST(ParserTest, APlusB) {
-    std::stringstream s{"CREATE TABLE hobbies_r (\nname		text,\nperson 		text\n);"};
+TEST(ParserTest, SelectAllFromSingleTable) {
+    std::stringstream s{"SELECT * FROM users;"};
 
-    GetAST(s);
+    Operator got = GetAST(s);
 
-    ASSERT_THAT(2, Eq(3));
+    ASSERT_THAT(got, VariantWith<Table>(Table{"users"}));
 }
 
 }  // namespace stewkk::sql

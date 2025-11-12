@@ -31,6 +31,7 @@
             cmake
             zlib
             zlib.dev
+            gdb
           ];
 
           nativeBuildInputs = [
