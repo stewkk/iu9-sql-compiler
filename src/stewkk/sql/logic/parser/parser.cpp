@@ -16,10 +16,16 @@ class Visitor : public codegen::PostgreSQLParserBaseVisitor {
     virtual std::any visitRoot(codegen::PostgreSQLParser::RootContext* ctx) override;
     virtual std::any visitStmtmulti(codegen::PostgreSQLParser::StmtmultiContext* ctx) override;
     virtual std::any visitSelectstmt(codegen::PostgreSQLParser::SelectstmtContext* ctx) override;
+    virtual std::any visitChildren(antlr4::tree::ParseTree *node) override;
 
   private:
     codegen::PostgreSQLParser* parser_;
 };
+
+std::any Visitor::visitChildren(antlr4::tree::ParseTree *node) {
+  std::cout << std::format("visiting {}, number of children {}\n", node->toString(), node->children.size());
+  return codegen::PostgreSQLParserBaseVisitor::visitChildren(node);
+}
 
 Visitor::Visitor(codegen::PostgreSQLParser* parser) : parser_(parser) {}
 
@@ -56,10 +62,18 @@ std::any Visitor::visitSelectstmt(codegen::PostgreSQLParser::SelectstmtContext* 
 
   std::cout << target << ' ' << from_ident << std::endl;
 
-  return Operator{Table{from_ident}};
+  auto table_operator = Operator{Table{from_ident}};
+  if (target == "*") {
+    return table_operator;
+  }
+  return Operator{Projection{{target}, std::make_shared<Operator>(table_operator)}};
 }
 
 } // namespace
+
+bool Projection::operator==(const Projection& other) const {
+  return attributes == other.attributes && *source == *other.source;
+}
 
 Operator GetAST(std::istream& in) {
   antlr4::ANTLRInputStream antlr_input(in);
@@ -81,7 +95,7 @@ Operator GetAST(std::istream& in) {
   auto res = visitor.visit(tree);
 
   if (Operator* op = std::any_cast<Operator>(&res)) {
-    return *op;
+    return std::move(*op);
   }
 
   return Table{"NOOP"};
