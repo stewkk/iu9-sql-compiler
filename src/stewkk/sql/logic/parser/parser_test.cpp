@@ -17,13 +17,23 @@ TEST(ParserTest, SelectAllFromSingleTable) {
     ASSERT_THAT(got, VariantWith<Table>(Table{"users"}));
 }
 
-TEST(ParserTest, SelectColumnFromSingleTable) {
+TEST(ParserTest, SelectSingleColumnFromSingleTable) {
     std::stringstream s{"SELECT id FROM users;"};
 
     Operator got = GetAST(s);
 
     ASSERT_THAT(got,
                 VariantWith<Projection>(Projection{std::vector<std::string>{"id"},
+                                                   std::make_shared<Operator>(Table{"users"})}));
+}
+
+TEST(ParserTest, SelectMultipleColumnsFromSingleTable) {
+    std::stringstream s{"SELECT id, email, phone FROM users;"};
+
+    Operator got = GetAST(s);
+
+    ASSERT_THAT(got,
+                VariantWith<Projection>(Projection{std::vector<std::string>{"id", "email", "phone"},
                                                    std::make_shared<Operator>(Table{"users"})}));
 }
 

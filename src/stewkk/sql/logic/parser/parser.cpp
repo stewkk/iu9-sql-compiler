@@ -1,5 +1,7 @@
 #include <stewkk/sql/logic/parser/parser.hpp>
 
+#include <ranges>
+
 #include <antlr4-runtime.h>
 
 #include <stewkk/sql/logic/parser/codegen/PostgreSQLLexer.h>
@@ -39,14 +41,16 @@ std::any Visitor::visitStmtmulti(codegen::PostgreSQLParser::StmtmultiContext* ct
 
 std::any Visitor::visitSelectstmt(codegen::PostgreSQLParser::SelectstmtContext* ctx) {
   std::cout << ctx->toStringTree(parser_, true) << std::endl;
-  auto target = ctx->select_no_parens()
+  auto targets = ctx->select_no_parens()
                     ->select_clause()
                     ->simple_select_intersect()[0]
                     ->simple_select_pramary()[0]
                     ->target_list_()
                     ->target_list()
-                    ->target_el()[0]
-                    ->getText();
+    ->target_el() | std::ranges::views::transform([] (const auto& target_node) {
+      return target_node->getText();
+    }) | std::ranges::to<std::vector>();
+
   auto from_ident = ctx->select_no_parens()
                         ->select_clause()
                         ->simple_select_intersect()[0]
@@ -60,13 +64,11 @@ std::any Visitor::visitSelectstmt(codegen::PostgreSQLParser::SelectstmtContext* 
                         ->identifier()
                         ->getText();
 
-  std::cout << target << ' ' << from_ident << std::endl;
-
   auto table_operator = Operator{Table{from_ident}};
-  if (target == "*") {
+  if (targets == std::vector<std::string>{{"*"}}) {
     return table_operator;
   }
-  return Operator{Projection{{target}, std::make_shared<Operator>(table_operator)}};
+  return Operator{Projection{targets, std::make_shared<Operator>(table_operator)}};
 }
 
 } // namespace
