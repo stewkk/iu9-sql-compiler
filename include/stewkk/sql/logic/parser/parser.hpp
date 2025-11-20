@@ -7,8 +7,15 @@
 
 namespace stewkk::sql {
 
-// TODO: Attribute should be struct {std::string table, std::string attribute}
-using Attribute = std::string;
+struct Attribute {
+    std::string table;
+    std::string name;
+
+    auto operator<=>(const Attribute& other) const = default;
+};
+
+std::string ToString(const Attribute& attr);
+
 using IntConst = std::int64_t;
 
 struct Table;
