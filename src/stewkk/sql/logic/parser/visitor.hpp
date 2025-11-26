@@ -12,6 +12,7 @@ class Visitor : public codegen::PostgreSQLParserBaseVisitor {
     virtual std::any visitSelectstmt(codegen::PostgreSQLParser::SelectstmtContext* ctx) override;
     virtual std::any visitA_expr_compare(codegen::PostgreSQLParser::A_expr_compareContext *ctx) override;
     virtual std::any visitColumnref(codegen::PostgreSQLParser::ColumnrefContext *ctx) override;
+    virtual std::any visitInsertstmt(codegen::PostgreSQLParser::InsertstmtContext *ctx) override;
     virtual std::any visitChildren(antlr4::tree::ParseTree *node) override;
 
   private:

@@ -8,9 +8,8 @@ namespace stewkk::sql {
 
 enum class ErrorType {
   kUnknown,
-  kNotFound,
-  kNotMaster,
-  kNotConnected,
+  kSyntaxError,
+  kQueryNotSupported,
 };
 
 class Error : public std::exception {

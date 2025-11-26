@@ -7,6 +7,7 @@
 #include <stewkk/sql/logic/parser/parser.hpp>
 
 using ::testing::Eq;
+using ::testing::IsTrue;
 using ::testing::VariantWith;
 
 namespace stewkk::sql {
@@ -81,9 +82,19 @@ TEST(ParserTest, DISABLED_SelectWithBooleanExpression) {
 TEST(ParserTest, SyntaxError) {
   std::stringstream s{"xxx;"};
 
-  auto got = GetAST(s).error().What();
+  auto got = GetAST(s).error();
 
-  ASSERT_THAT(got, Eq("ill-formed query"));
+  ASSERT_THAT(got.What(), Eq("syntax error"));
+  ASSERT_THAT(got.Wraps(ErrorType::kSyntaxError), IsTrue());
+}
+
+TEST(ParserTest, NotSupportedError) {
+  std::stringstream s{"INSERT INTO users (id) VALUES (1);"};
+
+  auto got = GetAST(s).error();
+
+  ASSERT_THAT(got.What(), Eq("INSERT is not supported"));
+  ASSERT_THAT(got.Wraps(ErrorType::kQueryNotSupported), IsTrue());
 }
 
 /*

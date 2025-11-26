@@ -3,18 +3,17 @@
 #include <ranges>
 
 #include <stewkk/sql/models/parser/relational_algebra_ast.hpp>
+#include <stewkk/sql/logic/result/error.hpp>
 
 namespace stewkk::sql {
 
 std::any Visitor::visitChildren(antlr4::tree::ParseTree *node) {
-  std::cout << std::format("visiting {}, number of children {}\n", node->toString(), node->children.size());
   return codegen::PostgreSQLParserBaseVisitor::visitChildren(node);
 }
 
 std::any Visitor::visitColumnref(codegen::PostgreSQLParser::ColumnrefContext *ctx) {
   auto table = ctx->colid()->getText();
   auto column = ctx->indirection()->indirection_el(0)->attr_name()->getText();
-  std::cout << "visitColumnref " << table << ' ' << column << std::endl;
   return Attribute{std::move(table), std::move(column)};
 }
 
@@ -48,7 +47,6 @@ std::any Visitor::visitStmtmulti(codegen::PostgreSQLParser::StmtmultiContext* ct
 }
 
 std::any Visitor::visitSelectstmt(codegen::PostgreSQLParser::SelectstmtContext* ctx) {
-  std::cout << ctx->toStringTree(parser_, true) << std::endl;
   auto target_list = ctx->select_no_parens()
                     ->select_clause()
                     ->simple_select_intersect()[0]
@@ -99,6 +97,10 @@ std::any Visitor::visitSelectstmt(codegen::PostgreSQLParser::SelectstmtContext* 
   }
 
   return result;
+}
+
+std::any Visitor::visitInsertstmt(codegen::PostgreSQLParser::InsertstmtContext *ctx) {
+  throw Error{ErrorType::kQueryNotSupported, "INSERT is not supported"};
 }
 
 }  // namespace stewkk::sql

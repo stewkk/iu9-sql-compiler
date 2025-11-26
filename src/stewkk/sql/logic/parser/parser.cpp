@@ -26,13 +26,19 @@ Result<Operator> GetAST(std::istream& in) {
   antlr4::tree::ParseTree* tree = parser.root();
 
   if (parser.getNumberOfSyntaxErrors() != 0) {
-    return MakeError("ill-formed query");
+    return MakeError<ErrorType::kSyntaxError>("syntax error");
   }
 
   std::cout << tree->toStringTree(&parser, true) << std::endl << std::endl;
 
   Visitor visitor(&parser);
-  auto res = visitor.visit(tree);
+
+  std::any res;
+  try {
+    res = visitor.visit(tree);
+  } catch (const Error& ex) {
+    return std::unexpected(ex);
+  }
 
   if (Operator* op = std::any_cast<Operator>(&res)) {
     return std::move(*op);
