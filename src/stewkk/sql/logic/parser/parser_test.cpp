@@ -93,13 +93,14 @@ TEST(ParserTest, NotSupportedError) {
 
   auto got = GetAST(s).error();
 
-  ASSERT_THAT(got.What(), Eq("INSERT is not supported"));
+  ASSERT_THAT(got.What(), Eq("insertstmt is currently unsupported"));
   ASSERT_THAT(got.Wraps(ErrorType::kQueryNotSupported), IsTrue());
 }
 
 /*
 ** ORDER BY
 ** full support of a_expr
+** aggregations: SELECT kind, sum(len) AS total FROM films GROUP BY kind;
  */
 
 }  // namespace stewkk::sql

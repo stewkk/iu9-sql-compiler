@@ -7,6 +7,32 @@
 
 namespace stewkk::sql {
 
+std::any Visitor::visitStmt(codegen::PostgreSQLParser::StmtContext *ctx) {
+  if (!ctx->children.empty() && !ctx->selectstmt()) {
+    auto& rule_names = parser_->getRuleNames();
+    std::vector<std::string_view> unsupported_rules;
+    for (auto child : ctx->children) {
+      if (!child) {
+        continue;
+      }
+      if (antlr4::RuleContext* rule_context = dynamic_cast<antlr4::RuleContext*>(child)) {
+        size_t rule_index = rule_context->getRuleIndex();
+        unsupported_rules.emplace_back(rule_names[rule_index]);
+      }
+    }
+    std::string rules_list
+        = unsupported_rules | std::views::join_with(',') | std::ranges::to<std::string>();
+    if (rules_list.empty()) {
+      throw Error{ErrorType::kQueryNotSupported, "query is not supported"};
+    }
+    // NOTE: concatenation of errors could be useful here
+    throw Error{ErrorType::kQueryNotSupported,
+                std::format("{} {} currently unsupported", std::move(rules_list),
+                            unsupported_rules.size() == 1 ? "is" : "are")};
+  }
+  return visitChildren(ctx);
+}
+
 std::any Visitor::visitChildren(antlr4::tree::ParseTree *node) {
   return codegen::PostgreSQLParserBaseVisitor::visitChildren(node);
 }
@@ -97,10 +123,6 @@ std::any Visitor::visitSelectstmt(codegen::PostgreSQLParser::SelectstmtContext* 
   }
 
   return result;
-}
-
-std::any Visitor::visitInsertstmt(codegen::PostgreSQLParser::InsertstmtContext *ctx) {
-  throw Error{ErrorType::kQueryNotSupported, "INSERT is not supported"};
 }
 
 }  // namespace stewkk::sql
