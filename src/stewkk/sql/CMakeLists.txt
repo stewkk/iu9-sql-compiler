@@ -13,6 +13,8 @@ add_library(libsql
   logic/parser/PostgreSQLLexerBase.cpp
   logic/parser/PostgreSQLParserBase.cpp
   logic/parser/parser.cpp
+  logic/parser/visitor.cpp
+  models/parser/relational_algebra_ast.cpp
 )
 add_library(stewkk::libsql ALIAS libsql)
 target_compile_features(libsql PUBLIC cxx_std_23)
