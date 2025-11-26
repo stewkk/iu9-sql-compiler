@@ -11,7 +11,7 @@
 
 namespace stewkk::sql {
 
-Operator GetAST(std::istream& in) {
+Result<Operator> GetAST(std::istream& in) {
   antlr4::ANTLRInputStream antlr_input(in);
   codegen::PostgreSQLLexer lexer(&antlr_input);
 
@@ -24,6 +24,10 @@ Operator GetAST(std::istream& in) {
 
   codegen::PostgreSQLParser parser(&tokens);
   antlr4::tree::ParseTree* tree = parser.root();
+
+  if (parser.getNumberOfSyntaxErrors() != 0) {
+    return MakeError("ill-formed query");
+  }
 
   std::cout << tree->toStringTree(&parser, true) << std::endl << std::endl;
 

@@ -40,6 +40,10 @@ std::any Visitor::visitRoot(codegen::PostgreSQLParser::RootContext *ctx) {
 }
 
 std::any Visitor::visitStmtmulti(codegen::PostgreSQLParser::StmtmultiContext* ctx) {
+  auto stmt = ctx->stmt();
+  if (stmt.empty()) {
+    return {};
+  }
   return visitStmt(ctx->stmt()[0]);
 }
 

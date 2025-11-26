@@ -23,7 +23,7 @@ std::string ReadFromFile(std::filesystem::path path) {
 TEST(ParserTest, SelectAllFromSingleTable) {
   std::stringstream s{"SELECT * FROM users;"};
 
-  Operator got = GetAST(s);
+  Operator got = GetAST(s).value();
 
   ASSERT_THAT(got, VariantWith<Table>(Table{"users"}));
 }
@@ -31,7 +31,7 @@ TEST(ParserTest, SelectAllFromSingleTable) {
 TEST(ParserTest, SelectSingleColumnFromSingleTable) {
   std::stringstream s{"SELECT users.id FROM users;"};
 
-  Operator got = GetAST(s);
+  Operator got = GetAST(s).value();
 
   ASSERT_THAT(got, VariantWith<Projection>(Projection{std::vector<Attribute>{{"users", "id"}},
                                                       std::make_shared<Operator>(Table{"users"})}));
@@ -40,7 +40,7 @@ TEST(ParserTest, SelectSingleColumnFromSingleTable) {
 TEST(ParserTest, SelectMultipleColumnsFromSingleTable) {
   std::stringstream s{"SELECT users.id, users.email, users.phone FROM users;"};
 
-  Operator got = GetAST(s);
+  Operator got = GetAST(s).value();
 
   ASSERT_THAT(got,
               VariantWith<Projection>(Projection{
@@ -51,7 +51,7 @@ TEST(ParserTest, SelectMultipleColumnsFromSingleTable) {
 TEST(ParserTest, SelectWithWhereClause) {
   std::stringstream s{"SELECT users.id FROM users WHERE users.age > 18;"};
 
-  Operator got = GetAST(s);
+  Operator got = GetAST(s).value();
 
   ASSERT_THAT(got, VariantWith<Projection>(Projection{
                        std::vector<Attribute>{{"users", "id"}},
@@ -64,12 +64,31 @@ TEST(ParserTest, SelectWithWhereClause) {
 
 TEST(ParserTest, GetDotRepresentation) {
   std::stringstream s{"SELECT users.id FROM users WHERE users.age > 18;"};
-  Operator op = GetAST(s);
+  Operator op = GetAST(s).value();
   auto expected = ReadFromFile(kProjectDir + "/test/static/parser/expected.dot");
 
   auto got = GetDotRepresentation(op);
 
   ASSERT_THAT(got, Eq(expected));
 }
+
+TEST(ParserTest, DISABLED_SelectWithBooleanExpression) {
+  std::stringstream s{"SELECT TRUE AND NULL OR FALSE AND NOT NULL;"};
+
+  Operator got = GetAST(s).value();
+}
+
+TEST(ParserTest, SyntaxError) {
+  std::stringstream s{"xxx;"};
+
+  auto got = GetAST(s).error().What();
+
+  ASSERT_THAT(got, Eq("ill-formed query"));
+}
+
+/*
+** ORDER BY
+** full support of a_expr
+ */
 
 }  // namespace stewkk::sql

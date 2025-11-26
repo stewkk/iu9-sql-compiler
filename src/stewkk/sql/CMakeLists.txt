@@ -15,6 +15,8 @@ add_library(libsql
   logic/parser/parser.cpp
   logic/parser/visitor.cpp
   models/parser/relational_algebra_ast.cpp
+  logic/result/error.cpp
+  logic/result/result.cpp
 )
 add_library(stewkk::libsql ALIAS libsql)
 target_compile_features(libsql PUBLIC cxx_std_23)
