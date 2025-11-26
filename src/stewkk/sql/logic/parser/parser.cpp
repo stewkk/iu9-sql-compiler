@@ -44,7 +44,7 @@ Result<Operator> GetAST(std::istream& in) {
     return std::move(*op);
   }
 
-  return Table{"NOOP"};
+  return Table{"_EMPTY_TABLE_"};
 }
 
 std::string GetDotRepresentation(const Expression& expr) {

@@ -97,6 +97,14 @@ TEST(ParserTest, NotSupportedError) {
   ASSERT_THAT(got.Wraps(ErrorType::kQueryNotSupported), IsTrue());
 }
 
+TEST(ParserTest, EmptyQuery) {
+  std::stringstream s{""};
+
+  Operator got = GetAST(s).value();
+
+  ASSERT_THAT(got, VariantWith<Table>(Table{"_EMPTY_TABLE_"}));
+}
+
 /*
 ** ORDER BY
 ** full support of a_expr
