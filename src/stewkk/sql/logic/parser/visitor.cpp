@@ -33,8 +33,20 @@ std::any Visitor::visitStmt(codegen::PostgreSQLParser::StmtContext *ctx) {
   return visitChildren(ctx);
 }
 
-std::any Visitor::visitChildren(antlr4::tree::ParseTree *node) {
-  return codegen::PostgreSQLParserBaseVisitor::visitChildren(node);
+std::any Visitor::visit(antlr4::tree::ParseTree *tree) {
+  std::string rule_name;
+  int indentation = 0;
+  auto& rule_names = parser_->getRuleNames();
+  if (antlr4::RuleContext *rule_context = dynamic_cast<antlr4::RuleContext *>(tree)) {
+    size_t rule_index = rule_context->getRuleIndex();
+    rule_name = rule_names[rule_index];
+    indentation = rule_context->depth()-1;
+  }
+  std::string indentation_str(indentation*4, ' ');
+  std::cout << std::format("{}visiting rule: {}\n", indentation_str, rule_name);
+  auto tmp = codegen::PostgreSQLParserBaseVisitor::visit(tree);
+  std::cout << std::format("{}exiting rule: {}\n", indentation_str, rule_name);
+  return tmp;
 }
 
 std::any Visitor::visitColumnref(codegen::PostgreSQLParser::ColumnrefContext *ctx) {
@@ -61,7 +73,7 @@ std::any Visitor::visitA_expr_compare(codegen::PostgreSQLParser::A_expr_compareC
 Visitor::Visitor(codegen::PostgreSQLParser* parser) : parser_(parser) {}
 
 std::any Visitor::visitRoot(codegen::PostgreSQLParser::RootContext *ctx) {
-  return visitStmtblock(ctx->stmtblock());
+  return visit(ctx->stmtblock());
 }
 
 std::any Visitor::visitStmtmulti(codegen::PostgreSQLParser::StmtmultiContext* ctx) {
@@ -69,33 +81,38 @@ std::any Visitor::visitStmtmulti(codegen::PostgreSQLParser::StmtmultiContext* ct
   if (stmt.empty()) {
     return {};
   }
-  return visitStmt(ctx->stmt()[0]);
+  return visit(ctx->stmt()[0]);
 }
 
-std::any Visitor::visitSelectstmt(codegen::PostgreSQLParser::SelectstmtContext* ctx) {
-  auto target_list = ctx->select_no_parens()
-                    ->select_clause()
-                    ->simple_select_intersect()[0]
-                    ->simple_select_pramary()[0]
-                    ->target_list_()
-                    ->target_list();
+std::any Visitor::visitSimple_select_intersect(codegen::PostgreSQLParser::Simple_select_intersectContext *ctx) {
+  // TODO: INTERSECT (with ALL or DISTINCT)
+  return visit(ctx->simple_select_pramary().front());
+}
+
+std::any Visitor::visitTarget_list(codegen::PostgreSQLParser::Target_listContext *ctx) {
   std::vector<Attribute> targets;
-  if (!(target_list->target_el().size() == 1 && target_list->target_el(0)->getText() == "*")) {
-    targets = target_list->target_el() | std::ranges::views::transform([this] (const auto& target_node) {
-      auto expr_any = visit(target_node);
-      if (Attribute* attr = std::any_cast<Attribute>(&expr_any)) {
-        return *attr;
-      }
-      std::unreachable();
-    }) | std::ranges::to<std::vector>();
+  if (!(ctx->target_el().size() == 1 && ctx->target_el(0)->getText() == "*")) {
+    targets = ctx->target_el()
+              | std::ranges::views::transform([this](const auto &target_node) {
+                  auto expr_any = visit(target_node);
+                  if (Attribute *attr = std::any_cast<Attribute>(&expr_any)) {
+                    return *attr;
+                  }
+                  // TODO: support arbitrary expressions here
+                  std::unreachable();
+                })
+              | std::ranges::to<std::vector>();
   }
 
-  auto from_ident = ctx->select_no_parens()
-                        ->select_clause()
-                        ->simple_select_intersect()[0]
-                        ->simple_select_pramary()[0]
-                        ->from_clause()
-                        ->from_list()
+  if (!targets.empty()) {
+    return Projection{targets, nullptr};
+  }
+
+  return {};
+}
+
+std::any Visitor::visitFrom_clause(codegen::PostgreSQLParser::From_clauseContext *ctx) {
+  auto from_ident = ctx->from_list()
                         ->table_ref()[0]
                         ->relation_expr()
                         ->qualified_name()
@@ -103,26 +120,76 @@ std::any Visitor::visitSelectstmt(codegen::PostgreSQLParser::SelectstmtContext* 
                         ->identifier()
                         ->getText();
 
-  auto where_clause = ctx->select_no_parens()
-                          ->select_clause()
-                          ->simple_select_intersect()[0]
-                          ->simple_select_pramary()[0]
-                          ->where_clause();
+  return Table{from_ident};
+}
 
-  Operator result{Table{from_ident}};
+std::any Visitor::visitSimple_select_pramary(
+    codegen::PostgreSQLParser::Simple_select_pramaryContext *ctx) {
+  if (ctx->select_with_parens()) {
+    return visit(ctx->select_with_parens());
+  }
+  if (!ctx->SELECT()) {
+    throw Error{ErrorType::kQueryNotSupported, "VALUES and TABLE clauses are not supported"};
+  }
+  if (ctx->distinct_clause()) {
+    // TODO: support distinct clause
+    throw Error{ErrorType::kQueryNotSupported, "DISTINCT clause is not supported"};
+  }
 
-  if (where_clause) {
-    auto where_expr_any = visit(where_clause->a_expr());
-    if (Expression* where_expr = std::any_cast<Expression>(&where_expr_any)) {
-      result = Filter{*where_expr, std::make_shared<Operator>(result)};
+  // NOTE: all_clause_ is ignored
+  // TODO: support group_clause, having_clause
+
+  Operator result = Table{kEmptyTableName};
+
+  if (ctx->from_clause()) {
+    result = std::any_cast<Table>(visit(ctx->from_clause()));
+  }
+
+  if (ctx->where_clause()) {
+    auto filter_op = std::any_cast<Filter>(visit(ctx->where_clause()));
+    filter_op.source = std::make_shared<Operator>(std::move(result));
+    result = std::move(filter_op);
+  }
+
+  if (ctx->target_list_()) {
+    auto target_list_opt = visit(ctx->target_list_());
+    if (target_list_opt.has_value()) {
+      auto projection_op = std::any_cast<Projection>(target_list_opt);
+      projection_op.source = std::make_shared<Operator>(std::move(result));
+      result = std::move(projection_op);
     }
   }
 
-  if (!targets.empty()) {
-    result = Projection{targets, std::make_shared<Operator>(result)};
+  return result;
+}
+
+std::any Visitor::visitWhere_clause(codegen::PostgreSQLParser::Where_clauseContext *ctx) {
+  auto where_expr = std::any_cast<Expression>(visit(ctx->a_expr()));
+  return Filter{where_expr, nullptr};
+}
+
+std::any Visitor::visitSelect_clause(codegen::PostgreSQLParser::Select_clauseContext *ctx) {
+  // TODO: UNION and EXCEPT (with ALL or DISTINCT)
+  return visit(ctx->simple_select_intersect().front());
+}
+
+std::any Visitor::visitSelect_with_parens(codegen::PostgreSQLParser::Select_with_parensContext *ctx) {
+  if (ctx->select_with_parens()) {
+    return visit(ctx->select_with_parens());
+  }
+  return visit(ctx->select_no_parens());
+}
+
+std::any Visitor::visitSelect_no_parens(codegen::PostgreSQLParser::Select_no_parensContext *ctx) {
+  if (ctx->with_clause()) {
+    // TODO
   }
 
-  return result;
+  auto select_clause = std::any_cast<Operator>(visit(ctx->select_clause()));
+
+  // TODO: remaining clauses
+
+  return select_clause;
 }
 
 }  // namespace stewkk::sql

@@ -105,6 +105,22 @@ TEST(ParserTest, EmptyQuery) {
   ASSERT_THAT(got, VariantWith<Table>(Table{"_EMPTY_TABLE_"}));
 }
 
+TEST(ParserTest, SelectWithParens) {
+  std::stringstream s{"((SELECT * FROM users));"};
+
+  Operator got = GetAST(s).value();
+
+  ASSERT_THAT(got, VariantWith<Table>(Table{"users"}));
+}
+
+TEST(ParserTest, EmptySelect) {
+  std::stringstream s{"SELECT;"};
+
+  Operator got = GetAST(s).value();
+
+  ASSERT_THAT(got, VariantWith<Table>(Table{"_EMPTY_TABLE_"}));
+}
+
 /*
 ** ORDER BY
 ** full support of a_expr

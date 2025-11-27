@@ -7,6 +7,8 @@
 
 namespace stewkk::sql {
 
+constexpr static std::string kEmptyTableName = "_EMPTY_TABLE_";
+
 struct Attribute {
     std::string table;
     std::string name;
@@ -32,6 +34,7 @@ struct Table {
 
 struct Projection {
     std::vector<Attribute> attributes;
+    // TODO: type erasure pattern???? std::any???
     std::shared_ptr<Operator> source;
 
     bool operator==(const Projection& other) const;
