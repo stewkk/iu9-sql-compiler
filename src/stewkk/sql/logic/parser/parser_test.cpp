@@ -34,7 +34,7 @@ TEST(ParserTest, SelectSingleColumnFromSingleTable) {
 
   Operator got = GetAST(s).value();
 
-  ASSERT_THAT(got, VariantWith<Projection>(Projection{std::vector<Attribute>{{"users", "id"}},
+  ASSERT_THAT(got, VariantWith<Projection>(Projection{std::vector<Expression>{{Attribute{"users", "id"}}},
                                                       std::make_shared<Operator>(Table{"users"})}));
 }
 
@@ -45,7 +45,7 @@ TEST(ParserTest, SelectMultipleColumnsFromSingleTable) {
 
   ASSERT_THAT(got,
               VariantWith<Projection>(Projection{
-                  std::vector<Attribute>{{"users", "id"}, {"users", "email"}, {"users", "phone"}},
+                  std::vector<Expression>{Attribute{"users", "id"}, Attribute{"users", "email"}, Attribute{"users", "phone"}},
                   std::make_shared<Operator>(Table{"users"})}));
 }
 
@@ -55,7 +55,7 @@ TEST(ParserTest, SelectWithWhereClause) {
   Operator got = GetAST(s).value();
 
   ASSERT_THAT(got, VariantWith<Projection>(Projection{
-                       std::vector<Attribute>{{"users", "id"}},
+                       std::vector<Expression>{Attribute{"users", "id"}},
                        std::make_shared<Operator>(
                            Filter{Expression{BinaryExpression{
                                       std::make_shared<Expression>(Attribute{"users", "age"}),
@@ -77,6 +77,35 @@ TEST(ParserTest, DISABLED_SelectWithBooleanExpression) {
   std::stringstream s{"SELECT TRUE AND NULL OR FALSE AND NOT NULL;"};
 
   Operator got = GetAST(s).value();
+}
+
+TEST(ParserTest, SelectWithArithmeticalOperations) {
+  std::stringstream s{"SELECT 1+2-3;"};
+
+  Operator got = GetAST(s).value();
+
+  ASSERT_THAT(
+      got, VariantWith<Projection>(Projection{{BinaryExpression{
+                                                  std::make_shared<Expression>(BinaryExpression{
+                                                      std::make_shared<Expression>(IntConst{1}),
+                                                      BinaryOp::kPlus,
+                                                      std::make_shared<Expression>(IntConst{2}),
+                                                  }),
+                                                  BinaryOp::kMinus,
+                                                  std::make_shared<Expression>(IntConst{3}),
+                                              }},
+                                              std::make_shared<Operator>(Table{"_EMPTY_TABLE_"})}));
+}
+
+TEST(ParserTest, GetDotRepresentationOfArithmeticalExpression) {
+  std::stringstream s{"SELECT 1+2-3+4+5-6;"};
+
+  Operator op = GetAST(s).value();
+  auto expected = ReadFromFile(kProjectDir + "/test/static/parser/expected_arithmetical.dot");
+
+  auto got = GetDotRepresentation(op);
+
+  ASSERT_THAT(got, Eq(expected));
 }
 
 TEST(ParserTest, SyntaxError) {

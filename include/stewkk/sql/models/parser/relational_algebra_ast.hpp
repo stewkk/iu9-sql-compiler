@@ -32,20 +32,40 @@ struct Table {
     auto operator<=>(const Table& other) const = default;
 };
 
+struct BinaryExpression;
+struct UnaryExpression;
+
+enum class Literal {
+    kNull,
+    kTrue,
+    kFalse,
+    kUnknown,
+};
+
+std::string ToString(Literal literal);
+
+using Expression = std::variant<BinaryExpression, Attribute, IntConst, UnaryExpression, Literal>;
+
+std::string ToString(const Expression& expr);
+
 struct Projection {
-    std::vector<Attribute> attributes;
-    // TODO: type erasure pattern???? std::any???
+    std::vector<Expression> expressions;
     std::shared_ptr<Operator> source;
 
     bool operator==(const Projection& other) const;
 };
 
-struct BinaryExpression;
-
-using Expression = std::variant<BinaryExpression, Attribute, IntConst>;
-
 enum class BinaryOp {
    kGt,
+   kEq,
+   kOr,
+   kAnd,
+   kPlus,
+   kMinus,
+   kMul,
+   kDiv,
+   kMod,
+   kPow,
 };
 
 std::string ToString(BinaryOp binop);
@@ -56,6 +76,19 @@ struct BinaryExpression {
     std::shared_ptr<Expression> rhs;
 
     bool operator==(const BinaryExpression& other) const;
+};
+
+enum class UnaryOp {
+    kNot,
+};
+
+std::string ToString(UnaryOp op);
+
+struct UnaryExpression {
+    UnaryOp op;
+    std::shared_ptr<Expression> child;
+
+    bool operator==(const UnaryExpression& other) const;
 };
 
 struct Filter {

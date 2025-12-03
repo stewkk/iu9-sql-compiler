@@ -53,11 +53,17 @@ std::string GetDotRepresentation(const Expression& expr) {
       return std::format("{} {} {}", std::visit(DotFormatter{}, *expr.lhs), ToString(expr.binop),
                          std::visit(DotFormatter{}, *expr.rhs));
     }
+    std::string operator()(const UnaryExpression& expr) {
+      return std::format("({} {})",ToString(expr.op), std::visit(DotFormatter{}, *expr.child));
+    }
     std::string operator()(const Attribute& expr) {
       return ToString(expr);
     }
     std::string operator()(const IntConst& expr) {
       return std::to_string(expr);
+    }
+    std::string operator()(const Literal& expr) {
+      return ToString(expr);
     }
   };
   return std::visit(DotFormatter{}, expr);
@@ -66,10 +72,10 @@ std::string GetDotRepresentation(const Expression& expr) {
 std::string GetDotRepresentation(const Operator& op) {
     struct DotFormatter {
         std::pair<std::string, std::string> operator()(const Projection& op) {
-          auto attrs = op.attributes
-                       | std::views::transform([](const Attribute& attr) { return ToString(attr); })
+          auto exprs = op.expressions
+                       | std::views::transform([](const Expression& expr) { return ToString(expr); })
                        | std::views::join_with(',') | std::ranges::to<std::string>();
-          auto node = std::format("\"π {}\"", attrs);
+          auto node = std::format("\"π {}\"", exprs);
           auto [source_node, rest] = std::visit(DotFormatter{}, *op.source);
           return {node, std::format("{}\n{} -> {}\n{}", node, source_node, node, rest)};
         }

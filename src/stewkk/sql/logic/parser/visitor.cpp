@@ -50,9 +50,13 @@ std::any Visitor::visit(antlr4::tree::ParseTree *tree) {
 }
 
 std::any Visitor::visitColumnref(codegen::PostgreSQLParser::ColumnrefContext *ctx) {
+  // NOTE: column reference has form: database_name.schema_name.table_name.column_name
   auto table = ctx->colid()->getText();
-  auto column = ctx->indirection()->indirection_el(0)->attr_name()->getText();
-  return Attribute{std::move(table), std::move(column)};
+  if (ctx->indirection()) {
+    auto column = ctx->indirection()->indirection_el(0)->attr_name()->getText();
+    return Expression{Attribute{std::move(table), std::move(column)}};
+  }
+  return Expression{Attribute{"", std::move(table)}};
 }
 
 std::any Visitor::visitA_expr_compare(codegen::PostgreSQLParser::A_expr_compareContext *ctx) {
@@ -89,23 +93,28 @@ std::any Visitor::visitSimple_select_intersect(codegen::PostgreSQLParser::Simple
   return visit(ctx->simple_select_pramary().front());
 }
 
-std::any Visitor::visitTarget_list(codegen::PostgreSQLParser::Target_listContext *ctx) {
-  std::vector<Attribute> targets;
-  if (!(ctx->target_el().size() == 1 && ctx->target_el(0)->getText() == "*")) {
-    targets = ctx->target_el()
-              | std::ranges::views::transform([this](const auto &target_node) {
-                  auto expr_any = visit(target_node);
-                  if (Attribute *attr = std::any_cast<Attribute>(&expr_any)) {
-                    return *attr;
-                  }
-                  // TODO: support arbitrary expressions here
-                  std::unreachable();
-                })
-              | std::ranges::to<std::vector>();
-  }
+std::any Visitor::visitTarget_label(codegen::PostgreSQLParser::Target_labelContext *ctx) {
+  // TODO: AS (rename operation)
+  return visit(ctx->a_expr());
+}
 
-  if (!targets.empty()) {
-    return Projection{targets, nullptr};
+std::any Visitor::visitTarget_star(codegen::PostgreSQLParser::Target_starContext* ctx) {
+  return {};
+}
+
+// TODO: make this functions return Expression, and make operator that sets child expression
+std::any Visitor::visitTarget_list(codegen::PostgreSQLParser::Target_listContext* ctx) {
+  const auto& targets = ctx->target_el();
+  auto target_expressions
+      = targets | std::views::transform([this](const auto& target) { return visit(target); })
+        | std::views::filter(
+            [](const std::any& expr) { return expr.has_value(); })
+        | std::views::transform(
+            [](std::any expr) { return std::any_cast<Expression>(expr); })
+        | std::ranges::to<std::vector>();
+
+  if (!target_expressions.empty()) {
+    return Projection{std::move(target_expressions), nullptr};
   }
 
   return {};
@@ -190,6 +199,314 @@ std::any Visitor::visitSelect_no_parens(codegen::PostgreSQLParser::Select_no_par
   // TODO: remaining clauses
 
   return select_clause;
+}
+
+std::any Visitor::visitA_expr_qual(codegen::PostgreSQLParser::A_expr_qualContext *ctx) {
+  if (ctx->qual_op()) {
+    throw Error{ErrorType::kQueryNotSupported, "qualified operators are not supported"};
+  }
+  return visit(ctx->a_expr_lessless());
+}
+
+std::any Visitor::visitA_expr_lessless(codegen::PostgreSQLParser::A_expr_lesslessContext *ctx) {
+  if (ctx->a_expr_or().size() > 1) {
+    throw Error{ErrorType::kQueryNotSupported, "<< and >> operators are not supported"};
+  }
+  return visit(ctx->a_expr_or(0));
+}
+
+std::any Visitor::visitA_expr_or(codegen::PostgreSQLParser::A_expr_orContext *ctx) {
+  const auto& exprs = ctx->a_expr_and();
+  auto result = std::any_cast<Expression>(visit(exprs.front()));
+  for (size_t i = 1; i < exprs.size(); i++) {
+    auto tmp = std::any_cast<Expression>(visit(exprs[i]));
+    result = BinaryExpression{std::make_shared<Expression>(std::move(result)), BinaryOp::kOr,
+                              std::make_shared<Expression>(std::move(tmp))};
+  }
+  return result;
+}
+
+std::any Visitor::visitA_expr_and(codegen::PostgreSQLParser::A_expr_andContext *ctx) {
+  const auto& exprs = ctx->a_expr_between();
+  auto result = std::any_cast<Expression>(visit(exprs.front()));
+  for (size_t i = 1; i < exprs.size(); i++) {
+    auto tmp = std::any_cast<Expression>(visit(exprs[i]));
+    result = BinaryExpression{std::make_shared<Expression>(std::move(result)), BinaryOp::kAnd,
+                              std::make_shared<Expression>(std::move(tmp))};
+  }
+  return result;
+}
+
+std::any Visitor::visitA_expr_between(codegen::PostgreSQLParser::A_expr_betweenContext *ctx) {
+  if (ctx->BETWEEN()) {
+    // NOTE: may want to support
+    throw Error{ErrorType::kQueryNotSupported, "BETWEEN clause is not supported"};
+  }
+  return visit(ctx->a_expr_in(0));
+}
+
+std::any Visitor::visitA_expr_in(codegen::PostgreSQLParser::A_expr_inContext *ctx) {
+  if (ctx->IN_P()) {
+    // NOTE: may want to support
+    throw Error{ErrorType::kQueryNotSupported, "IN clause is not supported"};
+  }
+  return visit(ctx->a_expr_unary_not());
+}
+
+std::any Visitor::visitA_expr_unary_not(codegen::PostgreSQLParser::A_expr_unary_notContext *ctx) {
+  auto result = std::any_cast<Expression>(visit(ctx->a_expr_isnull()));
+  if (ctx->NOT()) {
+    result = UnaryExpression{UnaryOp::kNot, std::make_shared<Expression>(std::move(result))};
+  }
+  return result;
+}
+
+std::any Visitor::visitA_expr_isnull(codegen::PostgreSQLParser::A_expr_isnullContext *ctx) {
+  auto result = std::any_cast<Expression>(visit(ctx->a_expr_is_not()));
+  if (ctx->ISNULL()) {
+    result = BinaryExpression{std::make_shared<Expression>(std::move(result)), BinaryOp::kEq, std::make_shared<Expression>(Literal::kNull)};
+  }
+  if (ctx->NOTNULL()) {
+    result = BinaryExpression{std::make_shared<Expression>(std::move(result)), BinaryOp::kEq, std::make_shared<Expression>(Literal::kNull)};
+    result = UnaryExpression{UnaryOp::kNot, std::make_shared<Expression>(std::move(result))};
+  }
+  return result;
+}
+
+std::any Visitor::visitA_expr_is_not(codegen::PostgreSQLParser::A_expr_is_notContext *ctx) {
+  auto result = std::any_cast<Expression>(visit(ctx->a_expr_compare()));
+  if (!ctx->IS()) {
+    return result;
+  }
+
+  if (ctx->NULL_P()) {
+    result = BinaryExpression{std::make_shared<Expression>(std::move(result)), BinaryOp::kEq, std::make_shared<Expression>(Literal::kNull)};
+  } else if (ctx->TRUE_P()) {
+    result = BinaryExpression{std::make_shared<Expression>(std::move(result)), BinaryOp::kEq, std::make_shared<Expression>(Literal::kTrue)};
+  } else if (ctx->FALSE_P()) {
+    result = BinaryExpression{std::make_shared<Expression>(std::move(result)), BinaryOp::kEq, std::make_shared<Expression>(Literal::kFalse)};
+  } else if (ctx->UNKNOWN()) {
+    result = BinaryExpression{std::make_shared<Expression>(std::move(result)), BinaryOp::kEq, std::make_shared<Expression>(Literal::kUnknown)};
+  } else if (ctx->DISTINCT()) {
+    throw Error{ErrorType::kQueryNotSupported, "IS DISTINCT FROM clause is not supported"};
+  } else if (ctx->OF()) {
+    throw Error{ErrorType::kQueryNotSupported, "IS OF (type_list) clause is not supported"};
+  } else if (ctx->DOCUMENT_P()) {
+    throw Error{ErrorType::kQueryNotSupported, "IS DOCUMENT clause is not supported"};
+  } else if (ctx->NORMALIZED()) {
+    throw Error{ErrorType::kQueryNotSupported, "IS NORMALIZED clause is not supported"};
+  }
+
+  if (ctx->NOT()) {
+    result = UnaryExpression{UnaryOp::kNot, std::make_shared<Expression>(std::move(result))};
+  }
+  return result;
+}
+
+std::any Visitor::visitA_expr_like(codegen::PostgreSQLParser::A_expr_likeContext *ctx) {
+  const auto& exprs = ctx->a_expr_qual_op();
+  if (exprs.size() > 1) {
+    // NOTE: may want to implement
+    throw Error{ErrorType::kQueryNotSupported, "LIKE clause is not supported"};
+  }
+  return visit(exprs.front());
+}
+
+std::any Visitor::visitA_expr_qual_op(codegen::PostgreSQLParser::A_expr_qual_opContext *ctx) {
+  const auto& exprs = ctx->a_expr_unary_qualop();
+  if (exprs.size() > 1) {
+    // NOTE: may want to implement
+    throw Error{ErrorType::kQueryNotSupported, "qual_op is not supported"};
+  }
+  return visit(exprs.front());
+}
+
+std::any Visitor::visitA_expr_unary_qualop(codegen::PostgreSQLParser::A_expr_unary_qualopContext *ctx) {
+  if (ctx->qual_op()) {
+    // NOTE: may want to implement
+    throw Error{ErrorType::kQueryNotSupported, "unary_qual_op is not supported"};
+  }
+  return visit(ctx->a_expr_add());
+}
+
+std::any Visitor::visitA_expr_add(codegen::PostgreSQLParser::A_expr_addContext *ctx) {
+  const auto& exprs = ctx->a_expr_mul();
+  auto result = std::any_cast<Expression>(visit(exprs.front()));
+  auto expr_it = exprs.cbegin()+1;
+
+  const auto& children = ctx->children;
+  auto op_it = children.cbegin()+1;
+
+  while (expr_it != exprs.cend()) {
+    auto op = (*op_it)->getText();
+    auto rhs = std::any_cast<Expression>(visit(*expr_it));
+    if (op == "+") {
+      result = BinaryExpression{
+          std::make_shared<Expression>(std::move(result)),
+          BinaryOp::kPlus,
+          std::make_shared<Expression>(std::move(rhs)),
+      };
+    } else if (op == "-") {
+      result = BinaryExpression{
+          std::make_shared<Expression>(std::move(result)),
+          BinaryOp::kMinus,
+          std::make_shared<Expression>(std::move(rhs)),
+      };
+    }
+    op_it += 2;
+    expr_it++;
+  }
+  return result;
+}
+
+std::any Visitor::visitA_expr_mul(codegen::PostgreSQLParser::A_expr_mulContext *ctx) {
+  const auto& exprs = ctx->a_expr_caret();
+  auto result = std::any_cast<Expression>(visit(exprs.front()));
+  auto expr_it = exprs.cbegin()+1;
+
+  const auto& children = ctx->children;
+  auto op_it = children.cbegin()+1;
+
+  while (expr_it != exprs.cend()) {
+    auto op = (*op_it)->getText();
+    auto rhs = std::any_cast<Expression>(visit(*expr_it));
+    if (op == "*") {
+      result = BinaryExpression{
+          std::make_shared<Expression>(std::move(result)),
+          BinaryOp::kMul,
+          std::make_shared<Expression>(std::move(rhs)),
+      };
+    } else if (op == "/") {
+      result = BinaryExpression{
+          std::make_shared<Expression>(std::move(result)),
+          BinaryOp::kDiv,
+          std::make_shared<Expression>(std::move(rhs)),
+      };
+    } else if (op == "%") {
+      result = BinaryExpression{
+          std::make_shared<Expression>(std::move(result)),
+          BinaryOp::kMod,
+          std::make_shared<Expression>(std::move(rhs)),
+      };
+    }
+    op_it += 2;
+    expr_it++;
+  }
+  return result;
+}
+
+std::any Visitor::visitA_expr_caret(codegen::PostgreSQLParser::A_expr_caretContext *ctx) {
+  auto result = std::any_cast<Expression>(visit(ctx->a_expr_unary_sign(0)));
+  if (ctx->CARET()) {
+    auto rhs = std::any_cast<Expression>(visit(ctx->a_expr_unary_sign(1)));
+    result = BinaryExpression{
+        std::make_shared<Expression>(std::move(result)),
+        BinaryOp::kPow,
+        std::make_shared<Expression>(std::move(rhs)),
+    };
+  }
+  return result;
+}
+
+std::any Visitor::visitA_expr_unary_sign(codegen::PostgreSQLParser::A_expr_unary_signContext *ctx) {
+  auto result = std::any_cast<Expression>(visit(ctx->a_expr_at_time_zone()));
+  if (ctx->MINUS()) {
+    result = BinaryExpression{
+        std::make_shared<Expression>(IntConst{0}),
+        BinaryOp::kPow,
+        std::make_shared<Expression>(std::move(result)),
+    };
+  }
+  return result;
+}
+
+std::any Visitor::visitA_expr_at_time_zone(codegen::PostgreSQLParser::A_expr_at_time_zoneContext *ctx) {
+  if (ctx->AT()) {
+    throw Error{ErrorType::kQueryNotSupported, "AT TIME ZONE literal is not supported"};
+  }
+  return visit(ctx->a_expr_collate());
+}
+
+std::any Visitor::visitA_expr_collate(codegen::PostgreSQLParser::A_expr_collateContext *ctx) {
+  if (ctx->COLLATE()) {
+    throw Error{ErrorType::kQueryNotSupported, "COLLATE clause is not supported"};
+  }
+  return visit(ctx->a_expr_typecast());
+}
+
+std::any Visitor::visitA_expr_typecast(codegen::PostgreSQLParser::A_expr_typecastContext *ctx) {
+  if (!ctx->TYPECAST().empty()) {
+    // NOTE: may want to support
+    throw Error{ErrorType::kQueryNotSupported, "TYPECAST clause is not supported"};
+  }
+  return visit(ctx->c_expr());
+}
+
+std::any Visitor::visitC_expr_exists(codegen::PostgreSQLParser::C_expr_existsContext *ctx) {
+  // NOTE: may want to support
+  throw Error{ErrorType::kQueryNotSupported, "EXISTS clause is not supported"};
+}
+
+std::any Visitor::visitC_expr_expr(codegen::PostgreSQLParser::C_expr_exprContext *ctx) {
+  if (ctx->columnref()) {
+    return visit(ctx->columnref());
+  }
+  if (ctx->aexprconst()) {
+    return visit(ctx->aexprconst());
+  }
+  // NOTE: may want to support
+  throw Error{ErrorType::kQueryNotSupported, "c_expr is not fully supported"};
+}
+
+std::any Visitor::visitC_expr_case(codegen::PostgreSQLParser::C_expr_caseContext *ctx) {
+  // NOTE: may want to support
+  throw Error{ErrorType::kQueryNotSupported, "CASE clause is not supported"};
+}
+
+std::any Visitor::visitAexprconst(codegen::PostgreSQLParser::AexprconstContext *ctx) {
+  if (ctx->constinterval()) {
+    throw Error{ErrorType::kQueryNotSupported, "intervals are not supported"};
+  }
+  if (ctx->sconst()) {
+    throw Error{ErrorType::kQueryNotSupported, "strings are not supported"};
+  }
+  if (ctx->xconst()) {
+    throw Error{ErrorType::kQueryNotSupported, "hex literals are not supported"};
+  }
+  if (ctx->bconst()) {
+    throw Error{ErrorType::kQueryNotSupported, "binary literals are not supported"};
+  }
+  if (ctx->fconst()) {
+    throw Error{ErrorType::kQueryNotSupported, "float literals are not supported"};
+  }
+  if (ctx->TRUE_P()) {
+    return Expression{Literal::kTrue};
+  }
+  if (ctx->FALSE_P()) {
+    return Expression{Literal::kFalse};
+  }
+  if (ctx->NULL_P()) {
+    return Expression{Literal::kNull};
+  }
+  if (ctx->iconst()) {
+    return visit(ctx->iconst());
+  }
+  throw Error{ErrorType::kUnknown, "some literal is not supported"};
+}
+
+std::any Visitor::visitIconst(codegen::PostgreSQLParser::IconstContext *ctx) {
+  if (!ctx->Integral()) {
+    throw Error{ErrorType::kQueryNotSupported, "binary, octal and hexadecimal constants are not supported"};
+  }
+
+  std::stringstream ss(ctx->Integral()->getText());
+  int64_t value;
+
+  if (ss >> value) {
+    return Expression{IntConst{value}};
+  } else {
+    throw Error{ErrorType::kConversionError, std::format("integer literal \"{}\" cannot be converted to 64-bit signed integer", ctx->Integral()->getText())};
+  }
 }
 
 }  // namespace stewkk::sql

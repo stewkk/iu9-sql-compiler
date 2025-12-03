@@ -9,6 +9,7 @@ namespace stewkk::sql {
 enum class ErrorType {
   kUnknown,
   kSyntaxError,
+  kConversionError,
   kQueryNotSupported,
 };
 
