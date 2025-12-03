@@ -73,10 +73,27 @@ TEST(ParserTest, GetDotRepresentation) {
   ASSERT_THAT(got, Eq(expected));
 }
 
-TEST(ParserTest, DISABLED_SelectWithBooleanExpression) {
+TEST(ParserTest, SelectWithBooleanExpression) {
   std::stringstream s{"SELECT TRUE AND NULL OR FALSE AND NOT NULL;"};
 
   Operator got = GetAST(s).value();
+
+  ASSERT_THAT(got, VariantWith<Projection>(Projection{
+                       {BinaryExpression{
+                           std::make_shared<Expression>(BinaryExpression{
+                               std::make_shared<Expression>(Literal::kTrue),
+                               BinaryOp::kAnd,
+                               std::make_shared<Expression>(Literal::kNull),
+                           }),
+                           BinaryOp::kOr,
+                           std::make_shared<Expression>(BinaryExpression{
+                               std::make_shared<Expression>(Literal::kFalse),
+                               BinaryOp::kAnd,
+                               std::make_shared<Expression>(UnaryExpression{
+                                   UnaryOp::kNot, std::make_shared<Expression>(Literal::kNull)}),
+                           }),
+                       }},
+                       std::make_shared<Operator>(Table{"_EMPTY_TABLE_"})}));
 }
 
 TEST(ParserTest, SelectWithArithmeticalOperations) {
