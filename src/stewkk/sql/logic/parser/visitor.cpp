@@ -7,6 +7,29 @@
 
 namespace stewkk::sql {
 
+namespace {
+
+Operator GetOperatorWithChild(Operator&& op, Operator&& child) {
+  struct ChildSetter {
+    Operator operator() (Table&& parent) {
+      std::unreachable();
+    }
+    Operator operator() (Projection&& parent) {
+      parent.source = std::make_shared<Operator>(std::move(child));
+      return parent;
+    }
+    Operator operator() (Filter&& filter) {
+      filter.source = std::make_shared<Operator>(std::move(child));
+      return filter;
+    }
+
+    Operator&& child;
+  };
+  return std::visit(ChildSetter{std::move(child)}, std::move(op));
+}
+
+} // namespace
+
 std::any Visitor::visitStmt(codegen::PostgreSQLParser::StmtContext *ctx) {
   if (!ctx->children.empty() && !ctx->selectstmt()) {
     auto& rule_names = parser_->getRuleNames();
@@ -114,7 +137,7 @@ std::any Visitor::visitTarget_list(codegen::PostgreSQLParser::Target_listContext
         | std::ranges::to<std::vector>();
 
   if (!target_expressions.empty()) {
-    return Projection{std::move(target_expressions), nullptr};
+    return Operator{Projection{std::move(target_expressions), nullptr}};
   }
 
   return {};
@@ -129,7 +152,7 @@ std::any Visitor::visitFrom_clause(codegen::PostgreSQLParser::From_clauseContext
                         ->identifier()
                         ->getText();
 
-  return Table{from_ident};
+  return Operator{Table{from_ident}};
 }
 
 std::any Visitor::visitSimple_select_pramary(
@@ -151,21 +174,19 @@ std::any Visitor::visitSimple_select_pramary(
   Operator result = Table{kEmptyTableName};
 
   if (ctx->from_clause()) {
-    result = std::any_cast<Table>(visit(ctx->from_clause()));
+    result = std::any_cast<Operator>(visit(ctx->from_clause()));
   }
 
   if (ctx->where_clause()) {
-    auto filter_op = std::any_cast<Filter>(visit(ctx->where_clause()));
-    filter_op.source = std::make_shared<Operator>(std::move(result));
-    result = std::move(filter_op);
+    auto filter = std::any_cast<Operator>(visit(ctx->where_clause()));
+    result = GetOperatorWithChild(std::move(filter), std::move(result));
   }
 
   if (ctx->target_list_()) {
     auto target_list_opt = visit(ctx->target_list_());
     if (target_list_opt.has_value()) {
-      auto projection_op = std::any_cast<Projection>(target_list_opt);
-      projection_op.source = std::make_shared<Operator>(std::move(result));
-      result = std::move(projection_op);
+      auto projection = std::any_cast<Operator>(target_list_opt);
+      result = GetOperatorWithChild(std::move(projection), std::move(result));
     }
   }
 
@@ -174,7 +195,7 @@ std::any Visitor::visitSimple_select_pramary(
 
 std::any Visitor::visitWhere_clause(codegen::PostgreSQLParser::Where_clauseContext *ctx) {
   auto where_expr = std::any_cast<Expression>(visit(ctx->a_expr()));
-  return Filter{where_expr, nullptr};
+  return Operator{Filter{where_expr, nullptr}};
 }
 
 std::any Visitor::visitSelect_clause(codegen::PostgreSQLParser::Select_clauseContext *ctx) {
