@@ -96,6 +96,17 @@ std::string GetDotRepresentation(const Operator& op) {
                                   node, lhs_rest, rhs_rest);
           return {node, rest};
         }
+        std::pair<std::string, std::string> operator()(const Join& op) {
+          auto [lhs_node, lhs_rest] = std::visit(DotFormatter{}, *op.lhs);
+          auto [rhs_node, rhs_rest] = std::visit(DotFormatter{}, *op.rhs);
+          auto join_type = ToString(op.type);
+          auto qual_expr = GetDotRepresentation(op.qual);
+          auto node = std::format("join_{}_{}", lhs_node, rhs_node);
+          auto rest = std::format(
+              "\"{}\"[label=\"{}\\nON {}\"]\n\"{}\" -> \"{}\"\n\"{}\" -> \"{}\"\n{}\n{}", node,
+              join_type, qual_expr, lhs_node, node, rhs_node, node, lhs_rest, rhs_rest);
+          return {node, rest};
+        }
     };
     auto [_, code] = std::visit(DotFormatter{}, op);
     return std::format("digraph G {{ rankdir=BT; {} }}\n", code);

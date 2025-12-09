@@ -177,10 +177,19 @@ TEST(ParserTest, SelectWithJoinDot) {
   ASSERT_THAT(got, Eq(expected));
 }
 
+TEST(ParserTest, SelectWithOuterJoinDot) {
+  std::stringstream s{"SELECT * FROM users LEFT OUTER JOIN books ON users.book = books.id;"};
+  auto expected = ReadFromFile(kProjectDir + "/test/static/parser/expected_outer_join.dot");
+  Operator op = GetAST(s).value();
+
+  auto got = GetDotRepresentation(op);
+
+  ASSERT_THAT(got, Eq(expected));
+}
+
 /*
 ** ORDER BY
 ** aggregations: SELECT kind, sum(len) AS total FROM films GROUP BY kind;
-** JOIN
  */
 
 }  // namespace stewkk::sql

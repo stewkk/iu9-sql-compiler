@@ -25,6 +25,9 @@ Operator GetOperatorWithChild(Operator&& op, Operator&& child) {
     Operator operator() (CrossJoin&& cross_join) {
       std::unreachable();
     }
+    Operator operator() (Join&& cross_join) {
+      std::unreachable();
+    }
 
     Operator&& child;
   };
@@ -86,18 +89,36 @@ std::any Visitor::visitColumnref(codegen::PostgreSQLParser::ColumnrefContext *ct
 }
 
 std::any Visitor::visitA_expr_compare(codegen::PostgreSQLParser::A_expr_compareContext *ctx) {
-  auto lhs = ctx->a_expr_like(0);
-  auto rhs = ctx->a_expr_like(1);
-  if (!lhs || !rhs) {
-    return visitChildren(ctx);
+  if (ctx->subquery_Op()) {
+    throw Error{ErrorType::kQueryNotSupported, "subquery_Op is not supported"};
   }
-  auto lhs_any = visit(lhs);
-  if (Attribute* attr = std::any_cast<Attribute>(&lhs_any)) {
-    return Expression{
-        BinaryExpression{std::make_shared<Expression>(*attr), BinaryOp::kGt,
-                         std::make_shared<Expression>(IntConst{std::stoi(rhs->getText())})}};
+  auto exprs = ctx->a_expr_like();
+  if (exprs.size() == 1) {
+    return visit(exprs.front());
   }
-  std::unreachable();
+  auto lhs_expr = std::any_cast<Expression>(visit(exprs.front()));
+  auto rhs_expr = std::any_cast<Expression>(visit(exprs.back()));
+  BinaryOp op;
+  if (ctx->LT()) {
+    op = BinaryOp::kLt;
+  } else if (ctx->GT()) {
+    op = BinaryOp::kGt;
+  } else if (ctx->EQUAL()) {
+    op = BinaryOp::kEq;
+  } else if (ctx->LESS_EQUALS()) {
+    op = BinaryOp::kLe;
+  } else if (ctx->GREATER_EQUALS()) {
+    op = BinaryOp::kGe;
+  } else if (ctx->NOT_EQUALS()) {
+    op = BinaryOp::kNotEq;
+  }
+  return Expression{
+    BinaryExpression {
+      std::make_shared<Expression>(lhs_expr),
+      op,
+      std::make_shared<Expression>(rhs_expr),
+    },
+  };
 }
 
 Visitor::Visitor(codegen::PostgreSQLParser* parser) : parser_(parser) {}
@@ -207,6 +228,7 @@ std::any Visitor::visitTable_ref(codegen::PostgreSQLParser::Table_refContext *ct
   for (; children_it != children.end(); children_it++) {
     auto text = (*children_it)->getText();
     if (text == "CROSS") {
+      // CROSS JOIN table_ref
       children_it += 2;
       auto rhs = std::any_cast<Operator>(visit(*children_it));
       res = CrossJoin{
@@ -215,25 +237,53 @@ std::any Visitor::visitTable_ref(codegen::PostgreSQLParser::Table_refContext *ct
       };
     } else if (text == "NATURAL") {
       throw Error{ErrorType::kQueryNotSupported, "NATURAL clause is not supported"};
-    } else if (text == "JOIN") {
-      children_it++;
-      auto rhs = std::any_cast<Operator>(visit(*children_it));
-      children_it++;
-      // TODO: join_qual
-      visit(*children_it);
-      // res = ...
     } else {
-      // TODO: join_type
-      auto join_type = visit(*children_it);
-      children_it += 2;
-      auto rhs = std::any_cast<Operator>(visit(*children_it));
-      children_it++;
-      // TODO: join_qual
-      visit(*children_it);
-      // res = ...
+      Operator rhs;
+      auto join_type = JoinType::kInner;
+      Expression qual_expression;
+      if (text == "JOIN") {
+        // JOIN table_ref join_qual
+        children_it++;
+        rhs = std::any_cast<Operator>(visit(*children_it));
+        children_it++;
+        qual_expression = std::any_cast<Expression>(visit(*children_it));
+      } else {
+        // join_type JOIN table_ref join_qual
+        join_type = std::any_cast<JoinType>(visit(*children_it));
+        children_it += 2;
+        rhs = std::any_cast<Operator>(visit(*children_it));
+        children_it++;
+        qual_expression = std::any_cast<Expression>(visit(*children_it));
+      }
+      res = Join{
+          join_type,
+          std::move(qual_expression),
+          std::make_shared<Operator>(std::move(res)),
+          std::make_shared<Operator>(std::move(rhs)),
+      };
     }
   }
   return res;
+}
+
+std::any Visitor::visitJoin_type(codegen::PostgreSQLParser::Join_typeContext *ctx) {
+  if (ctx->INNER_P()) {
+    return JoinType::kInner;
+  }
+  if (ctx->FULL()) {
+    return JoinType::kFull;
+  }
+  if (ctx->LEFT()) {
+    return JoinType::kLeft;
+  }
+  return JoinType::kRight;
+}
+
+std::any Visitor::visitJoin_qual(codegen::PostgreSQLParser::Join_qualContext *ctx) {
+  if (ctx->USING()) {
+    throw Error{ErrorType::kQueryNotSupported, "USING clause is not supported"};
+  }
+  return visit(ctx->a_expr());
 }
 
 std::any Visitor::visitRelation_expr(codegen::PostgreSQLParser::Relation_exprContext *ctx) {

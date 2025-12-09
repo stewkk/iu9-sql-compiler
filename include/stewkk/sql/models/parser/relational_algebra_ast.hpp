@@ -24,15 +24,9 @@ struct Table;
 struct Projection;
 struct Filter;
 struct CrossJoin;
+struct Join;
 
-using Operator = std::variant<Table, Projection, Filter, CrossJoin>;
-
-struct CrossJoin {
-    std::shared_ptr<Operator> lhs;
-    std::shared_ptr<Operator> rhs;
-
-    bool operator==(const CrossJoin& other) const;
-};
+using Operator = std::variant<Table, Projection, Filter, CrossJoin, Join>;
 
 struct Table {
     std::string name;
@@ -65,6 +59,10 @@ struct Projection {
 
 enum class BinaryOp {
    kGt,
+   kLt,
+   kLe,
+   kGe,
+   kNotEq,
    kEq,
    kOr,
    kAnd,
@@ -104,6 +102,31 @@ struct Filter {
     std::shared_ptr<Operator> source;
 
     bool operator==(const Filter& other) const;
+};
+
+struct CrossJoin {
+    std::shared_ptr<Operator> lhs;
+    std::shared_ptr<Operator> rhs;
+
+    bool operator==(const CrossJoin& other) const;
+};
+
+enum class JoinType {
+    kInner,
+    kFull,
+    kLeft,
+    kRight,
+};
+
+std::string ToString(JoinType type);
+
+struct Join {
+    JoinType type;
+    Expression qual;
+    std::shared_ptr<Operator> lhs;
+    std::shared_ptr<Operator> rhs;
+
+    bool operator==(const Join& other) const;
 };
 
 }  // namespace stewkk::sql

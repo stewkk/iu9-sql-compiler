@@ -22,6 +22,10 @@ bool CrossJoin::operator==(const CrossJoin& other) const {
   return *lhs == *other.lhs && *rhs == *other.rhs;
 }
 
+bool Join::operator==(const Join& other) const {
+  return type == other.type && qual == other.qual && *lhs == *other.lhs && *rhs == *other.rhs;
+}
+
 std::string ToString(BinaryOp binop) {
     switch (binop) {
       case BinaryOp::kGt:
@@ -44,6 +48,14 @@ std::string ToString(BinaryOp binop) {
         return "%";
       case BinaryOp::kPow:
         return "^";
+      case BinaryOp::kLt:
+        return "<";
+      case BinaryOp::kLe:
+        return "<=";
+      case BinaryOp::kGe:
+        return ">=";
+      case BinaryOp::kNotEq:
+        return "!=";
     }
 }
 
@@ -90,6 +102,19 @@ std::string ToString(const Expression& expr) {
         }
     };
     return std::visit(Formatter{}, expr);
+}
+
+std::string ToString(JoinType type) {
+  switch (type) {
+    case JoinType::kInner:
+      return "⋈";
+    case JoinType::kFull:
+      return "⟗";
+    case JoinType::kLeft:
+      return "⟕";
+    case JoinType::kRight:
+      return "⟖";
+  }
 }
 
 } // namespace stewkk::sql

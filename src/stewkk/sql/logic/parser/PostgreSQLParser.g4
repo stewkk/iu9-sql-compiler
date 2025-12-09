@@ -3221,7 +3221,8 @@ func_alias_clause
     ;
 
 join_type
-    : (FULL | LEFT | RIGHT | INNER_P) OUTER_P?
+    : INNER_P
+    | (FULL | LEFT | RIGHT) OUTER_P?
     ;
 
 join_qual
