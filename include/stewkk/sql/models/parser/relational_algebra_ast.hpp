@@ -23,8 +23,16 @@ using IntConst = std::int64_t;
 struct Table;
 struct Projection;
 struct Filter;
+struct CrossJoin;
 
-using Operator = std::variant<Table, Projection, Filter>;
+using Operator = std::variant<Table, Projection, Filter, CrossJoin>;
+
+struct CrossJoin {
+    std::shared_ptr<Operator> lhs;
+    std::shared_ptr<Operator> rhs;
+
+    bool operator==(const CrossJoin& other) const;
+};
 
 struct Table {
     std::string name;

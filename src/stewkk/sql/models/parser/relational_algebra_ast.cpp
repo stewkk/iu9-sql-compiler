@@ -18,6 +18,10 @@ bool UnaryExpression::operator==(const UnaryExpression& other) const {
   return op == other.op && *child == *other.child;
 }
 
+bool CrossJoin::operator==(const CrossJoin& other) const {
+  return *lhs == *other.lhs && *rhs == *other.rhs;
+}
+
 std::string ToString(BinaryOp binop) {
     switch (binop) {
       case BinaryOp::kGt:

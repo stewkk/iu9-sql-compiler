@@ -3202,11 +3202,7 @@ table_ref
             | func_table func_alias_clause?
             | select_with_parens alias_clause?
         )
-        | OPEN_PAREN table_ref (
-            CROSS JOIN table_ref
-            | NATURAL join_type? JOIN table_ref
-            | join_type? JOIN table_ref join_qual
-        )? CLOSE_PAREN alias_clause?
+        | OPEN_PAREN table_ref CLOSE_PAREN alias_clause?
     ) (
         CROSS JOIN table_ref
         | NATURAL join_type? JOIN table_ref

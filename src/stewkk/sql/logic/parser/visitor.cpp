@@ -22,6 +22,9 @@ Operator GetOperatorWithChild(Operator&& op, Operator&& child) {
       filter.source = std::make_shared<Operator>(std::move(child));
       return filter;
     }
+    Operator operator() (CrossJoin&& cross_join) {
+      std::unreachable();
+    }
 
     Operator&& child;
   };
@@ -144,15 +147,110 @@ std::any Visitor::visitTarget_list(codegen::PostgreSQLParser::Target_listContext
 }
 
 std::any Visitor::visitFrom_clause(codegen::PostgreSQLParser::From_clauseContext *ctx) {
-  auto from_ident = ctx->from_list()
-                        ->table_ref()[0]
-                        ->relation_expr()
-                        ->qualified_name()
-                        ->colid()
-                        ->identifier()
-                        ->getText();
+  return visit(ctx->from_list());
+}
 
-  return Operator{Table{from_ident}};
+std::any Visitor::visitFrom_list(codegen::PostgreSQLParser::From_listContext *ctx) {
+  auto table_ref = ctx->table_ref();
+  auto result = std::any_cast<Operator>(visit(table_ref.front()));
+  for (auto it = table_ref.begin()+1; it != table_ref.end(); it++) {
+    auto rhs = std::any_cast<Operator>(visit(*it));
+    result = CrossJoin{
+        std::make_shared<Operator>(std::move(result)),
+        std::make_shared<Operator>(std::move(rhs)),
+    };
+  }
+  return result;
+}
+
+std::any Visitor::visitTable_ref(codegen::PostgreSQLParser::Table_refContext *ctx) {
+  if (ctx->xmltable()) {
+    throw Error{ErrorType::kQueryNotSupported, "xmltable is not supported"};
+  }
+  if (ctx->func_table()) {
+    // NOTE: may want to support
+    throw Error{ErrorType::kQueryNotSupported, "func_table is not supported"};
+  }
+  if (ctx->LATERAL_P()) {
+    throw Error{ErrorType::kQueryNotSupported, "LATERAL clause is not supported"};
+  }
+
+  auto children = ctx->children;
+  auto children_it = children.begin();
+
+  Operator res;
+  if (ctx->relation_expr()) {
+    auto table = std::any_cast<std::string>(visit(ctx->relation_expr()));
+    children_it++;
+    res = Table{std::move(table)};
+  }
+  if (ctx->select_with_parens()) {
+    res = std::any_cast<Operator>(visit(ctx->select_with_parens()));
+    children_it++;
+    children_it++;
+  }
+  auto table_refs = ctx->table_ref();
+  auto table_ref_it = table_refs.begin();
+  if (ctx->OPEN_PAREN()) {
+    res = std::any_cast<Operator>(visit(*table_ref_it));
+    children_it++;
+    table_ref_it++;
+  }
+
+  if (ctx->alias_clause()) {
+    throw Error{ErrorType::kQueryNotSupported, "alias_clause is not supported"};
+  }
+  if (ctx->tablesample_clause()) {
+    throw Error{ErrorType::kQueryNotSupported, "tablesample_clause is not supported"};
+  }
+
+  for (; children_it != children.end(); children_it++) {
+    auto text = (*children_it)->getText();
+    if (text == "CROSS") {
+      children_it += 2;
+      auto rhs = std::any_cast<Operator>(visit(*children_it));
+      res = CrossJoin{
+          std::make_shared<Operator>(std::move(res)),
+          std::make_shared<Operator>(std::move(rhs)),
+      };
+    } else if (text == "NATURAL") {
+      throw Error{ErrorType::kQueryNotSupported, "NATURAL clause is not supported"};
+    } else if (text == "JOIN") {
+      children_it++;
+      auto rhs = std::any_cast<Operator>(visit(*children_it));
+      children_it++;
+      // TODO: join_qual
+      visit(*children_it);
+      // res = ...
+    } else {
+      // TODO: join_type
+      auto join_type = visit(*children_it);
+      children_it += 2;
+      auto rhs = std::any_cast<Operator>(visit(*children_it));
+      children_it++;
+      // TODO: join_qual
+      visit(*children_it);
+      // res = ...
+    }
+  }
+  return res;
+}
+
+std::any Visitor::visitRelation_expr(codegen::PostgreSQLParser::Relation_exprContext *ctx) {
+  if (ctx->ONLY()) {
+    throw Error{ErrorType::kQueryNotSupported, "ONLY clause is not supported"};
+  }
+  if (ctx->STAR()) {
+    throw Error{ErrorType::kQueryNotSupported, "tablename * clause is not supported"};
+  }
+  return visit(ctx->qualified_name());
+}
+
+std::any Visitor::visitQualified_name(codegen::PostgreSQLParser::Qualified_nameContext *ctx) {
+  if (ctx->indirection()) {
+    throw Error{ErrorType::kQueryNotSupported, "bare column names are not supported"};
+  }
+  return ctx->colid()->getText();
 }
 
 std::any Visitor::visitSimple_select_pramary(

@@ -167,10 +167,20 @@ TEST(ParserTest, EmptySelect) {
   ASSERT_THAT(got, VariantWith<Table>(Table{"_EMPTY_TABLE_"}));
 }
 
+TEST(ParserTest, SelectWithJoinDot) {
+  std::stringstream s{"SELECT * FROM users, books;"};
+  auto expected = ReadFromFile(kProjectDir + "/test/static/parser/expected_join.dot");
+  Operator op = GetAST(s).value();
+
+  auto got = GetDotRepresentation(op);
+
+  ASSERT_THAT(got, Eq(expected));
+}
+
 /*
 ** ORDER BY
-** full support of a_expr
 ** aggregations: SELECT kind, sum(len) AS total FROM films GROUP BY kind;
+** JOIN
  */
 
 }  // namespace stewkk::sql

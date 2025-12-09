@@ -56,6 +56,10 @@ class Visitor : public codegen::PostgreSQLParserBaseVisitor {
     virtual std::any visitC_expr_case(codegen::PostgreSQLParser::C_expr_caseContext *ctx) override;
     virtual std::any visitAexprconst(codegen::PostgreSQLParser::AexprconstContext *ctx) override;
     virtual std::any visitIconst(codegen::PostgreSQLParser::IconstContext *ctx) override;
+    virtual std::any visitFrom_list(codegen::PostgreSQLParser::From_listContext *ctx) override;
+    virtual std::any visitTable_ref(codegen::PostgreSQLParser::Table_refContext *ctx) override;
+    virtual std::any visitRelation_expr(codegen::PostgreSQLParser::Relation_exprContext *ctx) override;
+    virtual std::any visitQualified_name(codegen::PostgreSQLParser::Qualified_nameContext *ctx) override;
 
   private:
     codegen::PostgreSQLParser* parser_;
