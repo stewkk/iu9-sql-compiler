@@ -1,5 +1,6 @@
 include(FetchAntlr4)
 include(SetupLLVM)
+include(FetchBoost)
 
 add_definitions(-DANTLR4CPP_STATIC)
 
@@ -17,6 +18,8 @@ add_library(libsql
   models/parser/relational_algebra_ast.cpp
   logic/result/error.cpp
   logic/result/result.cpp
+  logic/executor/executor.cpp
+  logic/executor/sequential_scan.cpp
 )
 add_library(stewkk::libsql ALIAS libsql)
 target_compile_features(libsql PUBLIC cxx_std_23)
@@ -41,6 +44,8 @@ llvm_map_components_to_libnames(llvm_libs support core irreader)
 target_link_libraries(libsql PRIVATE
   antlr4_static
   ${llvm_libs}
+  Boost::asio
+  Boost::thread
 )
 
 add_executable(sql

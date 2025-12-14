@@ -35,7 +35,7 @@
           ];
 
           nativeBuildInputs = [
-            pkgs.clang-tools_19
+            pkgs.clang-tools
           ];
 
           NIX_LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
@@ -67,4 +67,3 @@
         };
       });
 }
-

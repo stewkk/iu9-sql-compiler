@@ -14,12 +14,17 @@ namespace stewkk::sql {
 
 const static std::string kProjectDir = std::getenv("PWD");
 
+namespace {
+
 std::string ReadFromFile(std::filesystem::path path) {
   std::ifstream f{path};
   std::ostringstream stream;
   stream << f.rdbuf();
   return stream.str();
 }
+
+} // namespace
+
 
 TEST(ParserTest, SelectAllFromSingleTable) {
   std::stringstream s{"SELECT * FROM users;"};

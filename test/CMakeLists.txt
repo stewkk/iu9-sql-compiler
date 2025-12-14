@@ -4,6 +4,7 @@ include(GoogleTest)
 add_executable(unittests)
 target_sources(unittests PRIVATE
   ${PROJECT_SOURCE_DIR}/src/stewkk/sql/logic/parser/parser_test.cpp
+  ${PROJECT_SOURCE_DIR}/src/stewkk/sql/logic/executor/executor_test.cpp
 )
 target_compile_features(unittests PRIVATE cxx_std_23)
 set_target_properties(unittests PROPERTIES
@@ -19,5 +20,8 @@ target_include_directories(
 )
 target_compile_options(unittests PRIVATE ${BASE_COMPILE_FLAGS})
 target_link_options(unittests PRIVATE ${BASE_COMPILE_FLAGS})
-target_link_libraries(unittests PRIVATE gmock_main libsql antlr4_static)
+target_link_libraries(unittests PRIVATE gmock_main libsql antlr4_static
+  Boost::asio
+  Boost::thread
+)
 gtest_discover_tests(unittests)
