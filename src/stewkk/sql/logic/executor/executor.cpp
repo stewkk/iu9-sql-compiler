@@ -9,9 +9,13 @@ boost::asio::awaitable<Result<std::vector<Tuple>>> Executor::Execute(const Opera
   Channel chan{executor_, 1};
   boost::asio::co_spawn(executor_, Execute(op, chan), boost::asio::detached);
 
-  auto buf = co_await chan.async_receive(boost::asio::use_awaitable);
+  std::vector<Tuple> result;
+  while (chan.is_open()) {
+    auto buf = co_await chan.async_receive(boost::asio::use_awaitable);
+    std::copy(buf.begin(), buf.end(), std::back_inserter(result));
+  }
 
-  co_return Ok(std::move(buf));
+  co_return Ok(std::move(result));
 }
 
 boost::asio::awaitable<void> Executor::Execute(const Operator& op, Channel& chan) const {

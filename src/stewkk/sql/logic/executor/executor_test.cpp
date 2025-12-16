@@ -31,8 +31,8 @@ TEST(ExecutorTest, SimpleSelect) {
       [](std::exception_ptr p, Result<std::vector<Tuple>> got) {
         if (p) std::rethrow_exception(p);
 
-        // FIXME: check values
-        ASSERT_THAT(got.value().size(), Eq(2));
+        ASSERT_THAT(got.value()[0], Eq(Tuple{{"users", "id", 1}, {"users", "age", 33}}));
+        ASSERT_THAT(got.value().size(), Eq(17));
       });
 
   ctx.run();

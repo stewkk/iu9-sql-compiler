@@ -74,6 +74,8 @@ boost::asio::awaitable<Result<>> CsvDirSequentialScanner::operator()(const std::
       co_await chan.async_send(boost::system::error_code{}, std::move(buf), boost::asio::use_awaitable);
     }
 
+    chan.close();
+
     co_return Ok();
 }
 
