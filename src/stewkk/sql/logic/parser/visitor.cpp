@@ -149,7 +149,6 @@ std::any Visitor::visitTarget_star(codegen::PostgreSQLParser::Target_starContext
   return {};
 }
 
-// TODO: make this functions return Expression, and make operator that sets child expression
 std::any Visitor::visitTarget_list(codegen::PostgreSQLParser::Target_listContext* ctx) {
   const auto& targets = ctx->target_el();
   auto target_expressions
@@ -580,11 +579,7 @@ std::any Visitor::visitA_expr_caret(codegen::PostgreSQLParser::A_expr_caretConte
 std::any Visitor::visitA_expr_unary_sign(codegen::PostgreSQLParser::A_expr_unary_signContext *ctx) {
   auto result = std::any_cast<Expression>(visit(ctx->a_expr_at_time_zone()));
   if (ctx->MINUS()) {
-    result = BinaryExpression{
-        std::make_shared<Expression>(IntConst{0}),
-        BinaryOp::kPow,
-        std::make_shared<Expression>(std::move(result)),
-    };
+    result = UnaryExpression{UnaryOp::kMinus, std::make_shared<Expression>(std::move(result))};
   }
   return result;
 }

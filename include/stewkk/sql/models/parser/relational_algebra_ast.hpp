@@ -86,6 +86,7 @@ struct BinaryExpression {
 
 enum class UnaryOp {
     kNot,
+    kMinus,
 };
 
 std::string ToString(UnaryOp op);

@@ -67,6 +67,8 @@ std::string ToString(UnaryOp op) {
     switch (op) {
       case UnaryOp::kNot:
         return "not";
+      case UnaryOp::kMinus:
+        return "-";
     }
 }
 

@@ -2,7 +2,6 @@
 
 #include <string>
 #include <functional>
-#include <vector>
 
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/awaitable.hpp>
@@ -16,16 +15,20 @@ namespace stewkk::sql {
 
 class Executor {
 public:
-    using SequentialScan = std::function<boost::asio::awaitable<Result<>>(const std::string& table_name, Channel& chan)>;
-    Executor(boost::asio::any_io_executor executor, SequentialScan seq_scan);
+  using SequentialScan = std::function<boost::asio::awaitable<Result<>>(
+      const std::string& table_name, AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan)>;
+  explicit Executor(SequentialScan seq_scan);
 
-    boost::asio::awaitable<Result<std::vector<Tuple>>> Execute(const Operator& op) const;
+  boost::asio::awaitable<Result<Relation>> Execute(const Operator& op) const;
 private:
-    boost::asio::awaitable<void> Execute(const Operator& op, Channel& chan) const;
+  boost::asio::awaitable<void> Execute(const Operator& op, AttributesInfoChannel& attr_chan,
+                                       TuplesChannel& tuples_chan) const;
+  boost::asio::awaitable<void> ExecuteProjection(const Projection& proj,
+                                                 AttributesInfoChannel& attr_chan,
+                                                 TuplesChannel& tuples_chan) const;
 
 private:
-     SequentialScan sequential_scan_;
-     boost::asio::any_io_executor executor_;
+  SequentialScan sequential_scan_;
 };
 
 }  // namespace stewkk::sql

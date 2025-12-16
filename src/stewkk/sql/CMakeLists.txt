@@ -20,6 +20,7 @@ add_library(libsql
   logic/result/result.cpp
   logic/executor/executor.cpp
   logic/executor/sequential_scan.cpp
+  models/executor/tuple.cpp
 )
 add_library(stewkk::libsql ALIAS libsql)
 target_compile_features(libsql PUBLIC cxx_std_23)

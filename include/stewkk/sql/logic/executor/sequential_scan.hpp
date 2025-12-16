@@ -10,7 +10,9 @@ namespace stewkk::sql {
 struct CsvDirSequentialScanner {
     std::string dir;
 
-    boost::asio::awaitable<Result<>> operator()(const std::string& table_name, Channel& chan) const;
+    boost::asio::awaitable<Result<>> operator()(const std::string& table_name,
+                                                AttributesInfoChannel& attrs_chan,
+                                                TuplesChannel& tuples_chan) const;
 };
 
 }  // namespace stewkk::sql
