@@ -11,7 +11,11 @@ boost::asio::awaitable<Result<std::vector<Tuple>>> Executor::Execute(const Opera
 
   std::vector<Tuple> result;
   while (chan.is_open()) {
-    auto buf = co_await chan.async_receive(boost::asio::use_awaitable);
+    std::vector<Tuple> buf;
+    try {
+      buf = co_await chan.async_receive(boost::asio::use_awaitable);
+    } catch (const boost::system::system_error& ex) {}
+
     std::copy(buf.begin(), buf.end(), std::back_inserter(result));
   }
 

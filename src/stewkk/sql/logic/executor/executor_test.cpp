@@ -38,4 +38,29 @@ TEST(ExecutorTest, SimpleSelect) {
   ctx.run();
 }
 
+TEST(ExecutorTest, SimpleSelectWithParallelism) {
+  boost::asio::thread_pool pool{4};
+  boost::asio::co_spawn(
+      pool,
+      []() -> boost::asio::awaitable<Result<std::vector<Tuple>>> {
+        std::stringstream s{"SELECT * FROM users;"};
+        Operator op = GetAST(s).value();
+        CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
+        auto io_executor = co_await boost::asio::this_coro::executor;
+        Executor executor(io_executor, std::move(seq_scan));
+
+        auto got = co_await executor.Execute(op);
+
+        co_return got;
+      }(),
+      [](std::exception_ptr p, Result<std::vector<Tuple>> got) {
+        if (p) std::rethrow_exception(p);
+
+        ASSERT_THAT(got.value()[0], Eq(Tuple{{"users", "id", 1}, {"users", "age", 33}}));
+        ASSERT_THAT(got.value().size(), Eq(17));
+      });
+
+  pool.join();
+}
+
 }  // namespace stewkk::sql
