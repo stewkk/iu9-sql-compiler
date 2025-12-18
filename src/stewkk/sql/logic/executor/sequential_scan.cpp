@@ -51,6 +51,7 @@ Tuple ParseTuple(const std::string& line,
 boost::asio::awaitable<Result<>> CsvDirSequentialScanner::operator()(
     const std::string& table_name, AttributesInfoChannel& attrs_chan,
     TuplesChannel& tuples_chan) const {
+  std::clog << "Executing sequential scan\n";
   auto path = std::format("{}/{}.csv", dir, table_name);
   std::ifstream input{std::move(path)};
   std::string line;

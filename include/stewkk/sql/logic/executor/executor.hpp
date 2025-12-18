@@ -23,9 +23,10 @@ public:
 private:
   boost::asio::awaitable<void> Execute(const Operator& op, AttributesInfoChannel& attr_chan,
                                        TuplesChannel& tuples_chan) const;
-  boost::asio::awaitable<void> ExecuteProjection(const Projection& proj,
-                                                 AttributesInfoChannel& attr_chan,
+  boost::asio::awaitable<void> ExecuteProjection(const Projection& proj, AttributesInfoChannel& attr_chan,
                                                  TuplesChannel& tuples_chan) const;
+  boost::asio::awaitable<void> ExecuteFilter(const Filter& filter, AttributesInfoChannel& attr_chan,
+                                             TuplesChannel& tuples_chan) const;
 
 private:
   SequentialScan sequential_scan_;
