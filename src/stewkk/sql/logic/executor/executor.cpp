@@ -8,10 +8,10 @@
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 
-namespace stewkk::sql {
+#include <stewkk/sql/logic/executor/buffer_size.hpp>
+#include <stewkk/sql/logic/executor/materialization.hpp>
 
-// TODO: deduplicate with seq_scan
-constexpr static std::size_t kBufSize = 10;
+namespace stewkk::sql {
 
 namespace {
 
@@ -359,7 +359,7 @@ boost::asio::awaitable<Result<Relation>> Executor::Execute(const Operator& op) c
     }
     std::clog << std::format("Received {} tuples in root\n", buf.size());
 
-    std::copy(buf.begin(), buf.end(), std::back_inserter(result));
+    std::move(buf.begin(), buf.end(), std::back_inserter(result));
   }
 
   std::clog << std::format("Total {} tuples in root\n", result.size());
@@ -386,6 +386,7 @@ boost::asio::awaitable<void> Executor::Execute(const Operator& op, AttributesInf
       co_return;
     }
     boost::asio::awaitable<void> operator()(const CrossJoin& cross_join) {
+      co_await executor.ExecuteCrossJoin(cross_join, attr_chan, tuples_chan);
       co_return;
     }
 
@@ -486,6 +487,83 @@ boost::asio::awaitable<void> Executor::ExecuteFilter(const Filter& filter,
                                         boost::asio::use_awaitable);
   }
   out_tuples_chan.close();
+}
+
+boost::asio::awaitable<void> Executor::ExecuteCrossJoin(const CrossJoin& cross_join,
+                                                        AttributesInfoChannel& attr_chan,
+                                                        TuplesChannel& tuples_chan) const {
+  std::clog << "Executing cross join\n";
+  auto executor = co_await boost::asio::this_coro::executor;
+  AttributesInfoChannel lhs_attrs_chan{executor, 1};
+  TuplesChannel lhs_tuples_chan{executor, 1};
+  boost::asio::co_spawn(executor, Execute(*cross_join.lhs, lhs_attrs_chan, lhs_tuples_chan),
+                        boost::asio::detached);
+  AttributesInfoChannel rhs_attrs_chan{executor, 1};
+  TuplesChannel rhs_tuples_chan{executor, 1};
+  boost::asio::co_spawn(executor, Execute(*cross_join.rhs, rhs_attrs_chan, rhs_tuples_chan),
+                        boost::asio::detached);
+
+  auto attrs = co_await lhs_attrs_chan.async_receive(boost::asio::use_awaitable);
+  auto rhs_attrs = co_await rhs_attrs_chan.async_receive(boost::asio::use_awaitable);
+  std::ranges::copy(std::move(rhs_attrs), std::back_inserter(attrs));
+  std::clog << "Cross join received attrs\n";
+
+  std::clog << "Cross join sending attrs\n";
+  co_await attr_chan.async_send(boost::system::error_code{}, attrs, boost::asio::use_awaitable);
+  attr_chan.close();
+  std::clog << "Cross join sent attrs\n";
+
+  // FIXME: optimization: check how cross_joins currently generate tree. If
+  // branching is happening on lhs, than rhs should be materialized instead of
+  // lhs.
+
+  // step 1: materialize lhs
+  DiskFileWriter writer;
+  for (;;) {
+    Tuples buf;
+    try {
+      buf = co_await lhs_tuples_chan.async_receive(boost::asio::use_awaitable);
+    } catch (const boost::system::system_error& ex) {
+      break;
+    }
+    std::clog << std::format("Received {} tuples in cross join as lhs\n", buf.size());
+    writer.Write(buf);
+  }
+
+  // step 2: receive chunks from rhs and join them with lhs
+  auto reader = std::move(writer).GetDiskFileReader();
+  for (;;) {
+    Tuples buf_rhs;
+    try {
+      buf_rhs = co_await rhs_tuples_chan.async_receive(boost::asio::use_awaitable);
+    } catch (const boost::system::system_error& ex) {
+      break;
+    }
+    std::clog << std::format("Received {} tuples in cross join as rhs\n", buf_rhs.size());
+    for (;;) {
+      auto buf_lhs = reader.Read();
+      if (buf_lhs.empty()) {
+        break;
+      }
+      std::clog << std::format("Read {} tuples back from materialized form\n", buf_lhs.size());
+      for (const auto& tuple_lhs : buf_lhs) {
+        Tuples buf_res;
+        buf_res.reserve(kBufSize);
+        // NOTE: not optimal if rhs is a small table (<< kBufSize tuples)
+        for (const auto& tuple_rhs : buf_rhs) {
+          Tuple joined_tuple;
+          joined_tuple.reserve(tuple_lhs.size()+tuple_rhs.size());
+          std::ranges::copy(tuple_lhs, std::back_inserter(joined_tuple));
+          std::ranges::copy(tuple_rhs, std::back_inserter(joined_tuple));
+          buf_res.push_back(std::move(joined_tuple));
+        }
+        std::clog << std::format("Sending {} tuples from cross join\n", buf_res.size());
+        co_await tuples_chan.async_send(boost::system::error_code{}, std::move(buf_res),
+                                        boost::asio::use_awaitable);
+      }
+    }
+  }
+  tuples_chan.close();
 }
 
 }  // namespace stewkk::sql

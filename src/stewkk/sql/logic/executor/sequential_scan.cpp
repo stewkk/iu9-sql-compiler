@@ -7,10 +7,9 @@
 #include <boost/asio/use_awaitable.hpp>
 
 #include <stewkk/sql/models/executor/tuple.hpp>
+#include <stewkk/sql/logic/executor/buffer_size.hpp>
 
 namespace stewkk::sql {
-
-constexpr static std::size_t kBufSize = 10;
 
 namespace {
 

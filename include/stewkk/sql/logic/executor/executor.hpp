@@ -27,6 +27,9 @@ private:
                                                  TuplesChannel& tuples_chan) const;
   boost::asio::awaitable<void> ExecuteFilter(const Filter& filter, AttributesInfoChannel& attr_chan,
                                              TuplesChannel& tuples_chan) const;
+  boost::asio::awaitable<void> ExecuteCrossJoin(const CrossJoin& cross_join,
+                                                AttributesInfoChannel& attr_chan,
+                                                TuplesChannel& tuples_chan) const;
 
 private:
   SequentialScan sequential_scan_;

@@ -23,5 +23,6 @@ target_link_options(unittests PRIVATE ${BASE_COMPILE_FLAGS})
 target_link_libraries(unittests PRIVATE gmock_main libsql antlr4_static
   Boost::asio
   Boost::thread
+  Boost::filesystem
 )
 gtest_discover_tests(unittests)
