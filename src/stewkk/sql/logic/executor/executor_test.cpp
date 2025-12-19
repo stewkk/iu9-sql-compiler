@@ -251,4 +251,33 @@ TEST(ExecutorTest, LeftJoin) {
   pool.join();
 }
 
+TEST(ExecutorTest, RightJoin) {
+  boost::asio::thread_pool pool{4};
+  boost::asio::co_spawn(
+      pool,
+      []() -> boost::asio::awaitable<Result<Relation>> {
+        std::stringstream s{"SELECT * FROM employees RIGHT JOIN departments ON employees.department_id = departments.id;"};
+        Operator op = GetAST(s).value();
+        CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
+        Executor executor(std::move(seq_scan));
+
+        auto got = co_await executor.Execute(op);
+
+        co_return got;
+      }(),
+      [](std::exception_ptr p, Result<Relation> got) {
+        if (p) std::rethrow_exception(p);
+
+        ASSERT_THAT(got.value().attributes, Eq(AttributesInfo{
+                                                {"employees", "id", Type::kInt},
+                                                {"employees", "department_id", Type::kInt},
+                                                {"departments", "id", Type::kInt},
+                                            }));
+        ASSERT_THAT(got.value().tuples.size(), Eq(5));
+        ASSERT_THAT(ToString(got.value()), Eq(ReadFromFile(kProjectDir+"/test/static/executor/expected_right_join.txt")));
+      });
+
+  pool.join();
+}
+
 }  // namespace stewkk::sql
