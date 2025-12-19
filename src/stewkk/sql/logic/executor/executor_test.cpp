@@ -1,5 +1,8 @@
 #include <gmock/gmock.h>
 
+#include <filesystem>
+#include <fstream>
+
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/co_spawn.hpp>
@@ -13,6 +16,17 @@ using ::testing::Eq;
 namespace stewkk::sql {
 
 const static std::string kProjectDir = std::getenv("PWD");
+
+namespace {
+
+std::string ReadFromFile(std::filesystem::path path) {
+  std::ifstream f{path};
+  std::ostringstream stream;
+  stream << f.rdbuf();
+  return stream.str();
+}
+
+} // namespace
 
 TEST(ExecutorTest, SimpleSelect) {
   boost::asio::io_context ctx;
@@ -202,6 +216,36 @@ TEST(ExecutorTest, InnerJoin) {
         ASSERT_THAT(std::get<NonNullValue>(got.value().tuples[0][0]).int_value, Eq(1));
         ASSERT_THAT(std::get<NonNullValue>(got.value().tuples[0][2]).int_value, Eq(3));
         ASSERT_THAT(got.value().tuples.size(), Eq(3));
+        ASSERT_THAT(ToString(got.value()), Eq(ReadFromFile(kProjectDir+"/test/static/executor/expected_inner_join.txt")));
+      });
+
+  pool.join();
+}
+
+TEST(ExecutorTest, LeftJoin) {
+  boost::asio::thread_pool pool{4};
+  boost::asio::co_spawn(
+      pool,
+      []() -> boost::asio::awaitable<Result<Relation>> {
+        std::stringstream s{"SELECT * FROM employees LEFT OUTER JOIN departments ON employees.department_id = departments.id;"};
+        Operator op = GetAST(s).value();
+        CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
+        Executor executor(std::move(seq_scan));
+
+        auto got = co_await executor.Execute(op);
+
+        co_return got;
+      }(),
+      [](std::exception_ptr p, Result<Relation> got) {
+        if (p) std::rethrow_exception(p);
+
+        ASSERT_THAT(got.value().attributes, Eq(AttributesInfo{
+                                                {"departments", "id", Type::kInt},
+                                                {"employees", "id", Type::kInt},
+                                                {"employees", "department_id", Type::kInt},
+                                            }));
+        ASSERT_THAT(got.value().tuples.size(), Eq(11));
+        ASSERT_THAT(ToString(got.value()), Eq(ReadFromFile(kProjectDir+"/test/static/executor/expected_left_join.txt")));
       });
 
   pool.join();

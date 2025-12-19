@@ -34,6 +34,8 @@ union NonNullValue {
     Trilean trilean_value;
 };
 
+std::string ToString(Trilean v);
+
 NonNullValue GetTrileanValue(Trilean v);
 
 using Value = std::variant<NonNullValue, NullValue>;
@@ -45,5 +47,7 @@ struct Relation {
     AttributesInfo attributes;
     Tuples tuples;
 };
+
+std::string ToString(const Relation& relation);
 
 }  // namespace stewkk::sql

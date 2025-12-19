@@ -70,6 +70,7 @@ std::string GetDotRepresentation(const Expression& expr) {
 }
 
 std::string GetDotRepresentation(const Operator& op) {
+  // FIXME: refactor to use osstream
     struct DotFormatter {
         std::pair<std::string, std::string> operator()(const Projection& op) {
           auto exprs = op.expressions
