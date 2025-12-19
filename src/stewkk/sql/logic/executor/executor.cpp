@@ -335,30 +335,66 @@ bool ApplyFilter(const Tuple& source, const AttributesInfo& source_attrs, const 
   return std::visit(FilterVisitor{}, CalcExpression(source, source_attrs, filter.expr));
 }
 
+boost::asio::awaitable<std::pair<AttributesInfoChannel, TuplesChannel>> GetChannels() {
+  auto executor = co_await boost::asio::this_coro::executor;
+  co_return std::make_pair(AttributesInfoChannel{executor, 1}, TuplesChannel{executor, 1});
+}
+
+boost::asio::awaitable<Tuples> ReceiveTuples(TuplesChannel& chan) {
+    Tuples buf;
+    try {
+      buf = co_await chan.async_receive(boost::asio::use_awaitable);
+    } catch (const boost::system::system_error& ex) {}
+    co_return buf;
+}
+
+boost::asio::awaitable<AttributesInfo> ConcatAttrs(AttributesInfoChannel& lhs_attrs_chan, AttributesInfoChannel& rhs_attrs_chan) {
+  auto attrs = co_await lhs_attrs_chan.async_receive(boost::asio::use_awaitable);
+  auto rhs_attrs = co_await rhs_attrs_chan.async_receive(boost::asio::use_awaitable);
+  std::ranges::copy(std::move(rhs_attrs), std::back_inserter(attrs));
+  co_return attrs;
+}
+
+boost::asio::awaitable<DiskFileReader> MaterializeChannel(TuplesChannel& tuples_chan) {
+  DiskFileWriter writer;
+  for (;;) {
+    auto buf = co_await ReceiveTuples(tuples_chan);
+    if (buf.empty()) {
+      break;
+    }
+    writer.Write(buf);
+  }
+
+  co_return std::move(writer).GetDiskFileReader();
+}
+
+Tuple ConcatTuples(const Tuple& lhs, const Tuple& rhs) {
+  Tuple joined_tuple;
+  joined_tuple.reserve(lhs.size() + rhs.size());
+  std::ranges::copy(lhs, std::back_inserter(joined_tuple));
+  std::ranges::copy(rhs, std::back_inserter(joined_tuple));
+  return joined_tuple;
+}
+
 } // namespace
 
 Executor::Executor(SequentialScan seq_scan)
     : sequential_scan_(std::move(seq_scan)) {}
 
 boost::asio::awaitable<Result<Relation>> Executor::Execute(const Operator& op) const {
-  auto executor = co_await boost::asio::this_coro::executor;
-  AttributesInfoChannel attr_chan{executor, 1};
-  TuplesChannel tuples_chan{executor, 1};
-  boost::asio::co_spawn(executor, Execute(op, attr_chan, tuples_chan), boost::asio::detached);
+  auto [attr_chan, tuples_chan] = co_await GetChannels();
+  co_await SpawnExecutor(op, attr_chan, tuples_chan);
 
   auto attrs = co_await attr_chan.async_receive(boost::asio::use_awaitable);
   std::clog << "Received attrs in root\n";
 
   Tuples result;
   for (;;) {
-    Tuples buf;
-    try {
-      buf = co_await tuples_chan.async_receive(boost::asio::use_awaitable);
-    } catch (const boost::system::system_error& ex) {
+    auto buf = co_await ReceiveTuples(tuples_chan);
+    if (buf.empty()) {
       break;
     }
     std::clog << std::format("Received {} tuples in root\n", buf.size());
-
     std::move(buf.begin(), buf.end(), std::back_inserter(result));
   }
 
@@ -383,6 +419,7 @@ boost::asio::awaitable<void> Executor::Execute(const Operator& op, AttributesInf
       co_return;
     }
     boost::asio::awaitable<void> operator()(const Join& join) {
+      co_await executor.ExecuteJoin(join, attr_chan, tuples_chan);
       co_return;
     }
     boost::asio::awaitable<void> operator()(const CrossJoin& cross_join) {
@@ -402,24 +439,18 @@ boost::asio::awaitable<void> Executor::ExecuteProjection(const Projection& proj,
                                                          AttributesInfoChannel& out_attr_chan,
                                                          TuplesChannel& out_tuples_chan) const {
   std::clog << "Executing projection\n";
-  auto executor = co_await boost::asio::this_coro::executor;
-  AttributesInfoChannel in_attrs_chan{executor, 1};
-  TuplesChannel in_tuples_chan{executor, 1};
-  boost::asio::co_spawn(executor, Execute(*proj.source, in_attrs_chan, in_tuples_chan),
-                        boost::asio::detached);
+  auto [in_attrs_chan, in_tuples_chan] = co_await GetChannels();
+  co_await SpawnExecutor(*proj.source, in_attrs_chan, in_tuples_chan);
 
   auto attrs = co_await in_attrs_chan.async_receive(boost::asio::use_awaitable);
-
   auto attrs_after = GetAttributesAfterProjection(attrs, proj);
   co_await out_attr_chan.async_send(boost::system::error_code{}, attrs_after,
                                     boost::asio::use_awaitable);
   out_attr_chan.close();
 
   for (;;) {
-    Tuples buf;
-    try {
-      buf = co_await in_tuples_chan.async_receive(boost::asio::use_awaitable);
-    } catch (const boost::system::system_error& ex) {
+    auto buf = co_await ReceiveTuples(in_tuples_chan);
+    if (buf.empty()) {
       break;
     }
     // FIXME: add JIT
@@ -437,11 +468,8 @@ boost::asio::awaitable<void> Executor::ExecuteFilter(const Filter& filter,
                                                      AttributesInfoChannel& out_attr_chan,
                                                      TuplesChannel& out_tuples_chan) const {
   std::clog << "Executing filter\n";
-  auto executor = co_await boost::asio::this_coro::executor;
-  AttributesInfoChannel in_attrs_chan{executor, 1};
-  TuplesChannel in_tuples_chan{executor, 1};
-  boost::asio::co_spawn(executor, Execute(*filter.source, in_attrs_chan, in_tuples_chan),
-                        boost::asio::detached);
+  auto [in_attrs_chan, in_tuples_chan] = co_await GetChannels();
+  co_await SpawnExecutor(*filter.source, in_attrs_chan, in_tuples_chan);
 
   auto attrs = co_await in_attrs_chan.async_receive(boost::asio::use_awaitable);
   std::clog << "Filter received attrs\n";
@@ -458,11 +486,8 @@ boost::asio::awaitable<void> Executor::ExecuteFilter(const Filter& filter,
   Tuples output_buf;
   output_buf.reserve(kBufSize);
   for (;;) {
-    Tuples input_buf;
-    try {
-      std::clog << "Filter waiting on tuples_chan\n";
-      input_buf = co_await in_tuples_chan.async_receive(boost::asio::use_awaitable);
-    } catch (const boost::system::system_error& ex) {
+    auto input_buf = co_await ReceiveTuples(in_tuples_chan);
+    if (input_buf.empty()) {
       break;
     }
     // FIXME: add JIT
@@ -493,19 +518,12 @@ boost::asio::awaitable<void> Executor::ExecuteCrossJoin(const CrossJoin& cross_j
                                                         AttributesInfoChannel& attr_chan,
                                                         TuplesChannel& tuples_chan) const {
   std::clog << "Executing cross join\n";
-  auto executor = co_await boost::asio::this_coro::executor;
-  AttributesInfoChannel lhs_attrs_chan{executor, 1};
-  TuplesChannel lhs_tuples_chan{executor, 1};
-  boost::asio::co_spawn(executor, Execute(*cross_join.lhs, lhs_attrs_chan, lhs_tuples_chan),
-                        boost::asio::detached);
-  AttributesInfoChannel rhs_attrs_chan{executor, 1};
-  TuplesChannel rhs_tuples_chan{executor, 1};
-  boost::asio::co_spawn(executor, Execute(*cross_join.rhs, rhs_attrs_chan, rhs_tuples_chan),
-                        boost::asio::detached);
+  auto [lhs_attrs_chan, lhs_tuples_chan] = co_await GetChannels();
+  co_await SpawnExecutor(*cross_join.lhs, lhs_attrs_chan, lhs_tuples_chan);
+  auto [rhs_attrs_chan, rhs_tuples_chan] = co_await GetChannels();
+  co_await SpawnExecutor(*cross_join.rhs, rhs_attrs_chan, rhs_tuples_chan);
 
-  auto attrs = co_await lhs_attrs_chan.async_receive(boost::asio::use_awaitable);
-  auto rhs_attrs = co_await rhs_attrs_chan.async_receive(boost::asio::use_awaitable);
-  std::ranges::copy(std::move(rhs_attrs), std::back_inserter(attrs));
+  auto attrs = co_await ConcatAttrs(lhs_attrs_chan, rhs_attrs_chan);
   std::clog << "Cross join received attrs\n";
 
   std::clog << "Cross join sending attrs\n";
@@ -513,33 +531,16 @@ boost::asio::awaitable<void> Executor::ExecuteCrossJoin(const CrossJoin& cross_j
   attr_chan.close();
   std::clog << "Cross join sent attrs\n";
 
-  // FIXME: optimization: check how cross_joins currently generate tree. If
-  // branching is happening on lhs, than rhs should be materialized instead of
-  // lhs.
+  auto reader = co_await MaterializeChannel(lhs_tuples_chan);
+  std::clog << std::format("Materialized tuples in cross join\n");
 
-  // step 1: materialize lhs
-  DiskFileWriter writer;
   for (;;) {
-    Tuples buf;
-    try {
-      buf = co_await lhs_tuples_chan.async_receive(boost::asio::use_awaitable);
-    } catch (const boost::system::system_error& ex) {
-      break;
-    }
-    std::clog << std::format("Received {} tuples in cross join as lhs\n", buf.size());
-    writer.Write(buf);
-  }
-
-  // step 2: receive chunks from rhs and join them with lhs
-  auto reader = std::move(writer).GetDiskFileReader();
-  for (;;) {
-    Tuples buf_rhs;
-    try {
-      buf_rhs = co_await rhs_tuples_chan.async_receive(boost::asio::use_awaitable);
-    } catch (const boost::system::system_error& ex) {
+    auto buf_rhs = co_await ReceiveTuples(rhs_tuples_chan);
+    if (buf_rhs.empty()) {
       break;
     }
     std::clog << std::format("Received {} tuples in cross join as rhs\n", buf_rhs.size());
+
     for (;;) {
       auto buf_lhs = reader.Read();
       if (buf_lhs.empty()) {
@@ -547,23 +548,111 @@ boost::asio::awaitable<void> Executor::ExecuteCrossJoin(const CrossJoin& cross_j
       }
       std::clog << std::format("Read {} tuples back from materialized form\n", buf_lhs.size());
       for (const auto& tuple_lhs : buf_lhs) {
-        Tuples buf_res;
-        buf_res.reserve(kBufSize);
+        Tuples buf_joined;
+        buf_joined.reserve(kBufSize);
         // NOTE: not optimal if rhs is a small table (<< kBufSize tuples)
         for (const auto& tuple_rhs : buf_rhs) {
-          Tuple joined_tuple;
-          joined_tuple.reserve(tuple_lhs.size()+tuple_rhs.size());
-          std::ranges::copy(tuple_lhs, std::back_inserter(joined_tuple));
-          std::ranges::copy(tuple_rhs, std::back_inserter(joined_tuple));
-          buf_res.push_back(std::move(joined_tuple));
+          auto joined_tuple = ConcatTuples(tuple_lhs, tuple_rhs);
+          buf_joined.push_back(std::move(joined_tuple));
         }
-        std::clog << std::format("Sending {} tuples from cross join\n", buf_res.size());
+        std::clog << std::format("Sending {} tuples from cross join\n", buf_joined.size());
+        co_await tuples_chan.async_send(boost::system::error_code{}, std::move(buf_joined),
+                                        boost::asio::use_awaitable);
+      }
+    }
+  }
+  tuples_chan.close();
+}
+
+boost::asio::awaitable<void> Executor::ExecuteJoin(const Join& join,
+                                                   AttributesInfoChannel& attr_chan,
+                                                   TuplesChannel& tuples_chan) const {
+  std::clog << "Executing join\n";
+  if (join.type == JoinType::kFull) {
+    throw std::logic_error{"Full joins are not supported by executor"};
+  }
+  if (join.type == JoinType::kLeft) {
+    std::swap(*join.lhs, *join.rhs);
+  }
+  auto [lhs_attrs_chan, lhs_tuples_chan] = co_await GetChannels();
+  co_await SpawnExecutor(*join.lhs, lhs_attrs_chan, lhs_tuples_chan);
+  auto [rhs_attrs_chan, rhs_tuples_chan] = co_await GetChannels();
+  co_await SpawnExecutor(*join.rhs, rhs_attrs_chan, rhs_tuples_chan);
+
+  auto attrs = co_await ConcatAttrs(lhs_attrs_chan, rhs_attrs_chan);
+  std::clog << "Join received attrs\n";
+
+  std::clog << "Join sending attrs\n";
+  co_await attr_chan.async_send(boost::system::error_code{}, attrs, boost::asio::use_awaitable);
+  attr_chan.close();
+  std::clog << "Join sent attrs\n";
+
+  auto reader = co_await MaterializeChannel(lhs_tuples_chan);
+  for (;;) {
+    auto buf_rhs = co_await ReceiveTuples(rhs_tuples_chan);
+    if (buf_rhs.empty()) {
+      break;
+    }
+    std::clog << std::format("Received {} tuples in join as rhs\n", buf_rhs.size());
+
+    std::vector<char> used(buf_rhs.size(), false);
+    for (;;) {
+      auto buf_lhs = reader.Read();
+      if (buf_lhs.empty()) {
+        break;
+      }
+      std::clog << std::format("Read {} tuples back from materialized form\n", buf_lhs.size());
+
+      for (const auto& tuple_lhs : buf_lhs) {
+        Tuples buf_res;
+        buf_res.reserve(kBufSize);
+        for (const auto& [rhs_index, tuple_rhs] : buf_rhs | std::views::enumerate) {
+          auto joined_tuple = ConcatTuples(tuple_lhs, tuple_rhs);
+          auto qual_expr_res = CalcExpression(joined_tuple, attrs, join.qual);
+          if (std::get<NonNullValue>(std::move(qual_expr_res)).trilean_value == Trilean::kTrue) {
+            buf_res.push_back(std::move(joined_tuple));
+            used[rhs_index] = true;
+          }
+        }
+        if (!buf_res.empty()) {
+          std::clog << std::format("Sending {} tuples from join\n", buf_res.size());
+          co_await tuples_chan.async_send(boost::system::error_code{}, std::move(buf_res),
+                                          boost::asio::use_awaitable);
+        }
+      }
+    }
+
+    if (join.type == JoinType::kRight || join.type == JoinType::kLeft) {
+      Tuples buf_res;
+      buf_res.reserve(kBufSize);
+      for (auto [rhs_index, is_used] : used | std::views::enumerate) {
+        if (is_used) {
+          continue;
+        }
+
+        auto rhs_tuple = std::move(buf_rhs[rhs_index]);
+
+        auto lhs_size = attrs.size() - rhs_tuple.size();
+        Tuple lhs_tuple(lhs_size, NullValue{});
+
+        auto joined_tuple = ConcatTuples(lhs_tuple, rhs_tuple);
+        buf_res.push_back(std::move(joined_tuple));
+      }
+      if (!buf_res.empty()) {
+        std::clog << std::format("Sending {} tuples from join\n", buf_res.size());
         co_await tuples_chan.async_send(boost::system::error_code{}, std::move(buf_res),
                                         boost::asio::use_awaitable);
       }
     }
   }
   tuples_chan.close();
+}
+
+boost::asio::awaitable<void> Executor::SpawnExecutor(const Operator& op,
+                                                     AttributesInfoChannel& attr_chan,
+                                                     TuplesChannel& tuple_chan) const {
+  auto executor = co_await boost::asio::this_coro::executor;
+  boost::asio::co_spawn(executor, Execute(op, attr_chan, tuple_chan), boost::asio::detached);
 }
 
 }  // namespace stewkk::sql

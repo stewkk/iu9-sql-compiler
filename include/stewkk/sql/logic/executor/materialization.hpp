@@ -14,6 +14,8 @@ class DiskFileReader {
     public:
         DiskFileReader(fs::path path, std::size_t tuple_size);
         ~DiskFileReader();
+        DiskFileReader(DiskFileReader&& other) = default;
+        DiskFileReader& operator=(DiskFileReader&& other) = default;
         Tuples Read();
     private:
         fs::path path_;

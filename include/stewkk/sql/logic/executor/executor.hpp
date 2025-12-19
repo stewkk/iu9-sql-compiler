@@ -30,6 +30,9 @@ private:
   boost::asio::awaitable<void> ExecuteCrossJoin(const CrossJoin& cross_join,
                                                 AttributesInfoChannel& attr_chan,
                                                 TuplesChannel& tuples_chan) const;
+  boost::asio::awaitable<void> ExecuteJoin(const Join& join, AttributesInfoChannel& attr_chan,
+                                           TuplesChannel& tuples_chan) const;
+  boost::asio::awaitable<void> SpawnExecutor(const Operator& op, AttributesInfoChannel& attr_chan, TuplesChannel& tuple_chan) const;
 
 private:
   SequentialScan sequential_scan_;
