@@ -13,6 +13,8 @@ option(SANITIZE_ADDRESS "Enable AddressSanitizer" OFF)
 option(SANITIZE_UNDEFINED "Enable UndefinedBehaviorSanitizer" OFF)
 option(SANITIZE_THREADS "Enable ThreadSanitizer" OFF)
 
+add_compile_options(-Wno-deprecated-declarations)
+
 if (SANITIZE_ADDRESS)
     add_compile_options(-fsanitize=address)
     add_link_options(-fsanitize=address)

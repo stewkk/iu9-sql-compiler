@@ -47,8 +47,7 @@ TEST(ExecutorTest, SimpleSelect) {
 
         ASSERT_THAT(got.value().attributes,
                     Eq(AttributesInfo{{"users", "id", Type::kInt}, {"users", "age", Type::kInt}}));
-        ASSERT_THAT(std::get<NonNullValue>(got.value().tuples[0][0]).int_value, Eq(1));
-        ASSERT_THAT(std::get<NonNullValue>(got.value().tuples[0][1]).int_value, Eq(33));
+        ASSERT_THAT(got.value().tuples[0], Eq(Tuple{Value{false, 1}, Value{false, 33}}));
         ASSERT_THAT(got.value().tuples.size(), Eq(17));
       });
 
@@ -74,8 +73,7 @@ TEST(ExecutorTest, SimpleSelectWithParallelism) {
 
         ASSERT_THAT(got.value().attributes,
                     Eq(AttributesInfo{{"users", "id", Type::kInt}, {"users", "age", Type::kInt}}));
-        ASSERT_THAT(std::get<NonNullValue>(got.value().tuples[0][0]).int_value, Eq(1));
-        ASSERT_THAT(std::get<NonNullValue>(got.value().tuples[0][1]).int_value, Eq(33));
+        ASSERT_THAT(got.value().tuples[0], Eq(Tuple{Value{false, 1}, Value{false, 33}}));
         ASSERT_THAT(got.value().tuples.size(), Eq(17));
       });
 
@@ -101,7 +99,7 @@ TEST(ExecutorTest, Projection) {
 
         ASSERT_THAT(got.value().attributes,
                     Eq(AttributesInfo{{"users", "id", Type::kInt}}));
-        ASSERT_THAT(std::get<NonNullValue>(got.value().tuples[1][0]).int_value, Eq(2));
+        ASSERT_THAT(got.value().tuples[1], Eq(Tuple{Value{false, 2}}));
         ASSERT_THAT(got.value().tuples.size(), Eq(17));
       });
 
@@ -127,7 +125,7 @@ TEST(ExecutorTest, Filter) {
 
         ASSERT_THAT(got.value().attributes,
                     Eq(AttributesInfo{{"users", "id", Type::kInt}}));
-        ASSERT_THAT(std::get<NonNullValue>(got.value().tuples[0][0]).int_value, Eq(5));
+        ASSERT_THAT(got.value().tuples[0], Eq(Tuple{Value{false, 5}}));
         ASSERT_THAT(got.value().tuples.size(), Eq(2));
       });
 
@@ -153,7 +151,7 @@ TEST(ExecutorTest, FilterMany) {
 
         ASSERT_THAT(got.value().attributes,
                     Eq(AttributesInfo{{"users", "id", Type::kInt}}));
-        ASSERT_THAT(std::get<NonNullValue>(got.value().tuples[0][0]).int_value, Eq(1));
+        ASSERT_THAT(got.value().tuples[0], Eq(Tuple{Value{false, 1}}));
         ASSERT_THAT(got.value().tuples.size(), Eq(15));
       });
 
@@ -183,8 +181,7 @@ TEST(ExecutorTest, CrossJoin) {
                                                 {"books", "id", Type::kInt},
                                                 {"books", "price", Type::kInt},
                                             }));
-        ASSERT_THAT(std::get<NonNullValue>(got.value().tuples[0][3]).int_value, Eq(55));
-        ASSERT_THAT(std::get<NonNullValue>(got.value().tuples[0][0]).int_value, Eq(5));
+        ASSERT_THAT(got.value().tuples[0], Eq(Tuple{Value{false, 5}, Value{false, 1}, Value{false, 1}, Value{false, 55}}));
         ASSERT_THAT(got.value().tuples.size(), Eq(6));
       });
 
@@ -213,8 +210,6 @@ TEST(ExecutorTest, InnerJoin) {
                                                 {"employees", "department_id", Type::kInt},
                                                 {"departments", "id", Type::kInt},
                                             }));
-        ASSERT_THAT(std::get<NonNullValue>(got.value().tuples[0][0]).int_value, Eq(1));
-        ASSERT_THAT(std::get<NonNullValue>(got.value().tuples[0][2]).int_value, Eq(3));
         ASSERT_THAT(got.value().tuples.size(), Eq(3));
         ASSERT_THAT(ToString(got.value()), Eq(ReadFromFile(kProjectDir+"/test/static/executor/expected_inner_join.txt")));
       });

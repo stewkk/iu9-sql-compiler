@@ -2,13 +2,8 @@
 
 #include <vector>
 #include <string>
-#include <variant>
 
 namespace stewkk::sql {
-
-struct NullValue {
-    auto operator<=>(const NullValue& other) const = default;
-};
 
 enum class Type {
     kInt,
@@ -23,22 +18,24 @@ struct AttributeInfo {
     auto operator<=>(const AttributeInfo& other) const = default;
 };
 
-enum class Trilean {
-   kTrue,
-   kFalse,
-   kUnknown,
-};
-
+// NOTE: union leaves possibility to add other data types later
 union NonNullValue {
     int64_t int_value;
-    Trilean trilean_value;
+    bool bool_value;
 };
 
-std::string ToString(Trilean v);
+std::string ToString(bool v);
 
-NonNullValue GetTrileanValue(Trilean v);
+// NOTE: bare struct for compatibility with llvm
+struct Value {
+    bool is_null;
+    NonNullValue value;
 
-using Value = std::variant<NonNullValue, NullValue>;
+    bool operator==(const Value& other) const;
+};
+
+std::string ToString(Value v, const AttributeInfo& attr);
+
 using Tuple = std::vector<Value>;
 using Tuples = std::vector<Tuple>;
 using AttributesInfo = std::vector<AttributeInfo>;

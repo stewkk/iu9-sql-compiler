@@ -141,52 +141,24 @@ AttributesInfo GetAttributesAfterProjection(const AttributesInfo& attrs, const P
   return result_attributes;
 }
 
-template <typename Op>
+template <typename Op, typename Ret>
   requires std::invocable<Op, int64_t, int64_t>
-           && std::same_as<std::invoke_result_t<Op, int64_t, int64_t>, int64_t>
-Value ApplyBinaryIntegerOperator(Value lhs, Value rhs) {
-  if (std::get_if<NullValue>(&lhs) || std::get_if<NullValue>(&rhs)) {
-    return NullValue{};
+           && std::same_as<std::invoke_result_t<Op, int64_t, int64_t>, Ret>
+Value ApplyIntegersOperator(Value lhs, Value rhs) {
+  if (lhs.is_null || rhs.is_null) {
+    return Value{true};
   }
-  auto lhs_value = std::get<NonNullValue>(std::move(lhs));
-  auto rhs_value = std::get<NonNullValue>(std::move(rhs));
-  return NonNullValue{Op{}(lhs_value.int_value, rhs_value.int_value)};
-}
-
-template <typename Op>
-  requires std::invocable<Op, int64_t, int64_t>
-           && std::same_as<std::invoke_result_t<Op, int64_t, int64_t>, bool>
-Value ApplyCompareIntegersOperator(Value lhs, Value rhs) {
-  if (std::get_if<NullValue>(&lhs) || std::get_if<NullValue>(&rhs)) {
-    return NonNullValue{GetTrileanValue(Trilean::kUnknown)};
-  }
-  auto lhs_value = std::get<NonNullValue>(std::move(lhs)).int_value;
-  auto rhs_value = std::get<NonNullValue>(std::move(rhs)).int_value;
-  auto res = Op{}(lhs_value, rhs_value);
-  if (res) {
-    return GetTrileanValue(Trilean::kTrue);
-  }
-  return GetTrileanValue(Trilean::kFalse);
+  return Value{false, Op{}(lhs.value.int_value, rhs.value.int_value)};
 }
 
 template <typename Op>
   requires std::invocable<Op, bool, bool>
            && std::same_as<std::invoke_result_t<Op, bool, bool>, bool>
-Value ApplyBinaryBooleanOperator(Value lhs, Value rhs) {
-  if (std::get_if<NullValue>(&lhs) || std::get_if<NullValue>(&rhs)) {
-    return NonNullValue{GetTrileanValue(Trilean::kUnknown)};
+Value ApplyBooleanOperator(Value lhs, Value rhs) {
+  if (lhs.is_null || rhs.is_null) {
+    return Value{true};
   }
-  auto lhs_value = std::get<NonNullValue>(std::move(lhs)).trilean_value;
-  auto rhs_value = std::get<NonNullValue>(std::move(rhs)).trilean_value;
-  if (lhs_value == Trilean::kUnknown || rhs_value == Trilean::kUnknown) {
-    return NonNullValue{GetTrileanValue(Trilean::kUnknown)};
-  }
-  auto lhs_bool = lhs_value == Trilean::kTrue;
-  auto rhs_bool = rhs_value == Trilean::kTrue;
-  if (Op{}(lhs_bool, rhs_bool)) {
-    return GetTrileanValue(Trilean::kTrue);
-  }
-  return GetTrileanValue(Trilean::kFalse);
+  return Value{false, Op{}(lhs.value.bool_value, rhs.value.bool_value)};
 }
 
 struct IntPow {
@@ -203,50 +175,50 @@ Value CalcExpression(const Tuple& source, const AttributesInfo& source_attrs, co
       switch (expr.binop) {
         case BinaryOp::kGt:
           if (GetExpressionTypeUnchecked(*expr.lhs, source_attrs) == Type::kBool) {
-            return ApplyBinaryBooleanOperator<std::greater<void>>(std::move(lhs), std::move(rhs));
+            return ApplyBooleanOperator<std::greater<void>>(std::move(lhs), std::move(rhs));
           }
-          return ApplyCompareIntegersOperator<std::greater<void>>(std::move(lhs), std::move(rhs));
+          return ApplyIntegersOperator<std::greater<void>, bool>(std::move(lhs), std::move(rhs));
         case BinaryOp::kLt:
           if (GetExpressionTypeUnchecked(*expr.lhs, source_attrs) == Type::kBool) {
-            return ApplyBinaryBooleanOperator<std::less<void>>(std::move(lhs), std::move(rhs));
+            return ApplyBooleanOperator<std::less<void>>(std::move(lhs), std::move(rhs));
           }
-          return ApplyCompareIntegersOperator<std::less<void>>(std::move(lhs), std::move(rhs));
+          return ApplyIntegersOperator<std::less<void>, bool>(std::move(lhs), std::move(rhs));
         case BinaryOp::kLe:
           if (GetExpressionTypeUnchecked(*expr.lhs, source_attrs) == Type::kBool) {
-            return ApplyBinaryBooleanOperator<std::less_equal<void>>(std::move(lhs), std::move(rhs));
+            return ApplyBooleanOperator<std::less_equal<void>>(std::move(lhs), std::move(rhs));
           }
-          return ApplyCompareIntegersOperator<std::less_equal<void>>(std::move(lhs), std::move(rhs));
+          return ApplyIntegersOperator<std::less_equal<void>, bool>(std::move(lhs), std::move(rhs));
         case BinaryOp::kGe:
           if (GetExpressionTypeUnchecked(*expr.lhs, source_attrs) == Type::kBool) {
-            return ApplyBinaryBooleanOperator<std::greater_equal<void>>(std::move(lhs), std::move(rhs));
+            return ApplyBooleanOperator<std::greater_equal<void>>(std::move(lhs), std::move(rhs));
           }
-          return ApplyCompareIntegersOperator<std::greater_equal<void>>(std::move(lhs), std::move(rhs));
+          return ApplyIntegersOperator<std::greater_equal<void>, bool>(std::move(lhs), std::move(rhs));
         case BinaryOp::kNotEq:
           if (GetExpressionTypeUnchecked(*expr.lhs, source_attrs) == Type::kBool) {
-            return ApplyBinaryBooleanOperator<std::not_equal_to<void>>(std::move(lhs), std::move(rhs));
+            return ApplyBooleanOperator<std::not_equal_to<void>>(std::move(lhs), std::move(rhs));
           }
-          return ApplyCompareIntegersOperator<std::not_equal_to<void>>(std::move(lhs), std::move(rhs));
+          return ApplyIntegersOperator<std::not_equal_to<void>, bool>(std::move(lhs), std::move(rhs));
         case BinaryOp::kEq:
           if (GetExpressionTypeUnchecked(*expr.lhs, source_attrs) == Type::kBool) {
-            return ApplyBinaryBooleanOperator<std::equal_to<void>>(std::move(lhs), std::move(rhs));
+            return ApplyBooleanOperator<std::equal_to<void>>(std::move(lhs), std::move(rhs));
           }
-          return ApplyCompareIntegersOperator<std::equal_to<void>>(std::move(lhs), std::move(rhs));
+          return ApplyIntegersOperator<std::equal_to<void>, bool>(std::move(lhs), std::move(rhs));
         case BinaryOp::kOr:
-          return ApplyBinaryBooleanOperator<std::logical_or<void>>(std::move(lhs), std::move(rhs));
+          return ApplyBooleanOperator<std::logical_or<void>>(std::move(lhs), std::move(rhs));
         case BinaryOp::kAnd:
-          return ApplyBinaryBooleanOperator<std::logical_and<void>>(std::move(lhs), std::move(rhs));
+          return ApplyBooleanOperator<std::logical_and<void>>(std::move(lhs), std::move(rhs));
         case BinaryOp::kPlus:
-          return ApplyBinaryIntegerOperator<std::plus<int64_t>>(std::move(lhs), std::move(rhs));
+          return ApplyIntegersOperator<std::plus<int64_t>, int64_t>(std::move(lhs), std::move(rhs));
         case BinaryOp::kMinus:
-          return ApplyBinaryIntegerOperator<std::minus<int64_t>>(std::move(lhs), std::move(rhs));
+          return ApplyIntegersOperator<std::minus<int64_t>, int64_t>(std::move(lhs), std::move(rhs));
         case BinaryOp::kMul:
-          return ApplyBinaryIntegerOperator<std::multiplies<int64_t>>(std::move(lhs), std::move(rhs));
+          return ApplyIntegersOperator<std::multiplies<int64_t>, int64_t>(std::move(lhs), std::move(rhs));
         case BinaryOp::kDiv:
-          return ApplyBinaryIntegerOperator<std::divides<int64_t>>(std::move(lhs), std::move(rhs));
+          return ApplyIntegersOperator<std::divides<int64_t>, int64_t>(std::move(lhs), std::move(rhs));
         case BinaryOp::kMod:
-          return ApplyBinaryIntegerOperator<std::modulus<int64_t>>(std::move(lhs), std::move(rhs));
+          return ApplyIntegersOperator<std::modulus<int64_t>, int64_t>(std::move(lhs), std::move(rhs));
         case BinaryOp::kPow:
-          return ApplyBinaryIntegerOperator<IntPow>(std::move(lhs), std::move(rhs));
+          return ApplyIntegersOperator<IntPow, int64_t>(std::move(lhs), std::move(rhs));
       }
     }
     Value operator()(const UnaryExpression& expr) {
@@ -254,32 +226,18 @@ Value CalcExpression(const Tuple& source, const AttributesInfo& source_attrs, co
 
       switch (expr.op) {
         case UnaryOp::kNot:
-          struct NotVisitor {
-            Value operator()(const NullValue& n) {
-              return GetTrileanValue(Trilean::kUnknown);
-            }
-            Value operator()(const NonNullValue& val) {
-              switch (val.trilean_value) {
-                case Trilean::kTrue:
-                  return  GetTrileanValue(Trilean::kFalse);
-                case Trilean::kFalse:
-                  return  GetTrileanValue(Trilean::kTrue);
-                case Trilean::kUnknown:
-                  return  GetTrileanValue(Trilean::kUnknown);
-              }
-            }
-          };
-          return std::visit(NotVisitor{}, child);
+          if (child.is_null) {
+            return Value{true};
+          }
+          if (child.value.bool_value) {
+            return Value{false, false};
+          }
+          return Value{false, true};
         case UnaryOp::kMinus:
-          struct MinusVisitor {
-            Value operator()(const NullValue& n) {
-              return NullValue{};
-            }
-            Value operator()(const NonNullValue& val) {
-              return NonNullValue{-val.int_value};
-            }
-          };
-          return std::visit(MinusVisitor{}, child);
+          if (child.is_null) {
+            return Value{true};
+          }
+          return Value{false, -child.value.int_value};
       }
     }
     Value operator()(const Attribute& expr) {
@@ -292,20 +250,20 @@ Value CalcExpression(const Tuple& source, const AttributesInfo& source_attrs, co
       return source[index];
     }
     Value operator()(const IntConst& expr) {
-      return NonNullValue{expr};
+      return Value{false, expr};
     }
     Value operator()(const Literal& expr) {
       switch (expr) {
         case Literal::kNull:
-          return NullValue{};
+          return Value{true};
         case Literal::kTrue: {
-          return GetTrileanValue(Trilean::kTrue);
+          return Value{false, true};
         }
         case Literal::kFalse: {
-          return GetTrileanValue(Trilean::kFalse);
+          return Value{false, false};
         }
         case Literal::kUnknown: {
-          return GetTrileanValue(Trilean::kUnknown);
+          return Value{true};
         }
       }
     }
@@ -324,15 +282,11 @@ Tuple ApplyProjection(const Tuple& source, const AttributesInfo& source_attrs, c
 }
 
 bool ApplyFilter(const Tuple& source, const AttributesInfo& source_attrs, const Filter& filter) {
-  struct FilterVisitor {
-    bool operator()(const NullValue&) {
-      return false;
-    }
-    bool operator()(const NonNullValue& v) {
-      return v.trilean_value == Trilean::kTrue;
-    }
-  };
-  return std::visit(FilterVisitor{}, CalcExpression(source, source_attrs, filter.expr));
+  auto v = CalcExpression(source, source_attrs, filter.expr);
+  if (v.is_null) {
+    return false;
+  }
+  return v.value.bool_value;
 }
 
 boost::asio::awaitable<std::pair<AttributesInfoChannel, TuplesChannel>> GetChannels() {
@@ -609,7 +563,7 @@ boost::asio::awaitable<void> Executor::ExecuteJoin(const Join& join,
         for (const auto& [rhs_index, tuple_rhs] : buf_rhs | std::views::enumerate) {
           auto joined_tuple = ConcatTuples(tuple_lhs, tuple_rhs);
           auto qual_expr_res = CalcExpression(joined_tuple, attrs, join.qual);
-          if (std::get<NonNullValue>(std::move(qual_expr_res)).trilean_value == Trilean::kTrue) {
+          if (qual_expr_res.value.bool_value) {
             buf_res.push_back(std::move(joined_tuple));
             used[rhs_index] = true;
           }
@@ -633,7 +587,7 @@ boost::asio::awaitable<void> Executor::ExecuteJoin(const Join& join,
         auto rhs_tuple = std::move(buf_rhs[rhs_index]);
 
         auto lhs_size = attrs.size() - rhs_tuple.size();
-        Tuple lhs_tuple(lhs_size, NullValue{});
+        Tuple lhs_tuple(lhs_size, Value{true});
 
         auto joined_tuple = ConcatTuples(lhs_tuple, rhs_tuple);
         buf_res.push_back(std::move(joined_tuple));

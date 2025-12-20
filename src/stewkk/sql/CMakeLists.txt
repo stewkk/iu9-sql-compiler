@@ -22,6 +22,7 @@ add_library(libsql
   logic/executor/sequential_scan.cpp
   models/executor/tuple.cpp
   logic/executor/materialization.cpp
+  logic/executor/llvm.cpp
 )
 add_library(stewkk::libsql ALIAS libsql)
 target_compile_features(libsql PUBLIC cxx_std_23)
@@ -42,7 +43,7 @@ target_include_directories(
 )
 target_compile_options(libsql PRIVATE ${BASE_COMPILE_FLAGS})
 target_link_options(libsql PRIVATE ${BASE_LINK_FLAGS})
-llvm_map_components_to_libnames(llvm_libs support core irreader)
+llvm_map_components_to_libnames(llvm_libs support core irreader orcjit)
 target_link_libraries(libsql PRIVATE
   antlr4_static
   ${llvm_libs}

@@ -22,11 +22,11 @@ Type GetTypeFromString(const std::string& s) {
 
 Value BuildValueFromString(Type type, const std::string& table, const std::string attr_name, const std::string& value) {
   if (value == "NULL") {
-    return NullValue{};
+    return Value{true};
   }
   switch (type) {
     case Type::kInt:
-      return NonNullValue{std::stoi(value)};
+      return Value{false, std::stoi(value)};
     default:
       std::unreachable();
   }

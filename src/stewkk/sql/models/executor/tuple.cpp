@@ -5,49 +5,38 @@
 
 namespace stewkk::sql {
 
-NonNullValue GetTrileanValue(Trilean v) {
-    NonNullValue res;
-    res.trilean_value = v;
-    return res;
+std::string ToString(bool v) {
+    if (v) {
+        return "TRUE    ";
+    }
+    return "FALSE   ";
 }
 
-std::string ToString(Trilean v) {
-    switch (v) {
-      case Trilean::kTrue:
-          return "TRUE    ";
-      case Trilean::kFalse:
-          return "FALSE   ";
-      case Trilean::kUnknown:
-          return "UNKNOWN ";
+std::string ToString(Value v, const AttributeInfo& attr) {
+    if (v.is_null) {
+        return "NULL    ";
     }
+    if (attr.type == Type::kInt) {
+      return std::format("{:<8}", v.value.int_value);
+    }
+    return ToString(v.value.bool_value)+' ';
 }
 
 std::string ToString(const Relation& relation) {
-    struct FormatVisitor {
-        void operator()(const NullValue& v) {
-            s << "NULL    ";
-        }
-        void operator()(const NonNullValue& v) {
-            if (attr.type == Type::kInt) {
-                s << std::format("{:<8}", v.int_value);
-                return;
-            }
-            s << ToString(v.trilean_value) << ' ';
-        }
-
-        std::ostringstream& s;
-        const AttributeInfo& attr;
-    };
-
     std::ostringstream s;
     for (const auto& tuple : relation.tuples) {
         for (const auto& [val, attr] : std::views::zip(tuple, relation.attributes)) {
-            std::visit(FormatVisitor{s, attr}, val);
+            s << ToString(val, attr);
         }
         s << '\n';
     }
 
     return s.str();
+}
+
+
+bool Value::operator==(const Value& other) const {
+    return (is_null && other.is_null) || (!is_null && !other.is_null && value.int_value == other.value.int_value);
 }
 
 }  // namespace stewkk::sql
