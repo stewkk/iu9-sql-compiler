@@ -43,7 +43,8 @@ target_include_directories(
 )
 target_compile_options(libsql PRIVATE ${BASE_COMPILE_FLAGS})
 target_link_options(libsql PRIVATE ${BASE_LINK_FLAGS})
-llvm_map_components_to_libnames(llvm_libs support core irreader orcjit)
+llvm_map_components_to_libnames(llvm_libs Support Core IRReader OrcJIT X86CodeGen X86AsmParser X86Desc X86Info)
+target_link_directories(libsql PUBLIC ${LLVM_LIBRARY_DIRS})
 target_link_libraries(libsql PRIVATE
   antlr4_static
   ${llvm_libs}

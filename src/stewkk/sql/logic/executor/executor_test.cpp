@@ -28,6 +28,11 @@ std::string ReadFromFile(std::filesystem::path path) {
 
 } // namespace
 
+template <typename T>
+class ExecutorTest : public testing::Test {};
+
+TYPED_TEST_SUITE_P(ExecutorTest);
+
 TEST(ExecutorTest, SimpleSelect) {
   boost::asio::io_context ctx;
   boost::asio::co_spawn(
@@ -36,7 +41,7 @@ TEST(ExecutorTest, SimpleSelect) {
         std::stringstream s{"SELECT * FROM users;"};
         Operator op = GetAST(s).value();
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
-        Executor executor(std::move(seq_scan));
+        Executor executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
         auto got = co_await executor.Execute(op);
 
@@ -62,7 +67,7 @@ TEST(ExecutorTest, SimpleSelectWithParallelism) {
         std::stringstream s{"SELECT * FROM users;"};
         Operator op = GetAST(s).value();
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
-        Executor executor(std::move(seq_scan));
+        Executor executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
         auto got = co_await executor.Execute(op);
 
@@ -80,7 +85,7 @@ TEST(ExecutorTest, SimpleSelectWithParallelism) {
   pool.join();
 }
 
-TEST(ExecutorTest, Projection) {
+TYPED_TEST_P(ExecutorTest, Projection) {
   boost::asio::thread_pool pool{4};
   boost::asio::co_spawn(
       pool,
@@ -88,7 +93,7 @@ TEST(ExecutorTest, Projection) {
         std::stringstream s{"SELECT users.id FROM users;"};
         Operator op = GetAST(s).value();
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
-        Executor executor(std::move(seq_scan));
+        Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
         auto got = co_await executor.Execute(op);
 
@@ -106,7 +111,7 @@ TEST(ExecutorTest, Projection) {
   pool.join();
 }
 
-TEST(ExecutorTest, Filter) {
+TYPED_TEST_P(ExecutorTest, Filter) {
   boost::asio::thread_pool pool{4};
   boost::asio::co_spawn(
       pool,
@@ -114,7 +119,7 @@ TEST(ExecutorTest, Filter) {
         std::stringstream s{"SELECT users.id FROM users WHERE users.age < 10;"};
         Operator op = GetAST(s).value();
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
-        Executor executor(std::move(seq_scan));
+        Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
         auto got = co_await executor.Execute(op);
 
@@ -132,7 +137,7 @@ TEST(ExecutorTest, Filter) {
   pool.join();
 }
 
-TEST(ExecutorTest, FilterMany) {
+TYPED_TEST_P(ExecutorTest, FilterMany) {
   boost::asio::thread_pool pool{4};
   boost::asio::co_spawn(
       pool,
@@ -140,7 +145,7 @@ TEST(ExecutorTest, FilterMany) {
         std::stringstream s{"SELECT users.id FROM users WHERE users.age > 10;"};
         Operator op = GetAST(s).value();
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
-        Executor executor(std::move(seq_scan));
+        Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
         auto got = co_await executor.Execute(op);
 
@@ -158,7 +163,7 @@ TEST(ExecutorTest, FilterMany) {
   pool.join();
 }
 
-TEST(ExecutorTest, CrossJoin) {
+TYPED_TEST_P(ExecutorTest, CrossJoin) {
   boost::asio::thread_pool pool{4};
   boost::asio::co_spawn(
       pool,
@@ -166,7 +171,7 @@ TEST(ExecutorTest, CrossJoin) {
         std::stringstream s{"SELECT * FROM users, books WHERE users.age < 10;"};
         Operator op = GetAST(s).value();
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
-        Executor executor(std::move(seq_scan));
+        Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
         auto got = co_await executor.Execute(op);
 
@@ -188,7 +193,7 @@ TEST(ExecutorTest, CrossJoin) {
   pool.join();
 }
 
-TEST(ExecutorTest, InnerJoin) {
+TYPED_TEST_P(ExecutorTest, InnerJoin) {
   boost::asio::thread_pool pool{4};
   boost::asio::co_spawn(
       pool,
@@ -196,7 +201,7 @@ TEST(ExecutorTest, InnerJoin) {
         std::stringstream s{"SELECT * FROM employees JOIN departments ON employees.department_id = departments.id;"};
         Operator op = GetAST(s).value();
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
-        Executor executor(std::move(seq_scan));
+        Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
         auto got = co_await executor.Execute(op);
 
@@ -217,7 +222,7 @@ TEST(ExecutorTest, InnerJoin) {
   pool.join();
 }
 
-TEST(ExecutorTest, LeftJoin) {
+TYPED_TEST_P(ExecutorTest, LeftJoin) {
   boost::asio::thread_pool pool{4};
   boost::asio::co_spawn(
       pool,
@@ -225,7 +230,7 @@ TEST(ExecutorTest, LeftJoin) {
         std::stringstream s{"SELECT * FROM employees LEFT OUTER JOIN departments ON employees.department_id = departments.id;"};
         Operator op = GetAST(s).value();
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
-        Executor executor(std::move(seq_scan));
+        Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
         auto got = co_await executor.Execute(op);
 
@@ -246,7 +251,7 @@ TEST(ExecutorTest, LeftJoin) {
   pool.join();
 }
 
-TEST(ExecutorTest, RightJoin) {
+TYPED_TEST_P(ExecutorTest, RightJoin) {
   boost::asio::thread_pool pool{4};
   boost::asio::co_spawn(
       pool,
@@ -254,7 +259,7 @@ TEST(ExecutorTest, RightJoin) {
         std::stringstream s{"SELECT * FROM employees RIGHT JOIN departments ON employees.department_id = departments.id;"};
         Operator op = GetAST(s).value();
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
-        Executor executor(std::move(seq_scan));
+        Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
         auto got = co_await executor.Execute(op);
 
@@ -274,5 +279,9 @@ TEST(ExecutorTest, RightJoin) {
 
   pool.join();
 }
+
+REGISTER_TYPED_TEST_SUITE_P(ExecutorTest, Projection, Filter, FilterMany, CrossJoin, InnerJoin, LeftJoin, RightJoin);
+using ExecutorTypes = ::testing::Types<InterpretedExpressionExecutor, JitCompiledExpressionExecutor>;
+INSTANTIATE_TYPED_TEST_SUITE_P(TypedExecutorTest, ExecutorTest, ExecutorTypes);
 
 }  // namespace stewkk::sql

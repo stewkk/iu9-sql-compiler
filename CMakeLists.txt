@@ -16,17 +16,17 @@ option(SANITIZE_THREADS "Enable ThreadSanitizer" OFF)
 add_compile_options(-Wno-deprecated-declarations)
 
 if (SANITIZE_ADDRESS)
-    add_compile_options(-fsanitize=address)
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
     add_link_options(-fsanitize=address)
 endif()
 
 if (SANITIZE_UNDEFINED)
-    add_compile_options(-fsanitize=undefined)
+    add_compile_options(-fsanitize=undefined -fno-omit-frame-pointer -g)
     add_link_options(-fsanitize=undefined)
 endif()
 
 if (SANITIZE_THREADS)
-    add_compile_options(-fsanitize=thread)
+    add_compile_options(-fsanitize=thread -fno-omit-frame-pointer -g)
     add_link_options(-fsanitize=thread)
 endif()
 

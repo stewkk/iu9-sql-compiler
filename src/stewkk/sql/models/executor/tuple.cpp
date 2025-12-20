@@ -34,7 +34,6 @@ std::string ToString(const Relation& relation) {
     return s.str();
 }
 
-
 bool Value::operator==(const Value& other) const {
     return (is_null && other.is_null) || (!is_null && !other.is_null && value.int_value == other.value.int_value);
 }
