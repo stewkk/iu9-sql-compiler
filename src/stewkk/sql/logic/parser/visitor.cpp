@@ -72,9 +72,13 @@ std::any Visitor::visit(antlr4::tree::ParseTree *tree) {
     indentation = rule_context->depth()-1;
   }
   std::string indentation_str(indentation*4, ' ');
-  std::cout << std::format("{}visiting rule: {}\n", indentation_str, rule_name);
+#ifdef DEBUG
+  std::clog << std::format("{}visiting rule: {}\n", indentation_str, rule_name);
+#endif
   auto tmp = codegen::PostgreSQLParserBaseVisitor::visit(tree);
-  std::cout << std::format("{}exiting rule: {}\n", indentation_str, rule_name);
+#ifdef DEBUG
+  std::clog << std::format("{}exiting rule: {}\n", indentation_str, rule_name);
+#endif
   return tmp;
 }
 

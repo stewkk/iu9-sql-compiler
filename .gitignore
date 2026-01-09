@@ -3,3 +3,4 @@
 /CMakeFiles/
 **/codegen/
 /build-sanitizers/
+/build-release/

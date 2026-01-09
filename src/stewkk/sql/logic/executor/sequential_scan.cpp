@@ -50,7 +50,9 @@ Tuple ParseTuple(const std::string& line,
 boost::asio::awaitable<Result<>> CsvDirSequentialScanner::operator()(
     const std::string& table_name, AttributesInfoChannel& attrs_chan,
     TuplesChannel& tuples_chan) const {
+#ifdef DEBUG
   std::clog << "Executing sequential scan\n";
+#endif
   auto path = std::format("{}/{}.csv", dir, table_name);
   std::ifstream input{std::move(path)};
   std::string line;
@@ -72,10 +74,14 @@ boost::asio::awaitable<Result<>> CsvDirSequentialScanner::operator()(
   while (std::getline(input, line)) {
     auto tuple = ParseTuple(line, attributes, table_name);
     buf.emplace_back(std::move(tuple));
+#ifdef DEBUG
     std::clog << std::format("buf size is {}\n", buf.size());
+#endif
 
     if (buf.size() == kBufSize) {
+#ifdef DEBUG
       std::clog << std::format("Sending {} tuples from table\n", buf.size());
+#endif
       co_await tuples_chan.async_send(boost::system::error_code{}, std::move(buf),
                                boost::asio::use_awaitable);
       buf.clear();
@@ -83,13 +89,17 @@ boost::asio::awaitable<Result<>> CsvDirSequentialScanner::operator()(
   }
 
   if (!buf.empty()) {
+#ifdef DEBUG
     std::clog << std::format("Sending {} tuples from table\n", buf.size());
+#endif
     co_await tuples_chan.async_send(boost::system::error_code{}, std::move(buf),
                              boost::asio::use_awaitable);
   }
 
   tuples_chan.close();
+#ifdef DEBUG
   std::clog << "Done sending tuples from table\n";
+#endif
 
   co_return Ok();
 }

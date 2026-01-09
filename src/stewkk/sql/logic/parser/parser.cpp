@@ -18,9 +18,11 @@ Result<Operator> GetAST(std::istream& in) {
   antlr4::CommonTokenStream tokens(&lexer);
   tokens.fill();
 
+#ifdef DEBUG
   for (auto token : tokens.getTokens()) {
-    std::cout << token->toString() << std::endl;
+    std::clog << token->toString() << std::endl;
   }
+#endif
 
   codegen::PostgreSQLParser parser(&tokens);
   antlr4::tree::ParseTree* tree = parser.root();
@@ -29,7 +31,9 @@ Result<Operator> GetAST(std::istream& in) {
     return MakeError<ErrorType::kSyntaxError>("syntax error");
   }
 
-  std::cout << tree->toStringTree(&parser, true) << std::endl << std::endl;
+#ifdef DEBUG
+  std::clog << tree->toStringTree(&parser, true) << std::endl << std::endl;
+#endif
 
   Visitor visitor(&parser);
 

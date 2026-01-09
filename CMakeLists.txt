@@ -41,6 +41,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_subdirectory(src/stewkk/sql)
 
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+  add_subdirectory(benchmarks)
+
   include(CTest)
   if(BUILD_TESTING)
     add_subdirectory(test)

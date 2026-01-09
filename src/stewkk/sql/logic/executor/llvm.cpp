@@ -1,8 +1,21 @@
 #include <stewkk/sql/logic/executor/llvm.hpp>
 
+#include <iostream>
+
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/IR/IRBuilder.h>
 #include <boost/asio/bind_executor.hpp>
+#include <llvm/Passes/PassBuilder.h>
+#include <llvm/Transforms/InstCombine/InstCombine.h>
+#include <llvm/Transforms/Scalar/Reassociate.h>
+#include <llvm/Transforms/Scalar/GVN.h>
+#include <llvm/Transforms/Scalar/SimplifyCFG.h>
+#include <llvm/Transforms/Scalar/DCE.h>
+#include <llvm/Transforms/Scalar/ADCE.h>
+#include <llvm/Transforms/Scalar/SROA.h>
+#include <llvm/Transforms/Scalar/MemCpyOptimizer.h>
+#include <llvm/Transforms/Scalar/EarlyCSE.h>
+#include <llvm/IR/PassManager.h>
 
 namespace stewkk::sql {
 
@@ -16,6 +29,61 @@ JITCompiler::JITCompiler(boost::asio::any_io_executor executor) : jit_strand_(ex
     throw std::runtime_error("failed to create llvm::LLJIT");
   }
   jit_ = std::move(*jit_or_error);
+
+  jit_->getIRTransformLayer().setTransform(
+      [](llvm::orc::ThreadSafeModule tsm, llvm::orc::MaterializationResponsibility& r)
+          -> llvm::Expected<llvm::orc::ThreadSafeModule> {
+        tsm.withModuleDo([](llvm::Module& m) {
+#ifdef DEBUG
+          std::clog << "IR before optimization:\n";
+          m.print(llvm::errs(), nullptr);
+#endif
+          llvm::LoopAnalysisManager lam;
+          llvm::FunctionAnalysisManager fam;
+          llvm::CGSCCAnalysisManager cgam;
+          llvm::ModuleAnalysisManager mam;
+
+          llvm::PassBuilder pb;
+
+          pb.registerModuleAnalyses(mam);
+          pb.registerCGSCCAnalyses(cgam);
+          pb.registerFunctionAnalyses(fam);
+          pb.registerLoopAnalyses(lam);
+          pb.crossRegisterProxies(lam, fam, cgam, mam);
+
+          llvm::ModulePassManager mpm;
+          llvm::FunctionPassManager fpm;
+
+          fpm.addPass(llvm::EarlyCSEPass(true));
+          fpm.addPass(llvm::SROAPass(llvm::SROAOptions::ModifyCFG));
+
+          fpm.addPass(llvm::InstCombinePass());
+          fpm.addPass(llvm::SimplifyCFGPass());
+
+          fpm.addPass(llvm::ReassociatePass());
+          fpm.addPass(llvm::GVNPass());
+          fpm.addPass(llvm::MemCpyOptPass());
+
+          fpm.addPass(llvm::SimplifyCFGPass());
+          fpm.addPass(llvm::InstCombinePass());
+          fpm.addPass(llvm::DCEPass());
+          fpm.addPass(llvm::ADCEPass());
+          
+          // TODO: SIMD
+          //fpm.addPass(llvm::SLPVectorizerPass());
+          //fpm.addPass(llvm::LoopVectorizePass());
+
+          mpm.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(fpm)));
+
+          mpm.run(m, mam);
+
+#ifdef DEBUG
+          std::clog << "IR after optimization:\n";
+          m.print(llvm::errs(), nullptr);
+#endif
+        });
+        return std::move(tsm);
+      });
 }
 
 boost::asio::awaitable<std::pair<JITCompiler::CompiledExpression, llvm::orc::ResourceTrackerSP>>
@@ -32,11 +100,11 @@ JITCompiler::CompileExpression(const Expression& expr, const AttributesInfo& att
   llvm_module->setDataLayout(jit_->getDataLayout());
   llvm::orc::ThreadSafeModule tsm(std::move(llvm_module), std::move(ctx));
 
-  auto* func = GenerateIR(*tsm.getModuleUnlocked(), expr, attrs);
-
-  std::string func_name = func->getName().str();
-
-  tsm.getModuleUnlocked()->print(llvm::errs(), nullptr);
+  std::string func_name;
+  tsm.withModuleDo([&](llvm::Module& m) {
+    auto* func = GenerateIR(m, expr, attrs);
+    func_name = func->getName().str();
+  });
 
   auto err = jit_->addIRModule(resource_tracker, std::move(tsm));
   if (err) {
@@ -163,15 +231,13 @@ llvm::Function* JITCompiler::GenerateIR(
                 throw std::logic_error{"pow is not supported in llvm codegen"};
           }
 
-          auto* struct_ptr = builder.CreateAlloca(value_type, nullptr, "struct_ptr");
-          auto* res_is_null_ptr = builder.CreateStructGEP(value_type, struct_ptr, 0, "ptr_is_null");
-          auto* res_value_ptr = builder.CreateStructGEP(value_type, struct_ptr, 1, "ptr_value");
-
           auto* is_null_i8 = builder.CreateZExt(is_null, builder.getInt8Ty(), "is_null_i8");
-          builder.CreateStore(is_null_i8, res_is_null_ptr);
-          builder.CreateStore(res_value, res_value_ptr);
+          
+          llvm::Value* value = llvm::UndefValue::get(value_type);
+          value = builder.CreateInsertValue(value, is_null_i8, {0}, "result.with_is_null");
+          value = builder.CreateInsertValue(value, res_value, {1}, "result");
 
-          return builder.CreateLoad(value_type, struct_ptr, "result");
+          return value;
       }
       llvm::Value* operator()(const UnaryExpression& expr) {
           auto* child = std::visit(*this, *expr.child);
@@ -195,11 +261,14 @@ llvm::Function* JITCompiler::GenerateIR(
               case UnaryOp::kMinus: {
                 auto is_null = CheckNull(child);
                 auto value = LoadValue(child);
+                
+                auto* negated = builder.CreateNeg(value);
+                
                 auto* select = builder.CreateSelect(
                     is_null,
                     llvm::ConstantStruct::get(static_cast<llvm::StructType*>(value_type),
                                               {builder.getInt8(1), builder.getInt64(0)}),
-                    builder.CreateSub(0, value));
+                    negated);
                 return select;
               }
           }

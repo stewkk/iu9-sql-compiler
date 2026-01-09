@@ -114,7 +114,9 @@ boost::asio::awaitable<Result<Relation>> Executor<ExpressionExecutor>::Execute(c
   co_await SpawnExecutor(op, attr_chan, tuples_chan);
 
   auto attrs = co_await attr_chan.async_receive(boost::asio::use_awaitable);
+#ifdef DEBUG
   std::clog << "Received attrs in root\n";
+#endif
 
   Tuples result;
   for (;;) {
@@ -122,11 +124,15 @@ boost::asio::awaitable<Result<Relation>> Executor<ExpressionExecutor>::Execute(c
     if (buf.empty()) {
       break;
     }
+#ifdef DEBUG
     std::clog << std::format("Received {} tuples in root\n", buf.size());
+#endif
     std::move(buf.begin(), buf.end(), std::back_inserter(result));
   }
 
+#ifdef DEBUG
   std::clog << std::format("Total {} tuples in root\n", result.size());
+#endif
   co_return Ok(Relation{std::move(attrs), std::move(result)});
 }
 
@@ -168,7 +174,9 @@ template <typename ExpressionExecutor>
 boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteProjection(const Projection& proj,
                                                          AttributesInfoChannel& out_attr_chan,
                                                          TuplesChannel& out_tuples_chan) {
+#ifdef DEBUG
   std::clog << "Executing projection\n";
+#endif
   auto [in_attrs_chan, in_tuples_chan] = co_await GetChannels();
   co_await SpawnExecutor(*proj.source, in_attrs_chan, in_tuples_chan);
 
@@ -189,7 +197,9 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteProjection(con
     if (buf.empty()) {
       break;
     }
+#ifdef DEBUG
     std::clog << std::format("Received {} tuples in projection\n", buf.size());
+#endif
     buf = buf | std::views::transform([&](const auto& tuple) {
       return ApplyProjection(tuple, attrs, executors);
     }) | std::ranges::to<Tuples>();
@@ -203,21 +213,29 @@ template <typename ExpressionExecutor>
 boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteFilter(const Filter& filter,
                                                      AttributesInfoChannel& out_attr_chan,
                                                      TuplesChannel& out_tuples_chan) {
+#ifdef DEBUG
   std::clog << "Executing filter\n";
+#endif
   auto [in_attrs_chan, in_tuples_chan] = co_await GetChannels();
   co_await SpawnExecutor(*filter.source, in_attrs_chan, in_tuples_chan);
 
   auto attrs = co_await in_attrs_chan.async_receive(boost::asio::use_awaitable);
+#ifdef DEBUG
   std::clog << "Filter received attrs\n";
+#endif
 
   if (GetExpressionType(filter.expr, attrs) != Type::kBool) {
     throw std::logic_error{"filter expr should return bool"};
   }
 
+#ifdef DEBUG
   std::clog << "Filter sending attrs\n";
+#endif
   co_await out_attr_chan.async_send(boost::system::error_code{}, attrs, boost::asio::use_awaitable);
   out_attr_chan.close();
+#ifdef DEBUG
   std::clog << "Filter sent attrs\n";
+#endif
 
   auto filter_executor = co_await expression_executor_.GetExpressionExecutor(filter.expr, attrs);
 
@@ -228,23 +246,31 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteFilter(const F
     if (input_buf.empty()) {
       break;
     }
+#ifdef DEBUG
     std::clog << std::format("Received {} tuples in filter\n", input_buf.size());
+#endif
     auto filtered_view = input_buf | std::views::filter([&](const auto& tuple) {
                            return ApplyFilter(tuple, attrs, filter_executor);
                          }) | std::views::as_rvalue;
     for (auto&& tuple : filtered_view) {
       output_buf.push_back(std::move(tuple));
       if (output_buf.size() == kBufSize) {
+#ifdef DEBUG
         std::clog << std::format("Sending {} tuples in filter\n", output_buf.size());
+#endif
         co_await out_tuples_chan.async_send(boost::system::error_code{}, std::move(output_buf),
                                             boost::asio::use_awaitable);
         output_buf.clear();
       }
     }
   }
-  std::cout << std::format("{} tuples left in output_buf\n", output_buf.size());
+#ifdef DEBUG
+  std::clog << std::format("{} tuples left in output_buf\n", output_buf.size());
+#endif
   if (!output_buf.empty()) {
+#ifdef DEBUG
     std::clog << std::format("Sending {} tuples in filter\n", output_buf.size());
+  #endif
     co_await out_tuples_chan.async_send(boost::system::error_code{}, std::move(output_buf),
                                         boost::asio::use_awaitable);
   }
@@ -293,7 +319,9 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteCrossJoin(cons
           auto joined_tuple = ConcatTuples(tuple_lhs, tuple_rhs);
           buf_joined.push_back(std::move(joined_tuple));
         }
+#ifdef DEBUG
         std::clog << std::format("Sending {} tuples from cross join\n", buf_joined.size());
+#endif
         co_await tuples_chan.async_send(boost::system::error_code{}, std::move(buf_joined),
                                         boost::asio::use_awaitable);
       }
@@ -306,7 +334,9 @@ template <typename ExpressionExecutor>
 boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteJoin(const Join& join,
                                                    AttributesInfoChannel& attr_chan,
                                                    TuplesChannel& tuples_chan) {
+#ifdef DEBUG
   std::clog << "Executing join\n";
+#endif
   if (join.type == JoinType::kFull) {
     throw std::logic_error{"Full joins are not supported by executor"};
   }
@@ -319,12 +349,18 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteJoin(const Joi
   co_await SpawnExecutor(*join.rhs, rhs_attrs_chan, rhs_tuples_chan);
 
   auto attrs = co_await ConcatAttrs(lhs_attrs_chan, rhs_attrs_chan);
+#ifdef DEBUG
   std::clog << "Join received attrs\n";
+#endif
 
+#ifdef DEBUG
   std::clog << "Join sending attrs\n";
+#endif
   co_await attr_chan.async_send(boost::system::error_code{}, attrs, boost::asio::use_awaitable);
   attr_chan.close();
+#ifdef DEBUG
   std::clog << "Join sent attrs\n";
+#endif
 
   auto qual_executor = co_await expression_executor_.GetExpressionExecutor(join.qual, attrs);
 
@@ -334,7 +370,9 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteJoin(const Joi
     if (buf_rhs.empty()) {
       break;
     }
+#ifdef DEBUG
     std::clog << std::format("Received {} tuples in join as rhs\n", buf_rhs.size());
+#endif
 
     std::vector<char> used(buf_rhs.size(), false);
     for (;;) {
@@ -342,7 +380,9 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteJoin(const Joi
       if (buf_lhs.empty()) {
         break;
       }
+#ifdef DEBUG
       std::clog << std::format("Read {} tuples back from materialized form\n", buf_lhs.size());
+#endif
 
       for (const auto& tuple_lhs : buf_lhs) {
         Tuples buf_res;
@@ -356,7 +396,9 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteJoin(const Joi
           }
         }
         if (!buf_res.empty()) {
+#ifdef DEBUG
           std::clog << std::format("Sending {} tuples from join\n", buf_res.size());
+  #endif
           co_await tuples_chan.async_send(boost::system::error_code{}, std::move(buf_res),
                                           boost::asio::use_awaitable);
         }
@@ -380,7 +422,9 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteJoin(const Joi
         buf_res.push_back(std::move(joined_tuple));
       }
       if (!buf_res.empty()) {
+#ifdef DEBUG
         std::clog << std::format("Sending {} tuples from join\n", buf_res.size());
+#endif
         co_await tuples_chan.async_send(boost::system::error_code{}, std::move(buf_res),
                                         boost::asio::use_awaitable);
       }
