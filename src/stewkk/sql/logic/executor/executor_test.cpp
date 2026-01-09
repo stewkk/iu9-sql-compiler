@@ -280,7 +280,35 @@ TYPED_TEST_P(ExecutorTest, RightJoin) {
   pool.join();
 }
 
-REGISTER_TYPED_TEST_SUITE_P(ExecutorTest, Projection, Filter, FilterMany, CrossJoin, InnerJoin, LeftJoin, RightJoin);
+TYPED_TEST_P(ExecutorTest, ComplexJoin) {
+  boost::asio::thread_pool pool{4};
+  boost::asio::co_spawn(
+      pool,
+      []() -> boost::asio::awaitable<Result<Relation>> {
+        std::stringstream s{"SELECT departments.id*2, employees.id+1 FROM employees RIGHT JOIN departments ON employees.department_id = departments.id AND departments.id > 3 AND departments.id*2*2/2 < 30;"};
+        Operator op = GetAST(s).value();
+        CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
+        Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
+
+        auto got = co_await executor.Execute(op);
+
+        co_return got;
+      }(),
+      [](std::exception_ptr p, Result<Relation> got) {
+        if (p) std::rethrow_exception(p);
+
+        ASSERT_THAT(got.value().attributes, Eq(AttributesInfo{
+                                                {"", "", Type::kInt},
+                                                {"", "", Type::kInt},
+                                            }));
+        ASSERT_THAT(got.value().tuples.size(), Eq(5));
+        ASSERT_THAT(ToString(got.value()), Eq(ReadFromFile(kProjectDir+"/test/static/executor/expected_complex_join.txt")));
+      });
+
+  pool.join();
+}
+
+REGISTER_TYPED_TEST_SUITE_P(ExecutorTest, Projection, Filter, FilterMany, CrossJoin, InnerJoin, LeftJoin, RightJoin, ComplexJoin);
 using ExecutorTypes = ::testing::Types<InterpretedExpressionExecutor, JitCompiledExpressionExecutor>;
 INSTANTIATE_TYPED_TEST_SUITE_P(TypedExecutorTest, ExecutorTest, ExecutorTypes);
 

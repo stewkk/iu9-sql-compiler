@@ -10,8 +10,8 @@ Type GetExpressionType(const Expression& expr, const AttributesInfo& available_a
       if (lhs_type != rhs_type) {
         throw std::logic_error{"types mismatch"};
       }
-      if (std::ranges::contains(std::vector{BinaryOp::kPlus, BinaryOp::kMinus, BinaryOp::kDiv,
-                                            BinaryOp::kMod, BinaryOp::kPow},
+      if (std::ranges::contains(std::vector{BinaryOp::kPlus, BinaryOp::kMinus, BinaryOp::kMul,
+                                            BinaryOp::kDiv, BinaryOp::kMod, BinaryOp::kPow},
                                 binop.binop)) {
         if (lhs_type != Type::kInt) {
           throw std::logic_error{"types mismatch"};
@@ -320,5 +320,29 @@ boost::asio::awaitable<ExecExpression> JitCompiledExpressionExecutor::GetExpress
 JitCompiledExpressionExecutor::JitCompiledExpressionExecutor(boost::asio::any_io_executor executor) : compiler_(executor) {}
 
 InterpretedExpressionExecutor::InterpretedExpressionExecutor(boost::asio::any_io_executor executor) {}
+
+boost::asio::awaitable<ExecExpression> CachedJitCompiledExpressionExecutor::GetExpressionExecutor(const Expression& expr, const AttributesInfo& attrs) {
+  auto expr_str = ToString(expr);
+  if (auto it = cache_.find(expr_str); it != cache_.end()) {
+    co_return it->second;
+  }
+
+  struct Executor {
+    Value operator()(const Tuple& source, const AttributesInfo& source_attrs) {
+      Value result;
+      compiled_expr(&result, source.data(), source_attrs.data());
+      return result;
+    }
+
+    JITCompiler::CompiledExpression compiled_expr;
+    llvm::orc::ResourceTrackerSP guard;
+  };
+  auto [compiled_expr, guard] = co_await compiler_.CompileExpression(expr, attrs);
+  auto executor = Executor{std::move(compiled_expr), std::move(guard)};
+  cache_[expr_str] = executor;
+  co_return executor;
+}
+
+CachedJitCompiledExpressionExecutor::CachedJitCompiledExpressionExecutor(boost::asio::any_io_executor executor) : compiler_(executor) {}
 
 }  // namespace stewkk::sql

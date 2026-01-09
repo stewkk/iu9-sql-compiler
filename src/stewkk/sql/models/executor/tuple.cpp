@@ -5,6 +5,16 @@
 
 namespace stewkk::sql {
 
+std::string ToString(Type type) {
+  switch (type) {
+    case Type::kInt:
+      return "int";
+    case Type::kBool:
+      return "bool";
+  }
+  std::unreachable();
+}
+
 std::string ToString(bool v) {
     if (v) {
         return "TRUE    ";

@@ -167,49 +167,55 @@ llvm::Function* JITCompiler::GenerateIR(
               case BinaryOp::kGt:
               {
                   auto* tmp = builder.CreateICmpSGT(value_lhs, value_rhs);
-                  llvm::Type* i64_type = llvm::Type::getInt64Ty(builder.getContext());
-                  res_value = builder.CreateZExt(tmp, i64_type, "i1_to_i64_zext");
+                  res_value = builder.CreateZExt(tmp, builder.getInt64Ty(), "i1_to_i64_zext");
                   break;
               }
             case BinaryOp::kLt:
               {
                   auto* tmp = builder.CreateICmpSLT(value_lhs, value_rhs);
-                  llvm::Type* i64_type = llvm::Type::getInt64Ty(builder.getContext());
-                  res_value = builder.CreateZExt(tmp, i64_type, "i1_to_i64_zext");
+                  res_value = builder.CreateZExt(tmp, builder.getInt64Ty(), "i1_to_i64_zext");
                   break;
               }
             case BinaryOp::kLe:
               {
                   auto* tmp = builder.CreateICmpSLE(value_lhs, value_rhs);
-                  llvm::Type* i64_type = llvm::Type::getInt64Ty(builder.getContext());
-                  res_value = builder.CreateZExt(tmp, i64_type, "i1_to_i64_zext");
+                  res_value = builder.CreateZExt(tmp, builder.getInt64Ty(), "i1_to_i64_zext");
                   break;
               }
             case BinaryOp::kGe:
               {
                   auto* tmp = builder.CreateICmpSGE(value_lhs, value_rhs);
-                  llvm::Type* i64_type = llvm::Type::getInt64Ty(builder.getContext());
-                  res_value = builder.CreateZExt(tmp, i64_type, "i1_to_i64_zext");
+                  res_value = builder.CreateZExt(tmp, builder.getInt64Ty(), "i1_to_i64_zext");
                   break;
               }
             case BinaryOp::kNotEq:
               {
                   auto* tmp = builder.CreateICmpNE(value_lhs, value_rhs);
-                  llvm::Type* i64_type = llvm::Type::getInt64Ty(builder.getContext());
-                  res_value = builder.CreateZExt(tmp, i64_type, "i1_to_i64_zext");
+                  res_value = builder.CreateZExt(tmp, builder.getInt64Ty(), "i1_to_i64_zext");
                   break;
               }
             case BinaryOp::kEq:
               {
                   auto* tmp = builder.CreateICmpEQ(value_lhs, value_rhs);
-                  llvm::Type* i64_type = llvm::Type::getInt64Ty(builder.getContext());
-                  res_value = builder.CreateZExt(tmp, i64_type, "i1_to_i64_zext");
+                  res_value = builder.CreateZExt(tmp, builder.getInt64Ty(), "i1_to_i64_zext");
                   break;
               }
             case BinaryOp::kOr:
-                throw std::logic_error{"or is not supported in llvm codegen"};
+              {
+                auto* trunc_lhs = builder.CreateTrunc(value_lhs, builder.getInt1Ty(), "i64_to_i1_trunc");
+                auto* trunc_rhs = builder.CreateTrunc(value_rhs, builder.getInt1Ty(), "i64_to_i1_trunc");
+                res_value = builder.CreateLogicalOr(trunc_lhs, trunc_rhs);
+                res_value = builder.CreateZExt(res_value, builder.getInt64Ty(), "i1_to_i64_zext");
+                break;
+              }
             case BinaryOp::kAnd:
-                throw std::logic_error{"and is not supported in llvm codegen"};
+              {
+                auto* trunc_lhs = builder.CreateTrunc(value_lhs, builder.getInt1Ty(), "i64_to_i1_trunc");
+                auto* trunc_rhs = builder.CreateTrunc(value_rhs, builder.getInt1Ty(), "i64_to_i1_trunc");
+                res_value = builder.CreateLogicalAnd(trunc_lhs, trunc_rhs);
+                res_value = builder.CreateZExt(res_value, builder.getInt64Ty(), "i1_to_i64_zext");
+                break;
+              }
             case BinaryOp::kPlus:
                   res_value = builder.CreateAdd(value_lhs, value_rhs);
                   break;
@@ -304,7 +310,7 @@ llvm::Function* JITCompiler::GenerateIR(
             });
         // NOTE: already checked in GetExpressionType
         auto index = it - attrs.begin();
-        auto* index_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvm_module.getContext()), index);
+        auto* index_const = llvm::ConstantInt::get(builder.getInt32Ty(), index);
 
         auto* struct_ptr = builder.CreateInBoundsGEP(
             value_type,

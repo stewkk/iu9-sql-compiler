@@ -38,6 +38,15 @@ class JitCompiledExpressionExecutor {
     JITCompiler compiler_;
 };
 
+class CachedJitCompiledExpressionExecutor {
+  public:
+    explicit CachedJitCompiledExpressionExecutor(boost::asio::any_io_executor executor);
+    boost::asio::awaitable<ExecExpression> GetExpressionExecutor(const Expression& expr, const AttributesInfo& attrs);
+  private:
+    JITCompiler compiler_;
+    std::unordered_map<std::string, ExecExpression> cache_;
+};
+
 template <typename ExpressionExecutor = InterpretedExpressionExecutor>
 class Executor {
 public:

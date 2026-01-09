@@ -10,6 +10,8 @@ enum class Type {
     kBool,
 };
 
+std::string ToString(Type type);
+
 struct AttributeInfo {
     std::string table;
     std::string name;
