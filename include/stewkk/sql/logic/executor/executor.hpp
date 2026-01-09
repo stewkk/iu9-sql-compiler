@@ -270,7 +270,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteFilter(const F
   if (!output_buf.empty()) {
 #ifdef DEBUG
     std::clog << std::format("Sending {} tuples in filter\n", output_buf.size());
-  #endif
+#endif
     co_await out_tuples_chan.async_send(boost::system::error_code{}, std::move(output_buf),
                                         boost::asio::use_awaitable);
   }
@@ -398,7 +398,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteJoin(const Joi
         if (!buf_res.empty()) {
 #ifdef DEBUG
           std::clog << std::format("Sending {} tuples from join\n", buf_res.size());
-  #endif
+#endif
           co_await tuples_chan.async_send(boost::system::error_code{}, std::move(buf_res),
                                           boost::asio::use_awaitable);
         }

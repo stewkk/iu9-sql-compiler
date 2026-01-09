@@ -16,10 +16,10 @@ namespace stewkk::sql {
 
 const static std::string kProjectDir = std::getenv("PWD");
 
-namespace {
-}  // namespace
+static constexpr char kSimpleSelect[]{"SELECT users.id FROM users;"};
+static constexpr char kJoin[]{"SELECT * FROM employees RIGHT JOIN departments ON employees.department_id = departments.id;"};
 
-template <typename T>
+template <typename ExprExecutor, const char* Query>
 void BM_SimpleSelect(benchmark::State& state) {
   std::ofstream nullstream("/dev/null");
   std::clog.rdbuf(nullstream.rdbuf());
@@ -28,10 +28,10 @@ void BM_SimpleSelect(benchmark::State& state) {
     boost::asio::co_spawn(
         ctx,
         []() -> boost::asio::awaitable<void> {
-          std::stringstream s{"SELECT * FROM users;"};
+          std::stringstream s{Query};
           Operator op = GetAST(s).value();
           CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
-          Executor<T> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
+          Executor<ExprExecutor> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
           benchmark::DoNotOptimize(co_await executor.Execute(op));
         }(),
@@ -42,8 +42,10 @@ void BM_SimpleSelect(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_SimpleSelect<InterpretedExpressionExecutor>);
-BENCHMARK(BM_SimpleSelect<JitCompiledExpressionExecutor>);
+BENCHMARK(BM_SimpleSelect<InterpretedExpressionExecutor, kSimpleSelect>);
+BENCHMARK(BM_SimpleSelect<JitCompiledExpressionExecutor, kSimpleSelect>);
+BENCHMARK(BM_SimpleSelect<InterpretedExpressionExecutor, kJoin>);
+BENCHMARK(BM_SimpleSelect<JitCompiledExpressionExecutor, kJoin>);
 
 }  // namespace stewkk::sql
 
