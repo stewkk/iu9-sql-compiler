@@ -1,0 +1,1642 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="1414" onload="init(evt)" viewBox="0 0 1200 1414" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+		if (currentSearchTerm === null) return;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="1414.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >Flame Graph</text>
+<text id="details" x="10.00" y="1397" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="1397" > </text>
+<g id="frames">
+<g >
+<title>boost::asio::detail::executor_op&lt;boost::asio::detail::executor_function, std::allocator&lt;void&gt;, boost::asio::detail::scheduler_operation&gt;::do_complete (3,439,095,085 samples, 90.52%)</title><rect x="68.2" y="1125" width="1068.1" height="15.0" fill="rgb(211,31,7)" rx="2" ry="2" />
+<text  x="71.19" y="1135.5" >boost::asio::detail::executor_op&lt;boost::asio::detail::executor_function, std::allocator&lt;void&gt;, boost::asio::detail::scheduler_operation&gt;::do_complete</text>
+</g>
+<g >
+<title>antlr4::atn::LexerATNSimulator::computeTargetState (9,372,331 samples, 0.25%)</title><rect x="68.2" y="901" width="2.9" height="15.0" fill="rgb(218,62,14)" rx="2" ry="2" />
+<text  x="71.19" y="911.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="693" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="703.5" ></text>
+</g>
+<g >
+<title>benchmark::RunSpecifiedBenchmarks (3,601,603,158 samples, 94.80%)</title><rect x="43.1" y="1253" width="1118.6" height="15.0" fill="rgb(234,136,32)" rx="2" ry="2" />
+<text  x="46.11" y="1263.5" >benchmark::RunSpecifiedBenchmarks</text>
+</g>
+<g >
+<title>std::basic_istream&lt;char, std::char_traits&lt;char&gt; &gt;&amp; std::getline&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; (40,849,199 samples, 1.08%)</title><rect x="1177.3" y="1333" width="12.7" height="15.0" fill="rgb(244,181,43)" rx="2" ry="2" />
+<text  x="1180.31" y="1343.5" ></text>
+</g>
+<g >
+<title>operator new (162,107,227 samples, 4.27%)</title><rect x="267.3" y="1013" width="50.4" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="270.33" y="1023.5" >opera..</text>
+</g>
+<g >
+<title>_int_free (40,824,204 samples, 1.07%)</title><rect x="431.6" y="1061" width="12.7" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="434.60" y="1071.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;std::__detail::_Node_iterator&lt;std::shared_ptr&lt;antlr4::atn::PredictionContext const&gt;, true, true&gt;, bool&gt; std::_Hashtable&lt;std::shared_ptr&lt;antlr4::atn::PredictionContext const&gt;, std::shared_ptr&lt;antlr4::atn::PredictionContext const&gt;, std::allocator&lt;std::shared_ptr&lt;antlr4::atn::PredictionContext const&gt; &gt;, std::__detail::_Identity, antlr4::atn::PredictionContextCache::PredictionContextComparer, antlr4::atn::PredictionContextCache::PredictionContextHasher, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;true, true, true&gt; &gt;::_M_insert_unique&lt;std::shared_ptr&lt;antlr4::atn::PredictionContext const&gt; const&amp;, std::shared_ptr&lt;antlr4::atn::PredictionContext const&gt; const&amp;, std::__detail::_AllocNode&lt;std::allocator&lt;std::__detail::_Hash_node&lt;std::shared_ptr&lt;antlr4::atn::PredictionContext const&gt;, true&gt; &gt; &gt; &gt; (25,034,228 samples, 0.66%)</title><rect x="94.5" y="357" width="7.8" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="97.53" y="367.5" ></text>
+</g>
+<g >
+<title>void boost::asio::detail::initiate_post_with_executor&lt;boost::asio::any_io_executor&gt;::operator (40,315,717 samples, 1.06%)</title><rect x="520.6" y="917" width="12.6" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="523.64" y="927.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure (15,496,168 samples, 0.41%)</title><rect x="71.1" y="949" width="4.8" height="15.0" fill="rgb(251,212,50)" rx="2" ry="2" />
+<text  x="74.10" y="959.5" ></text>
+</g>
+<g >
+<title>boost::asio::detail::executor_function::executor_function&lt;boost::asio::detail::work_dispatcher&lt;boost::asio::detail::empty_work_function, boost::asio::detail::completion_payload_handler&lt;boost::asio::detail::completion_payload&lt;void  (41,357,713 samples, 1.09%)</title><rect x="165.4" y="917" width="12.9" height="15.0" fill="rgb(209,20,5)" rx="2" ry="2" />
+<text  x="168.41" y="927.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::CsvDirSequentialScanner::operator (163,475,163 samples, 4.30%)</title><rect x="330.1" y="1013" width="50.8" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="333.11" y="1023.5" >stewk..</text>
+</g>
+<g >
+<title>stewkk::sql::Executor&lt;stewkk::sql::CachedJitCompiledExpressionExecutor&gt;::SpawnExecutor (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="677" width="12.7" height="15.0" fill="rgb(214,41,9)" rx="2" ry="2" />
+<text  x="1114.06" y="687.5" ></text>
+</g>
+<g >
+<title>pthread_mutex_lock@@GLIBC_2.2.5 (41,061,571 samples, 1.08%)</title><rect x="558.3" y="965" width="12.8" height="15.0" fill="rgb(244,179,42)" rx="2" ry="2" />
+<text  x="561.30" y="975.5" ></text>
+</g>
+<g >
+<title>_int_free (118,555,905 samples, 3.12%)</title><rect x="861.2" y="965" width="36.9" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="864.23" y="975.5" >_in..</text>
+</g>
+<g >
+<title>boost::asio::detail::scheduler::work_finished (41,302,658 samples, 1.09%)</title><rect x="102.3" y="1077" width="12.8" height="15.0" fill="rgb(230,116,27)" rx="2" ry="2" />
+<text  x="105.30" y="1087.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::computeStartState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="773" width="10.6" height="15.0" fill="rgb(239,157,37)" rx="2" ry="2" />
+<text  x="78.91" y="783.5" ></text>
+</g>
+<g >
+<title>void boost::asio::experimental::detail::channel_operation::handler_work_base&lt;boost::asio::any_io_executor, boost::asio::any_io_executor, void&gt;::post&lt;boost::asio::any_io_executor, boost::asio::detail::binder1&lt;boost::asio::detail::awaitable_handler&lt;boost::asio::any_io_executor, boost::system::error_code&gt;, boost::system::error_code&gt;, boost::asio::detail::awaitable_handler&lt;boost::asio::any_io_executor, boost::system::error_code&gt; &gt; (81,364,301 samples, 2.14%)</title><rect x="191.0" y="949" width="25.3" height="15.0" fill="rgb(210,27,6)" rx="2" ry="2" />
+<text  x="193.99" y="959.5" >v..</text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::columnref (25,034,228 samples, 0.66%)</title><rect x="94.5" y="501" width="7.8" height="15.0" fill="rgb(251,214,51)" rx="2" ry="2" />
+<text  x="97.53" y="511.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="645" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="655.5" ></text>
+</g>
+<g >
+<title>void boost::asio::experimental::detail::channel_operation::handler_work&lt;boost::asio::detail::awaitable_handler&lt;boost::asio::any_io_executor, boost::system::error_code&gt;, boost::asio::any_io_executor, void&gt;::immediate&lt;boost::asio::detail::binder1&lt;boost::asio::detail::awaitable_handler&lt;boost::asio::any_io_executor, boost::system::error_code&gt;, boost::system::error_code&gt; &gt; (161,995,300 samples, 4.26%)</title><rect x="634.0" y="933" width="50.4" height="15.0" fill="rgb(238,151,36)" rx="2" ry="2" />
+<text  x="637.04" y="943.5" >void ..</text>
+</g>
+<g >
+<title>void boost::asio::detail::executor_function::complete&lt;boost::asio::detail::binder0&lt;boost::asio::detail::awaitable_async_op_handler&lt;void  (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="869" width="12.7" height="15.0" fill="rgb(214,41,10)" rx="2" ry="2" />
+<text  x="1114.06" y="879.5" ></text>
+</g>
+<g >
+<title>[unknown] (106,618,516 samples, 2.81%)</title><rect x="10.0" y="1333" width="33.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="13.00" y="1343.5" >[u..</text>
+</g>
+<g >
+<title>_int_malloc (39,701,173 samples, 1.04%)</title><rect x="910.7" y="949" width="12.3" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="913.70" y="959.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::ReceiveTuples (40,555,284 samples, 1.07%)</title><rect x="380.9" y="997" width="12.6" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="383.88" y="1007.5" ></text>
+</g>
+<g >
+<title>boost::asio::detail::scheduler::work_finished (41,261,829 samples, 1.09%)</title><rect x="1136.3" y="1109" width="12.8" height="15.0" fill="rgb(230,116,27)" rx="2" ry="2" />
+<text  x="1139.31" y="1119.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::canDropLoopEntryEdgeInLeftRecursiveRule (34,013,412 samples, 0.90%)</title><rect x="75.9" y="37" width="10.6" height="15.0" fill="rgb(248,201,48)" rx="2" ry="2" />
+<text  x="78.91" y="47.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="69" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="79.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_qual (84,967,385 samples, 2.24%)</title><rect x="75.9" y="837" width="26.4" height="15.0" fill="rgb(222,80,19)" rx="2" ry="2" />
+<text  x="78.91" y="847.5" >s..</text>
+</g>
+<g >
+<title>_ZZN6stewkk3sql6BM_SQLINS0_35CachedJitCompiledExpressionExecutorEXadsoKcL_ZNS0_L12kComplex4000EEEEEEvRN9benchmark5StateEENKUlvE_clEv.resume (109,835,884 samples, 2.89%)</title><rect x="68.2" y="1077" width="34.1" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="71.19" y="1087.5" >_Z..</text>
+</g>
+<g >
+<title>boost::asio::detail::scheduler::work_finished (40,370,745 samples, 1.06%)</title><rect x="596.4" y="917" width="12.5" height="15.0" fill="rgb(230,116,27)" rx="2" ry="2" />
+<text  x="599.41" y="927.5" ></text>
+</g>
+<g >
+<title>void boost::asio::execution::detail::any_executor_base::execute&lt;boost::asio::detail::binder0&lt;boost::asio::detail::binder1&lt;boost::asio::detail::awaitable_handler&lt;boost::asio::any_io_executor, boost::system::error_code&gt;, boost::system::error_code&gt; &gt; &gt; (936,893,606 samples, 24.66%)</title><rect x="115.1" y="1093" width="291.0" height="15.0" fill="rgb(223,85,20)" rx="2" ry="2" />
+<text  x="118.13" y="1103.5" >void boost::asio::execution::detail::an..</text>
+</g>
+<g >
+<title>boost::asio::detail::executor_function::executor_function&lt;boost::asio::detail::work_dispatcher&lt;boost::asio::detail::empty_work_function, boost::asio::detail::completion_payload_handler&lt;boost::asio::detail::completion_payload&lt;void  (40,315,717 samples, 1.06%)</title><rect x="520.6" y="885" width="12.6" height="15.0" fill="rgb(209,20,5)" rx="2" ry="2" />
+<text  x="523.64" y="895.5" ></text>
+</g>
+<g >
+<title>void boost::asio::experimental::detail::channel_operation::handler_work_base&lt;boost::asio::any_io_executor, boost::asio::any_io_executor, void&gt;::post&lt;boost::asio::any_io_executor, boost::asio::detail::completion_payload_handler&lt;boost::asio::detail::completion_payload&lt;void  (80,794,403 samples, 2.13%)</title><rect x="608.9" y="933" width="25.1" height="15.0" fill="rgb(208,14,3)" rx="2" ry="2" />
+<text  x="611.94" y="943.5" >v..</text>
+</g>
+<g >
+<title>cfree@GLIBC_2.2.5 (201,211,283 samples, 5.30%)</title><rect x="973.3" y="981" width="62.5" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="976.29" y="991.5" >cfree@..</text>
+</g>
+<g >
+<title>void boost::asio::experimental::detail::channel_service&lt;boost::asio::detail::posix_mutex&gt;::start_receive_op&lt;boost::asio::experimental::channel_traits&lt;&gt;, void  (40,315,717 samples, 1.06%)</title><rect x="520.6" y="965" width="12.6" height="15.0" fill="rgb(226,100,23)" rx="2" ry="2" />
+<text  x="523.64" y="975.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::target_el (84,967,385 samples, 2.24%)</title><rect x="75.9" y="869" width="26.4" height="15.0" fill="rgb(230,118,28)" rx="2" ry="2" />
+<text  x="78.91" y="879.5" >s..</text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (15,496,168 samples, 0.41%)</title><rect x="71.1" y="821" width="4.8" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="74.10" y="831.5" ></text>
+</g>
+<g >
+<title>void boost::asio::detail::initiate_co_spawn&lt;boost::asio::any_io_executor&gt;::operator (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="965" width="12.7" height="15.0" fill="rgb(212,32,7)" rx="2" ry="2" />
+<text  x="1114.06" y="975.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::stmtblock (100,463,553 samples, 2.64%)</title><rect x="71.1" y="1029" width="31.2" height="15.0" fill="rgb(249,206,49)" rx="2" ry="2" />
+<text  x="74.10" y="1039.5" >st..</text>
+</g>
+<g >
+<title>boost::asio::detail::executor_function::executor_function&lt;boost::asio::detail::work_dispatcher&lt;boost::asio::detail::empty_work_function, boost::asio::detail::completion_payload_handler&lt;boost::asio::detail::completion_payload&lt;void  (39,685,691 samples, 1.04%)</title><rect x="621.7" y="885" width="12.3" height="15.0" fill="rgb(209,20,5)" rx="2" ry="2" />
+<text  x="624.71" y="895.5" ></text>
+</g>
+<g >
+<title>all (3,799,319,765 samples, 100%)</title><rect x="10.0" y="1365" width="1180.0" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="1375.5" ></text>
+</g>
+<g >
+<title>malloc (25,034,228 samples, 0.66%)</title><rect x="94.5" y="325" width="7.8" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="97.53" y="335.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::ReceiveTuples (40,350,342 samples, 1.06%)</title><rect x="1123.8" y="997" width="12.5" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="1126.78" y="1007.5" ></text>
+</g>
+<g >
+<title>void boost::asio::detail::initiate_post_with_executor&lt;boost::asio::any_io_executor&gt;::operator (82,382,664 samples, 2.17%)</title><rect x="165.4" y="933" width="25.6" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="168.41" y="943.5" >v..</text>
+</g>
+<g >
+<title>[unknown] (59,562,419 samples, 1.57%)</title><rect x="12.5" y="1301" width="18.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="15.46" y="1311.5" ></text>
+</g>
+<g >
+<title>malloc (40,555,284 samples, 1.07%)</title><rect x="380.9" y="965" width="12.6" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="383.88" y="975.5" ></text>
+</g>
+<g >
+<title>__libc_start_call_main (3,601,603,158 samples, 94.80%)</title><rect x="43.1" y="1301" width="1118.6" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="46.11" y="1311.5" >__libc_start_call_main</text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="405" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="415.5" ></text>
+</g>
+<g >
+<title>boost::asio::detail::awaitable_thread&lt;boost::asio::any_io_executor&gt;::pump (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="533" width="12.7" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="1114.06" y="543.5" ></text>
+</g>
+<g >
+<title>boost::asio::detail::awaitable_thread&lt;boost::asio::any_io_executor&gt;::pump (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="853" width="12.7" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="1114.06" y="863.5" ></text>
+</g>
+<g >
+<title>void boost::asio::experimental::detail::channel_service&lt;boost::asio::detail::posix_mutex&gt;::async_receive&lt;boost::asio::experimental::channel_traits&lt;&gt;, void  (245,006,271 samples, 6.45%)</title><rect x="153.0" y="997" width="76.1" height="15.0" fill="rgb(234,135,32)" rx="2" ry="2" />
+<text  x="156.01" y="1007.5" >void boo..</text>
+</g>
+<g >
+<title>antlr4::atn::LexerATNSimulator::getReachableConfigSet (9,372,331 samples, 0.25%)</title><rect x="68.2" y="885" width="2.9" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="71.19" y="895.5" ></text>
+</g>
+<g >
+<title>std::enable_if&lt;call_traits&lt;boost_asio_require_fn::impl, boost::asio::any_io_executor const&amp;, void  (41,024,951 samples, 1.08%)</title><rect x="178.3" y="917" width="12.7" height="15.0" fill="rgb(242,174,41)" rx="2" ry="2" />
+<text  x="181.25" y="927.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::stmtmulti (100,463,553 samples, 2.64%)</title><rect x="71.1" y="1013" width="31.2" height="15.0" fill="rgb(243,175,41)" rx="2" ry="2" />
+<text  x="74.10" y="1023.5" >st..</text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::c_expr (25,034,228 samples, 0.66%)</title><rect x="94.5" y="517" width="7.8" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="97.53" y="527.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="277" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="287.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::Executor&lt;stewkk::sql::CachedJitCompiledExpressionExecutor&gt;::ExecuteJoin (522,843,079 samples, 13.76%)</title><rect x="798.3" y="997" width="162.4" height="15.0" fill="rgb(246,192,45)" rx="2" ry="2" />
+<text  x="801.33" y="1007.5" >stewkk::sql::Executo..</text>
+</g>
+<g >
+<title>stewkk::sql::ConcatTuples (121,354,626 samples, 3.19%)</title><rect x="923.0" y="981" width="37.7" height="15.0" fill="rgb(207,12,2)" rx="2" ry="2" />
+<text  x="926.03" y="991.5" >ste..</text>
+</g>
+<g >
+<title>boost::asio::detail::awaitable_async_op&lt;void  (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="613" width="12.7" height="15.0" fill="rgb(214,43,10)" rx="2" ry="2" />
+<text  x="1114.06" y="623.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ATNSimulator::getCachedContext (25,034,228 samples, 0.66%)</title><rect x="94.5" y="405" width="7.8" height="15.0" fill="rgb(231,121,29)" rx="2" ry="2" />
+<text  x="97.53" y="415.5" ></text>
+</g>
+<g >
+<title>void boost::asio::io_context::basic_executor_type&lt;std::allocator&lt;void&gt;, 4ul&gt;::execute&lt;boost::asio::detail::executor_function&gt; (2,228,166,127 samples, 58.65%)</title><rect x="444.3" y="1061" width="692.0" height="15.0" fill="rgb(240,163,39)" rx="2" ry="2" />
+<text  x="447.28" y="1071.5" >void boost::asio::io_context::basic_executor_type&lt;std::allocator&lt;void&gt;, 4ul&gt;::execute&lt;boost::as..</text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_at_time_zone (25,034,228 samples, 0.66%)</title><rect x="94.5" y="565" width="7.8" height="15.0" fill="rgb(226,100,24)" rx="2" ry="2" />
+<text  x="97.53" y="575.5" ></text>
+</g>
+<g >
+<title>boost::asio::detail::awaitable_frame_base&lt;boost::asio::any_io_executor&gt;::await_transform&lt;boost::asio::async_result&lt;boost::asio::use_awaitable_t&lt;boost::asio::any_io_executor&gt;, void  (527,102,043 samples, 13.87%)</title><rect x="520.6" y="997" width="163.8" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="523.64" y="1007.5" >boost::asio::detail::..</text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_in (50,953,973 samples, 1.34%)</title><rect x="86.5" y="757" width="15.8" height="15.0" fill="rgb(243,177,42)" rx="2" ry="2" />
+<text  x="89.48" y="767.5" ></text>
+</g>
+<g >
+<title>malloc_consolidate (15,496,168 samples, 0.41%)</title><rect x="71.1" y="741" width="4.8" height="15.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="74.10" y="751.5" ></text>
+</g>
+<g >
+<title>__libc_start_main@@GLIBC_2.34 (3,601,603,158 samples, 94.80%)</title><rect x="43.1" y="1317" width="1118.6" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="46.11" y="1327.5" >__libc_start_main@@GLIBC_2.34</text>
+</g>
+<g >
+<title>_int_free (120,389,579 samples, 3.17%)</title><rect x="998.4" y="965" width="37.4" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="1001.39" y="975.5" >_in..</text>
+</g>
+<g >
+<title>stewkk::sql::Executor&lt;stewkk::sql::CachedJitCompiledExpressionExecutor&gt;::SpawnExecutor (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="837" width="12.7" height="15.0" fill="rgb(214,41,9)" rx="2" ry="2" />
+<text  x="1114.06" y="847.5" ></text>
+</g>
+<g >
+<title>void boost::asio::execution::detail::any_executor_base::execute&lt;boost::asio::detail::work_dispatcher&lt;boost::asio::detail::empty_work_function, boost::asio::detail::completion_payload_handler&lt;boost::asio::detail::completion_payload&lt;void  (39,685,691 samples, 1.04%)</title><rect x="621.7" y="901" width="12.3" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="624.71" y="911.5" ></text>
+</g>
+<g >
+<title>void boost::asio::detail::executor_function::complete&lt;boost::asio::detail::binder0&lt;boost::asio::detail::completion_payload_handler&lt;boost::asio::detail::completion_payload&lt;void  (2,187,300,681 samples, 57.57%)</title><rect x="457.0" y="1045" width="679.3" height="15.0" fill="rgb(237,150,36)" rx="2" ry="2" />
+<text  x="459.97" y="1055.5" >void boost::asio::detail::executor_function::complete&lt;boost::asio::detail::binder0&lt;boost::asi..</text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_isnull (25,034,228 samples, 0.66%)</title><rect x="94.5" y="725" width="7.8" height="15.0" fill="rgb(249,205,49)" rx="2" ry="2" />
+<text  x="97.53" y="735.5" ></text>
+</g>
+<g >
+<title>void boost::asio::execution::detail::any_executor_base::execute&lt;boost::asio::detail::work_dispatcher&lt;boost::asio::detail::empty_work_function, boost::asio::detail::completion_payload_handler&lt;boost::asio::detail::completion_payload&lt;void  (40,315,717 samples, 1.06%)</title><rect x="520.6" y="901" width="12.6" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="523.64" y="911.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="293" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="303.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="613" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="623.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::Executor&lt;stewkk::sql::CachedJitCompiledExpressionExecutor&gt;::Execute (123,171,394 samples, 3.24%)</title><rect x="760.1" y="997" width="38.2" height="15.0" fill="rgb(230,118,28)" rx="2" ry="2" />
+<text  x="763.08" y="1007.5" >ste..</text>
+</g>
+<g >
+<title>boost::asio::experimental::detail::channel_send_op&lt;boost::asio::detail::completion_payload&lt;void  (81,364,301 samples, 2.14%)</title><rect x="191.0" y="965" width="25.3" height="15.0" fill="rgb(222,82,19)" rx="2" ry="2" />
+<text  x="193.99" y="975.5" >b..</text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="181" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="191.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="389" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="399.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;stewkk::sql::Value, std::allocator&lt;stewkk::sql::Value&gt; &gt;* std::__do_uninit_copy&lt;std::ranges::transform_view&lt;std::ranges::ref_view&lt;std::vector&lt;std::vector&lt;stewkk::sql::Value, std::allocator&lt;stewkk::sql::Value&gt; &gt;, std::allocator&lt;std::vector&lt;stewkk::sql::Value, std::allocator&lt;stewkk::sql::Value&gt; &gt; &gt; &gt; &gt;, stewkk::sql::Executor&lt;stewkk::sql::CachedJitCompiledExpressionExecutor&gt;::ExecuteProjection (242,357,273 samples, 6.38%)</title><rect x="1035.8" y="981" width="75.3" height="15.0" fill="rgb(234,135,32)" rx="2" ry="2" />
+<text  x="1038.78" y="991.5" >std::vec..</text>
+</g>
+<g >
+<title>SetImpliedBits (7,929,152 samples, 0.21%)</title><rect x="10.0" y="1317" width="2.5" height="15.0" fill="rgb(205,0,0)" rx="2" ry="2" />
+<text  x="13.00" y="1327.5" ></text>
+</g>
+<g >
+<title>cfree@GLIBC_2.2.5 (40,824,204 samples, 1.07%)</title><rect x="431.6" y="1077" width="12.7" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="434.60" y="1087.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::select_clause (84,967,385 samples, 2.24%)</title><rect x="75.9" y="949" width="26.4" height="15.0" fill="rgb(211,28,6)" rx="2" ry="2" />
+<text  x="78.91" y="959.5" >s..</text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="549" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="559.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="357" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="367.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::LexerATNSimulator::matchATN (9,372,331 samples, 0.25%)</title><rect x="68.2" y="933" width="2.9" height="15.0" fill="rgb(239,157,37)" rx="2" ry="2" />
+<text  x="71.19" y="943.5" ></text>
+</g>
+<g >
+<title>_ZN5boost4asio8co_spawnINS0_15any_io_executorES2_TkNS0_20completion_token_forIFvNSt15__exception_ptr13exception_ptrEEEERKNS0_10detached_tEEEDaRKT_NS0_9awaitableIvT0_EEOT1_NS0_10constraintIXaaoosr11is_executorISA_EE5valuesr9execution11is_executorISA_EE5valuesr14is_convertibleISA_SE_EE5valueEiE4typeE (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="661" width="12.7" height="15.0" fill="rgb(231,121,29)" rx="2" ry="2" />
+<text  x="1114.06" y="671.5" ></text>
+</g>
+<g >
+<title>_int_free_maybe_consolidate.part.0 (40,780,288 samples, 1.07%)</title><rect x="482.6" y="965" width="12.6" height="15.0" fill="rgb(254,228,54)" rx="2" ry="2" />
+<text  x="485.56" y="975.5" ></text>
+</g>
+<g >
+<title>void boost::asio::detail::initiate_dispatch::operator (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="917" width="12.7" height="15.0" fill="rgb(207,11,2)" rx="2" ry="2" />
+<text  x="1114.06" y="927.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="453" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="463.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (15,496,168 samples, 0.41%)</title><rect x="71.1" y="901" width="4.8" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="74.10" y="911.5" ></text>
+</g>
+<g >
+<title>void boost::asio::io_context::basic_executor_type&lt;std::allocator&lt;void&gt;, 0ul&gt;::execute&lt;boost::asio::detail::executor_function&gt; (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="725" width="12.7" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="1114.06" y="735.5" ></text>
+</g>
+<g >
+<title>void boost::asio::execution::detail::any_executor_base::copy_object&lt;boost::asio::io_context::basic_executor_type&lt;std::allocator&lt;void&gt;, 4ul&gt; &gt; (40,041,233 samples, 1.05%)</title><rect x="203.8" y="933" width="12.5" height="15.0" fill="rgb(211,32,7)" rx="2" ry="2" />
+<text  x="206.83" y="943.5" ></text>
+</g>
+<g >
+<title>pthread_mutex_unlock@plt (40,513,751 samples, 1.07%)</title><rect x="1149.1" y="1141" width="12.6" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1152.12" y="1151.5" ></text>
+</g>
+<g >
+<title>antlr4::BufferedTokenStream::setup (9,372,331 samples, 0.25%)</title><rect x="68.2" y="1029" width="2.9" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="71.19" y="1039.5" ></text>
+</g>
+<g >
+<title>std::basic_istream&lt;char, std::char_traits&lt;char&gt; &gt;&amp; std::getline&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; (40,030,747 samples, 1.05%)</title><rect x="317.7" y="1013" width="12.4" height="15.0" fill="rgb(244,181,43)" rx="2" ry="2" />
+<text  x="320.68" y="1023.5" ></text>
+</g>
+<g >
+<title>void boost::asio::experimental::detail::channel_service&lt;boost::asio::detail::posix_mutex&gt;::async_send&lt;boost::asio::experimental::channel_traits&lt;&gt;, void  (41,067,820 samples, 1.08%)</title><rect x="229.1" y="997" width="12.8" height="15.0" fill="rgb(206,6,1)" rx="2" ry="2" />
+<text  x="232.11" y="1007.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::Executor&lt;stewkk::sql::CachedJitCompiledExpressionExecutor&gt;::ExecuteProjection (484,047,544 samples, 12.74%)</title><rect x="960.7" y="997" width="150.4" height="15.0" fill="rgb(228,107,25)" rx="2" ry="2" />
+<text  x="963.72" y="1007.5" >stewkk::sql::Execut..</text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (15,496,168 samples, 0.41%)</title><rect x="71.1" y="917" width="4.8" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="74.10" y="927.5" ></text>
+</g>
+<g >
+<title>void boost::asio::experimental::detail::channel_service&lt;boost::asio::detail::posix_mutex&gt;::start_receive_op&lt;boost::asio::experimental::channel_traits&lt;&gt;, void  (205,111,508 samples, 5.40%)</title><rect x="165.4" y="981" width="63.7" height="15.0" fill="rgb(226,100,23)" rx="2" ry="2" />
+<text  x="168.41" y="991.5" >void b..</text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_compare (25,034,228 samples, 0.66%)</title><rect x="94.5" y="693" width="7.8" height="15.0" fill="rgb(232,128,30)" rx="2" ry="2" />
+<text  x="97.53" y="703.5" ></text>
+</g>
+<g >
+<title>boost::asio::detail::scheduler::work_cleanup::~work_cleanup (41,261,829 samples, 1.09%)</title><rect x="1136.3" y="1125" width="12.8" height="15.0" fill="rgb(216,54,12)" rx="2" ry="2" />
+<text  x="1139.31" y="1135.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (15,496,168 samples, 0.41%)</title><rect x="71.1" y="869" width="4.8" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="74.10" y="879.5" ></text>
+</g>
+<g >
+<title>void boost::asio::execution::detail::any_executor_base::move_object&lt;boost::asio::io_context::basic_executor_type&lt;std::allocator&lt;void&gt;, 4ul&gt; &gt; (41,323,068 samples, 1.09%)</title><rect x="191.0" y="917" width="12.8" height="15.0" fill="rgb(237,150,36)" rx="2" ry="2" />
+<text  x="193.99" y="927.5" ></text>
+</g>
+<g >
+<title>void boost::asio::detail::executor_function::complete&lt;boost::asio::detail::binder0&lt;boost::asio::detail::awaitable_async_op_handler&lt;void  (109,835,884 samples, 2.89%)</title><rect x="68.2" y="1109" width="34.1" height="15.0" fill="rgb(214,41,10)" rx="2" ry="2" />
+<text  x="71.19" y="1119.5" >vo..</text>
+</g>
+<g >
+<title>llvm::po_iterator&lt;llvm::Function*, llvm::SmallPtrSet&lt;llvm::BasicBlock*, 8u&gt;, false, llvm::GraphTraits&lt;llvm::Function*&gt; &gt;::traverseChild (8,946,159 samples, 0.24%)</title><rect x="1161.7" y="1333" width="2.8" height="15.0" fill="rgb(209,18,4)" rx="2" ry="2" />
+<text  x="1164.71" y="1343.5" ></text>
+</g>
+<g >
+<title>benchmarks (3,799,319,765 samples, 100.00%)</title><rect x="10.0" y="1349" width="1180.0" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="13.00" y="1359.5" >benchmarks</text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="565" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="575.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="149" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="159.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="629" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="639.5" ></text>
+</g>
+<g >
+<title>malloc (80,416,204 samples, 2.12%)</title><rect x="1048.5" y="949" width="25.0" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="1051.52" y="959.5" >m..</text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_or (84,967,385 samples, 2.24%)</title><rect x="75.9" y="805" width="26.4" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="78.91" y="815.5" >s..</text>
+</g>
+<g >
+<title>benchmark::internal::BenchmarkInstance::Run (3,601,603,158 samples, 94.80%)</title><rect x="43.1" y="1189" width="1118.6" height="15.0" fill="rgb(228,110,26)" rx="2" ry="2" />
+<text  x="46.11" y="1199.5" >benchmark::internal::BenchmarkInstance::Run</text>
+</g>
+<g >
+<title>std::enable_if&lt;call_traits&lt;boost_asio_prefer_fn::impl, boost::asio::any_io_executor const&amp;, void  (39,894,763 samples, 1.05%)</title><rect x="153.0" y="965" width="12.4" height="15.0" fill="rgb(224,90,21)" rx="2" ry="2" />
+<text  x="156.01" y="975.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::stmt (100,463,553 samples, 2.64%)</title><rect x="71.1" y="997" width="31.2" height="15.0" fill="rgb(228,107,25)" rx="2" ry="2" />
+<text  x="74.10" y="1007.5" >st..</text>
+</g>
+<g >
+<title>void boost::asio::detail::initiate_dispatch::operator (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="597" width="12.7" height="15.0" fill="rgb(207,11,2)" rx="2" ry="2" />
+<text  x="1114.06" y="607.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="133" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="143.5" ></text>
+</g>
+<g >
+<title>uw_update_context_1 (33,889,616 samples, 0.89%)</title><rect x="32.6" y="1317" width="10.5" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="35.59" y="1327.5" ></text>
+</g>
+<g >
+<title>malloc (15,496,168 samples, 0.41%)</title><rect x="71.1" y="773" width="4.8" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="74.10" y="783.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="197" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="207.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::simple_select_pramary (84,967,385 samples, 2.24%)</title><rect x="75.9" y="917" width="26.4" height="15.0" fill="rgb(228,106,25)" rx="2" ry="2" />
+<text  x="78.91" y="927.5" >s..</text>
+</g>
+<g >
+<title>boost::asio::detail::awaitable_thread&lt;boost::asio::any_io_executor&gt;::pump (774,233,850 samples, 20.38%)</title><rect x="153.0" y="1029" width="240.5" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="156.01" y="1039.5" >boost::asio::detail::awaitable_..</text>
+</g>
+<g >
+<title>boost::asio::detail::scheduler::do_run_one (3,480,356,914 samples, 91.60%)</title><rect x="68.2" y="1141" width="1080.9" height="15.0" fill="rgb(223,83,20)" rx="2" ry="2" />
+<text  x="71.19" y="1151.5" >boost::asio::detail::scheduler::do_run_one</text>
+</g>
+<g >
+<title>antlr4::atn::LexerATNSimulator::execATN (9,372,331 samples, 0.25%)</title><rect x="68.2" y="917" width="2.9" height="15.0" fill="rgb(211,27,6)" rx="2" ry="2" />
+<text  x="71.19" y="927.5" ></text>
+</g>
+<g >
+<title>malloc@plt (25,919,745 samples, 0.68%)</title><rect x="86.5" y="741" width="8.0" height="15.0" fill="rgb(246,192,46)" rx="2" ry="2" />
+<text  x="89.48" y="751.5" ></text>
+</g>
+<g >
+<title>boost::asio::awaitable&lt;std::vector&lt;std::vector&lt;stewkk::sql::Value, std::allocator&lt;stewkk::sql::Value&gt; &gt;, std::allocator&lt;std::vector&lt;stewkk::sql::Value, std::allocator&lt;stewkk::sql::Value&gt; &gt; &gt; &gt;, boost::asio::any_io_executor&gt;::await_resume (40,478,988 samples, 1.07%)</title><rect x="960.7" y="981" width="12.6" height="15.0" fill="rgb(241,167,40)" rx="2" ry="2" />
+<text  x="963.72" y="991.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="661" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="671.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_add (25,034,228 samples, 0.66%)</title><rect x="94.5" y="629" width="7.8" height="15.0" fill="rgb(213,41,9)" rx="2" ry="2" />
+<text  x="97.53" y="639.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_unary_not (25,034,228 samples, 0.66%)</title><rect x="94.5" y="741" width="7.8" height="15.0" fill="rgb(230,118,28)" rx="2" ry="2" />
+<text  x="97.53" y="751.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="485" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="495.5" ></text>
+</g>
+<g >
+<title>cfree@GLIBC_2.2.5 (81,209,468 samples, 2.14%)</title><rect x="684.4" y="997" width="25.2" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="687.35" y="1007.5" >c..</text>
+</g>
+<g >
+<title>void boost::asio::detail::executor_function::complete&lt;boost::asio::detail::work_dispatcher&lt;boost::asio::detail::empty_work_function, boost::asio::detail::completion_payload_handler&lt;boost::asio::detail::completion_payload&lt;void  (2,351,062,937 samples, 61.88%)</title><rect x="406.1" y="1109" width="730.2" height="15.0" fill="rgb(225,92,22)" rx="2" ry="2" />
+<text  x="409.11" y="1119.5" >void boost::asio::detail::executor_function::complete&lt;boost::asio::detail::work_dispatcher&lt;boost::asi..</text>
+</g>
+<g >
+<title>_ZN6stewkk3sql6BM_SQLINS0_35CachedJitCompiledExpressionExecutorEXadsoKcL_ZNS0_L12kComplex4000EEEEEEvRN9benchmark5StateE (3,601,603,158 samples, 94.80%)</title><rect x="43.1" y="1173" width="1118.6" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="46.11" y="1183.5" >_ZN6stewkk3sql6BM_SQLINS0_35CachedJitCompiledExpressionExecutorEXadsoKcL_ZNS0_L12kComplex4000EEEEEEvRN9benchmark5StateE</text>
+</g>
+<g >
+<title>boost::asio::experimental::detail::channel_operation::handler_work&lt;boost::asio::detail::awaitable_handler&lt;boost::asio::any_io_executor, boost::system::error_code&gt;, boost::asio::any_io_executor, void&gt;::handler_work (80,926,524 samples, 2.13%)</title><rect x="533.2" y="965" width="25.1" height="15.0" fill="rgb(208,13,3)" rx="2" ry="2" />
+<text  x="536.16" y="975.5" >b..</text>
+</g>
+<g >
+<title>main (3,601,603,158 samples, 94.80%)</title><rect x="43.1" y="1285" width="1118.6" height="15.0" fill="rgb(243,179,42)" rx="2" ry="2" />
+<text  x="46.11" y="1295.5" >main</text>
+</g>
+<g >
+<title>__GI_____strtoll_l_internal (81,010,836 samples, 2.13%)</title><rect x="342.9" y="997" width="25.1" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="345.86" y="1007.5" >_..</text>
+</g>
+<g >
+<title>boost::asio::detail::scheduler::run (3,601,603,158 samples, 94.80%)</title><rect x="43.1" y="1157" width="1118.6" height="15.0" fill="rgb(243,178,42)" rx="2" ry="2" />
+<text  x="46.11" y="1167.5" >boost::asio::detail::scheduler::run</text>
+</g>
+<g >
+<title>void boost::asio::execution::detail::any_executor_base::execute&lt;boost::asio::detail::work_dispatcher&lt;boost::asio::detail::empty_work_function, boost::asio::detail::binder1&lt;boost::asio::detail::awaitable_handler&lt;boost::asio::any_io_executor, boost::system::error_code&gt;, boost::system::error_code&gt;, boost::asio::any_io_executor, void&gt; &gt; (121,412,151 samples, 3.20%)</title><rect x="646.6" y="901" width="37.8" height="15.0" fill="rgb(239,158,37)" rx="2" ry="2" />
+<text  x="649.64" y="911.5" >voi..</text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="725" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="735.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_like (25,034,228 samples, 0.66%)</title><rect x="94.5" y="677" width="7.8" height="15.0" fill="rgb(212,36,8)" rx="2" ry="2" />
+<text  x="97.53" y="687.5" ></text>
+</g>
+<g >
+<title>[unknown] (59,562,419 samples, 1.57%)</title><rect x="12.5" y="1317" width="18.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="15.46" y="1327.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="469" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="479.5" ></text>
+</g>
+<g >
+<title>execute_cfa_program_specialized (40,605,147 samples, 1.07%)</title><rect x="18.4" y="1269" width="12.6" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="21.35" y="1279.5" ></text>
+</g>
+<g >
+<title>void boost::asio::execution::detail::any_executor_base::execute&lt;boost::asio::detail::binder0&lt;boost::asio::detail::awaitable_async_op_handler&lt;void  (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="901" width="12.7" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="1114.06" y="911.5" ></text>
+</g>
+<g >
+<title>benchmark::internal::(anonymous namespace)::RunInThread (3,601,603,158 samples, 94.80%)</title><rect x="43.1" y="1205" width="1118.6" height="15.0" fill="rgb(208,15,3)" rx="2" ry="2" />
+<text  x="46.11" y="1215.5" >benchmark::internal::(anonymous namespace)::RunInThread</text>
+</g>
+<g >
+<title>void boost::asio::detail::executor_function::complete&lt;boost::asio::detail::work_dispatcher&lt;boost::asio::detail::empty_work_function, boost::asio::detail::binder1&lt;boost::asio::detail::awaitable_handler&lt;boost::asio::any_io_executor, boost::system::error_code&gt;, boost::system::error_code&gt;, boost::asio::any_io_executor, void&gt;, std::allocator&lt;void&gt; &gt; (978,196,264 samples, 25.75%)</title><rect x="102.3" y="1109" width="303.8" height="15.0" fill="rgb(249,206,49)" rx="2" ry="2" />
+<text  x="105.30" y="1119.5" >void boost::asio::detail::executor_funct..</text>
+</g>
+<g >
+<title>benchmark::internal::BenchmarkRunner::DoOneRepetition (3,601,603,158 samples, 94.80%)</title><rect x="43.1" y="1237" width="1118.6" height="15.0" fill="rgb(212,33,8)" rx="2" ry="2" />
+<text  x="46.11" y="1247.5" >benchmark::internal::BenchmarkRunner::DoOneRepetition</text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_between (50,953,973 samples, 1.34%)</title><rect x="86.5" y="773" width="15.8" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="89.48" y="783.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="709" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="719.5" ></text>
+</g>
+<g >
+<title>operator new (80,416,204 samples, 2.12%)</title><rect x="1048.5" y="965" width="25.0" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="1051.52" y="975.5" >o..</text>
+</g>
+<g >
+<title>std::_Function_handler&lt;stewkk::sql::Value  (40,383,450 samples, 1.06%)</title><rect x="1073.5" y="965" width="12.5" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="1076.49" y="975.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="533" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="543.5" ></text>
+</g>
+<g >
+<title>boost::asio::detail::awaitable_frame_base&lt;boost::asio::any_io_executor&gt;::await_transform&lt;boost::asio::async_result&lt;boost::asio::use_awaitable_t&lt;boost::asio::any_io_executor&gt;, void  (327,144,129 samples, 8.61%)</title><rect x="153.0" y="1013" width="101.6" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="156.01" y="1023.5" >boost::asio:..</text>
+</g>
+<g >
+<title>std::enable_if&lt;call_traits&lt;boost_asio_prefer_fn::impl, boost::asio::any_io_executor const&amp;, void  (41,027,112 samples, 1.08%)</title><rect x="545.6" y="949" width="12.7" height="15.0" fill="rgb(224,90,21)" rx="2" ry="2" />
+<text  x="548.56" y="959.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure (34,013,412 samples, 0.90%)</title><rect x="75.9" y="757" width="10.6" height="15.0" fill="rgb(251,212,50)" rx="2" ry="2" />
+<text  x="78.91" y="767.5" ></text>
+</g>
+<g >
+<title>void boost::asio::experimental::detail::channel_service&lt;boost::asio::detail::posix_mutex&gt;::start_send_op&lt;boost::asio::experimental::channel_traits&lt;&gt;, void  (364,798,231 samples, 9.60%)</title><rect x="571.1" y="965" width="113.3" height="15.0" fill="rgb(248,201,48)" rx="2" ry="2" />
+<text  x="574.05" y="975.5" >void boost::as..</text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="581" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="591.5" ></text>
+</g>
+<g >
+<title>pthread_mutex_lock@@GLIBC_2.2.5 (41,364,543 samples, 1.09%)</title><rect x="216.3" y="965" width="12.8" height="15.0" fill="rgb(244,179,42)" rx="2" ry="2" />
+<text  x="219.26" y="975.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::GetAST (109,835,884 samples, 2.89%)</title><rect x="68.2" y="1061" width="34.1" height="15.0" fill="rgb(239,158,37)" rx="2" ry="2" />
+<text  x="71.19" y="1071.5" >st..</text>
+</g>
+<g >
+<title>void boost::asio::detail::executor_function::complete&lt;boost::asio::detail::binder0&lt;boost::asio::detail::awaitable_async_op_handler&lt;void  (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="549" width="12.7" height="15.0" fill="rgb(214,41,10)" rx="2" ry="2" />
+<text  x="1114.06" y="559.5" ></text>
+</g>
+<g >
+<title>_ZN5boost4asio8co_spawnINS0_15any_io_executorES2_TkNS0_20completion_token_forIFvNSt15__exception_ptr13exception_ptrEEEERKNS0_10detached_tEEEDaRKT_NS0_9awaitableIvT0_EEOT1_NS0_10constraintIXaaoosr11is_executorISA_EE5valuesr9execution11is_executorISA_EE5valuesr14is_convertibleISA_SE_EE5valueEiE4typeE (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="981" width="12.7" height="15.0" fill="rgb(231,121,29)" rx="2" ry="2" />
+<text  x="1114.06" y="991.5" ></text>
+</g>
+<g >
+<title>_start (3,601,603,158 samples, 94.80%)</title><rect x="43.1" y="1333" width="1118.6" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="46.11" y="1343.5" >_start</text>
+</g>
+<g >
+<title>operator new (121,717,805 samples, 3.20%)</title><rect x="722.3" y="997" width="37.8" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="725.28" y="1007.5" >ope..</text>
+</g>
+<g >
+<title>boost::asio::detail::awaitable_thread&lt;boost::asio::any_io_executor&gt;::pump (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="693" width="12.7" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="1114.06" y="703.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="165" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="175.5" ></text>
+</g>
+<g >
+<title>_int_malloc (39,726,451 samples, 1.05%)</title><rect x="1061.2" y="933" width="12.3" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="1064.16" y="943.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::select_no_parens (84,967,385 samples, 2.24%)</title><rect x="75.9" y="965" width="26.4" height="15.0" fill="rgb(242,171,41)" rx="2" ry="2" />
+<text  x="78.91" y="975.5" >s..</text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="53" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="63.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::LexerATNSimulator::match (9,372,331 samples, 0.25%)</title><rect x="68.2" y="949" width="2.9" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="71.19" y="959.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_caret (25,034,228 samples, 0.66%)</title><rect x="94.5" y="597" width="7.8" height="15.0" fill="rgb(228,106,25)" rx="2" ry="2" />
+<text  x="97.53" y="607.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="597" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="607.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="501" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="511.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="421" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="431.5" ></text>
+</g>
+<g >
+<title>boost::asio::detail::awaitable_async_op&lt;void  (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="773" width="12.7" height="15.0" fill="rgb(214,43,10)" rx="2" ry="2" />
+<text  x="1114.06" y="783.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::PredictionContextCache::put (25,034,228 samples, 0.66%)</title><rect x="94.5" y="373" width="7.8" height="15.0" fill="rgb(209,18,4)" rx="2" ry="2" />
+<text  x="97.53" y="383.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ATNConfigSet::optimizeConfigs (25,034,228 samples, 0.66%)</title><rect x="94.5" y="421" width="7.8" height="15.0" fill="rgb(207,13,3)" rx="2" ry="2" />
+<text  x="97.53" y="431.5" ></text>
+</g>
+<g >
+<title>void boost::asio::detail::initiate_co_spawn&lt;boost::asio::any_io_executor&gt;::operator (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="805" width="12.7" height="15.0" fill="rgb(212,32,7)" rx="2" ry="2" />
+<text  x="1114.06" y="815.5" ></text>
+</g>
+<g >
+<title>void boost::asio::detail::awaitable_handler&lt;boost::asio::any_io_executor, boost::system::error_code, std::vector&lt;std::vector&lt;stewkk::sql::Value, std::allocator&lt;stewkk::sql::Value&gt; &gt;, std::allocator&lt;std::vector&lt;stewkk::sql::Value, std::allocator&lt;stewkk::sql::Value&gt; &gt; &gt; &gt; &gt;::operator (2,187,300,681 samples, 57.57%)</title><rect x="457.0" y="1029" width="679.3" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="459.97" y="1039.5" >void boost::asio::detail::awaitable_handler&lt;boost::asio::any_io_executor, boost::system::erro..</text>
+</g>
+<g >
+<title>boost::asio::detail::executor_function::impl&lt;boost::asio::detail::work_dispatcher&lt;boost::asio::detail::empty_work_function, boost::asio::detail::completion_payload_handler&lt;boost::asio::detail::completion_payload&lt;void  (40,824,204 samples, 1.07%)</title><rect x="431.6" y="1093" width="12.7" height="15.0" fill="rgb(218,59,14)" rx="2" ry="2" />
+<text  x="434.60" y="1103.5" ></text>
+</g>
+<g >
+<title>cfree@GLIBC_2.2.5 (40,780,288 samples, 1.07%)</title><rect x="482.6" y="981" width="12.6" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="485.56" y="991.5" ></text>
+</g>
+<g >
+<title>antlr4::BufferedTokenStream::sync (9,372,331 samples, 0.25%)</title><rect x="68.2" y="1013" width="2.9" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="71.19" y="1023.5" ></text>
+</g>
+<g >
+<title>void boost::asio::experimental::detail::channel_service&lt;boost::asio::detail::posix_mutex&gt;::start_receive_op&lt;boost::asio::experimental::channel_traits&lt;&gt;, void  (41,070,038 samples, 1.08%)</title><rect x="241.9" y="997" width="12.7" height="15.0" fill="rgb(226,100,23)" rx="2" ry="2" />
+<text  x="244.86" y="1007.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::Executor&lt;stewkk::sql::CachedJitCompiledExpressionExecutor&gt;::ExecuteJoin (40,555,284 samples, 1.07%)</title><rect x="380.9" y="1013" width="12.6" height="15.0" fill="rgb(246,192,45)" rx="2" ry="2" />
+<text  x="383.88" y="1023.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_collate (25,034,228 samples, 0.66%)</title><rect x="94.5" y="549" width="7.8" height="15.0" fill="rgb(252,217,51)" rx="2" ry="2" />
+<text  x="97.53" y="559.5" ></text>
+</g>
+<g >
+<title>void boost::asio::experimental::detail::channel_service&lt;boost::asio::detail::posix_mutex&gt;::async_send&lt;boost::asio::experimental::channel_traits&lt;&gt;, void  (486,786,326 samples, 12.81%)</title><rect x="533.2" y="981" width="151.2" height="15.0" fill="rgb(206,6,1)" rx="2" ry="2" />
+<text  x="536.16" y="991.5" >void boost::asio::e..</text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::adaptivePredict (15,496,168 samples, 0.41%)</title><rect x="71.1" y="981" width="4.8" height="15.0" fill="rgb(209,18,4)" rx="2" ry="2" />
+<text  x="74.10" y="991.5" ></text>
+</g>
+<g >
+<title>void boost::asio::execution::detail::any_executor_base::execute&lt;boost::asio::detail::binder0&lt;boost::asio::detail::completion_payload_handler&lt;boost::asio::detail::completion_payload&lt;void  (2,228,166,127 samples, 58.65%)</title><rect x="444.3" y="1077" width="692.0" height="15.0" fill="rgb(249,203,48)" rx="2" ry="2" />
+<text  x="447.28" y="1087.5" >void boost::asio::execution::detail::any_executor_base::execute&lt;boost::asio::detail::binder0&lt;bo..</text>
+</g>
+<g >
+<title>void boost::asio::detail::initiate_post_with_executor&lt;boost::asio::any_io_executor&gt;::operator (161,995,300 samples, 4.26%)</title><rect x="634.0" y="917" width="50.4" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="637.04" y="927.5" >void ..</text>
+</g>
+<g >
+<title>boost::asio::detail::awaitable_thread&lt;boost::asio::any_io_executor&gt;::~awaitable_thread (41,054,766 samples, 1.08%)</title><rect x="418.9" y="1093" width="12.7" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="421.85" y="1103.5" ></text>
+</g>
+<g >
+<title>antlr4::BufferedTokenStream::fill (9,372,331 samples, 0.25%)</title><rect x="68.2" y="1045" width="2.9" height="15.0" fill="rgb(219,66,15)" rx="2" ry="2" />
+<text  x="71.19" y="1055.5" ></text>
+</g>
+<g >
+<title>std::enable_if&lt;call_traits&lt;boost_asio_prefer_fn::impl, boost::asio::any_io_executor const&amp;, void  (40,583,149 samples, 1.07%)</title><rect x="634.0" y="901" width="12.6" height="15.0" fill="rgb(224,90,21)" rx="2" ry="2" />
+<text  x="637.04" y="911.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_and (50,953,973 samples, 1.34%)</title><rect x="86.5" y="789" width="15.8" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="89.48" y="799.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr (84,967,385 samples, 2.24%)</title><rect x="75.9" y="853" width="26.4" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="78.91" y="863.5" >s..</text>
+</g>
+<g >
+<title>antlr4::atn::ATNConfigSet::add (15,496,168 samples, 0.41%)</title><rect x="71.1" y="805" width="4.8" height="15.0" fill="rgb(236,144,34)" rx="2" ry="2" />
+<text  x="74.10" y="815.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::CsvDirSequentialScanner::operator (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="517" width="12.7" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="1114.06" y="527.5" ></text>
+</g>
+<g >
+<title>_ZZN6stewkk3sql6BM_SQLINS0_35CachedJitCompiledExpressionExecutorEXadsoKcL_ZNS0_L12kComplex4000EEEEEEvRN9benchmark5StateEENKUlvE_clEv.resume (40,780,288 samples, 1.07%)</title><rect x="482.6" y="997" width="12.6" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="485.56" y="1007.5" ></text>
+</g>
+<g >
+<title>void boost::asio::io_context::basic_executor_type&lt;std::allocator&lt;void&gt;, 0ul&gt;::execute&lt;boost::asio::detail::executor_function&gt; (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="885" width="12.7" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="1114.06" y="895.5" ></text>
+</g>
+<g >
+<title>boost::asio::detail::awaitable_async_op&lt;void  (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="933" width="12.7" height="15.0" fill="rgb(214,43,10)" rx="2" ry="2" />
+<text  x="1114.06" y="943.5" ></text>
+</g>
+<g >
+<title>boost::asio::detail::awaitable_thread&lt;boost::asio::any_io_executor&gt;::pump (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="629" width="12.7" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="1114.06" y="639.5" ></text>
+</g>
+<g >
+<title>_ZNSt6ranges14__copy_or_moveILb0ETkSt14input_iteratorPKN6stewkk3sql5ValueETkSt12sentinel_forIT0_ES5_TkSt20weakly_incrementableSt20back_insert_iteratorISt6vectorIS3_SaIS3_EEEQquT_18indirectly_movableIS7_T2_E19indirectly_copyableIS7_SD_EEENSt13__conditionalIXT_EE4typeINS_13in_out_resultIS7_SD_EESI_EES7_T1_SD_ (81,633,781 samples, 2.15%)</title><rect x="935.4" y="965" width="25.3" height="15.0" fill="rgb(249,203,48)" rx="2" ry="2" />
+<text  x="938.37" y="975.5" >_..</text>
+</g>
+<g >
+<title>operator new (80,410,706 samples, 2.12%)</title><rect x="898.1" y="981" width="24.9" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="901.05" y="991.5" >o..</text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="245" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="255.5" ></text>
+</g>
+<g >
+<title>boost::asio::awaitable&lt;void, boost::asio::any_io_executor&gt; boost::asio::async_result&lt;boost::asio::use_awaitable_t&lt;boost::asio::any_io_executor&gt;, void  (41,150,539 samples, 1.08%)</title><rect x="457.0" y="1013" width="12.8" height="15.0" fill="rgb(246,192,46)" rx="2" ry="2" />
+<text  x="459.97" y="1023.5" ></text>
+</g>
+<g >
+<title>benchmark::internal::BenchmarkRunner::DoNIterations (3,601,603,158 samples, 94.80%)</title><rect x="43.1" y="1221" width="1118.6" height="15.0" fill="rgb(238,153,36)" rx="2" ry="2" />
+<text  x="46.11" y="1231.5" >benchmark::internal::BenchmarkRunner::DoNIterations</text>
+</g>
+<g >
+<title>boost::asio::experimental::detail::channel_operation::handler_work&lt;boost::asio::detail::awaitable_handler&lt;boost::asio::any_io_executor, boost::system::error_code&gt;, boost::asio::any_io_executor, void&gt;::handler_work (41,067,820 samples, 1.08%)</title><rect x="229.1" y="981" width="12.8" height="15.0" fill="rgb(208,13,3)" rx="2" ry="2" />
+<text  x="232.11" y="991.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::target_list_ (84,967,385 samples, 2.24%)</title><rect x="75.9" y="901" width="26.4" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="78.91" y="911.5" >s..</text>
+</g>
+<g >
+<title>operator new (15,496,168 samples, 0.41%)</title><rect x="71.1" y="789" width="4.8" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="74.10" y="799.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="341" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="351.5" ></text>
+</g>
+<g >
+<title>operator new (25,034,228 samples, 0.66%)</title><rect x="94.5" y="341" width="7.8" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="97.53" y="351.5" ></text>
+</g>
+<g >
+<title>malloc@plt (40,921,300 samples, 1.08%)</title><rect x="254.6" y="1013" width="12.7" height="15.0" fill="rgb(246,192,46)" rx="2" ry="2" />
+<text  x="257.62" y="1023.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_qual_op (25,034,228 samples, 0.66%)</title><rect x="94.5" y="661" width="7.8" height="15.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="97.53" y="671.5" ></text>
+</g>
+<g >
+<title>boost::asio::experimental::detail::channel_send_op&lt;boost::asio::detail::completion_payload&lt;void  (161,995,300 samples, 4.26%)</title><rect x="634.0" y="949" width="50.4" height="15.0" fill="rgb(222,82,19)" rx="2" ry="2" />
+<text  x="637.04" y="959.5" >boost..</text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="309" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="319.5" ></text>
+</g>
+<g >
+<title>_int_malloc (41,112,758 samples, 1.08%)</title><rect x="747.3" y="965" width="12.8" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="750.31" y="975.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="373" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="383.5" ></text>
+</g>
+<g >
+<title>_ZN5boost4asio8co_spawnINS0_15any_io_executorES2_TkNS0_20completion_token_forIFvNSt15__exception_ptr13exception_ptrEEEERKNS0_10detached_tEEEDaRKT_NS0_9awaitableIvT0_EEOT1_NS0_10constraintIXaaoosr11is_executorISA_EE5valuesr9execution11is_executorISA_EE5valuesr14is_convertibleISA_SE_EE5valueEiE4typeE (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="821" width="12.7" height="15.0" fill="rgb(231,121,29)" rx="2" ry="2" />
+<text  x="1114.06" y="831.5" ></text>
+</g>
+<g >
+<title>_int_malloc (25,034,228 samples, 0.66%)</title><rect x="94.5" y="309" width="7.8" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="97.53" y="319.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (15,496,168 samples, 0.41%)</title><rect x="71.1" y="933" width="4.8" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="74.10" y="943.5" ></text>
+</g>
+<g >
+<title>boost::asio::experimental::detail::channel_receive_op&lt;boost::asio::detail::completion_payload&lt;void  (82,382,664 samples, 2.17%)</title><rect x="165.4" y="965" width="25.6" height="15.0" fill="rgb(250,211,50)" rx="2" ry="2" />
+<text  x="168.41" y="975.5" >b..</text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::selectstmt (84,967,385 samples, 2.24%)</title><rect x="75.9" y="981" width="26.4" height="15.0" fill="rgb(244,179,42)" rx="2" ry="2" />
+<text  x="78.91" y="991.5" >s..</text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::identifier (25,034,228 samples, 0.66%)</title><rect x="94.5" y="469" width="7.8" height="15.0" fill="rgb(233,129,30)" rx="2" ry="2" />
+<text  x="97.53" y="479.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_mul (25,034,228 samples, 0.66%)</title><rect x="94.5" y="613" width="7.8" height="15.0" fill="rgb(224,91,21)" rx="2" ry="2" />
+<text  x="97.53" y="623.5" ></text>
+</g>
+<g >
+<title>operator delete (40,898,461 samples, 1.08%)</title><rect x="709.6" y="997" width="12.7" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="712.57" y="1007.5" ></text>
+</g>
+<g >
+<title>cfree@GLIBC_2.2.5 (40,478,988 samples, 1.07%)</title><rect x="960.7" y="965" width="12.6" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="963.72" y="975.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_is_not (25,034,228 samples, 0.66%)</title><rect x="94.5" y="709" width="7.8" height="15.0" fill="rgb(220,72,17)" rx="2" ry="2" />
+<text  x="97.53" y="719.5" ></text>
+</g>
+<g >
+<title>boost::asio::detail::awaitable_thread&lt;boost::asio::any_io_executor&gt;::pump (109,835,884 samples, 2.89%)</title><rect x="68.2" y="1093" width="34.1" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="71.19" y="1103.5" >bo..</text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::colid (25,034,228 samples, 0.66%)</title><rect x="94.5" y="485" width="7.8" height="15.0" fill="rgb(245,186,44)" rx="2" ry="2" />
+<text  x="97.53" y="495.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="741" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="751.5" ></text>
+</g>
+<g >
+<title>boost::asio::detail::work_dispatcher&lt;boost::asio::detail::empty_work_function, boost::asio::detail::completion_payload_handler&lt;boost::asio::detail::completion_payload&lt;void  (2,228,166,127 samples, 58.65%)</title><rect x="444.3" y="1093" width="692.0" height="15.0" fill="rgb(243,175,41)" rx="2" ry="2" />
+<text  x="447.28" y="1103.5" >boost::asio::detail::work_dispatcher&lt;boost::asio::detail::empty_work_function, boost::asio::det..</text>
+</g>
+<g >
+<title>void boost::asio::execution::detail::any_executor_base::destroy_object&lt;boost::asio::io_context::basic_executor_type&lt;std::allocator&lt;void&gt;, 4ul&gt; &gt; (40,370,745 samples, 1.06%)</title><rect x="596.4" y="933" width="12.5" height="15.0" fill="rgb(247,197,47)" rx="2" ry="2" />
+<text  x="599.41" y="943.5" ></text>
+</g>
+<g >
+<title>boost::asio::execution::any_executor&lt;boost::asio::execution::context_as_t&lt;boost::asio::execution_context&amp;&gt;, boost::asio::execution::detail::blocking::never_t&lt;0&gt;, boost::asio::execution::prefer_only&lt;boost::asio::execution::detail::blocking::possibly_t&lt;0&gt; &gt;, boost::asio::execution::prefer_only&lt;boost::asio::execution::detail::outstanding_work::tracked_t&lt;0&gt; &gt;, boost::asio::execution::prefer_only&lt;boost::asio::execution::detail::outstanding_work::untracked_t&lt;0&gt; &gt;, boost::asio::execution::prefer_only&lt;boost::asio::execution::detail::relationship::fork_t&lt;0&gt; &gt;, boost::asio::execution::prefer_only&lt;boost::asio::execution::detail::relationship::continuation_t&lt;0&gt; &gt; &gt; boost::asio::execution::detail::any_executor_base::prefer_fn&lt;boost::asio::execution::any_executor&lt;boost::asio::execution::context_as_t&lt;boost::asio::execution_context&amp;&gt;, boost::asio::execution::detail::blocking::never_t&lt;0&gt;, boost::asio::execution::prefer_only&lt;boost::asio::execution::detail::blocking::possibly_t&lt;0&gt; &gt;, boost::asio::execution::prefer_only&lt;boost::asio::execution::detail::outstanding_work::tracked_t&lt;0&gt; &gt;, boost::asio::execution::prefer_only&lt;boost::asio::execution::detail::outstanding_work::untracked_t&lt;0&gt; &gt;, boost::asio::execution::prefer_only&lt;boost::asio::execution::detail::relationship::fork_t&lt;0&gt; &gt;, boost::asio::execution::prefer_only&lt;boost::asio::execution::detail::relationship::continuation_t&lt;0&gt; &gt; &gt;, boost::asio::io_context::basic_executor_type&lt;std::allocator&lt;void&gt;, 0ul&gt;, boost::asio::execution::prefer_only&lt;boost::asio::execution::detail::outstanding_work::tracked_t&lt;0&gt; &gt; &gt; (40,583,149 samples, 1.07%)</title><rect x="634.0" y="885" width="12.6" height="15.0" fill="rgb(237,148,35)" rx="2" ry="2" />
+<text  x="637.04" y="895.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (15,496,168 samples, 0.41%)</title><rect x="71.1" y="837" width="4.8" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="74.10" y="847.5" ></text>
+</g>
+<g >
+<title>void* boost::asio::detail::thread_info_base::allocate&lt;boost::asio::detail::thread_info_base::awaitable_frame_tag&gt; (41,417,591 samples, 1.09%)</title><rect x="368.0" y="997" width="12.9" height="15.0" fill="rgb(226,99,23)" rx="2" ry="2" />
+<text  x="371.02" y="1007.5" ></text>
+</g>
+<g >
+<title>void boost::asio::io_context::basic_executor_type&lt;std::allocator&lt;void&gt;, 0ul&gt;::execute&lt;boost::asio::detail::executor_function&gt; (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="565" width="12.7" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="1114.06" y="575.5" ></text>
+</g>
+<g >
+<title>boost::asio::experimental::detail::channel_operation::handler_work&lt;boost::asio::detail::awaitable_handler&lt;boost::asio::any_io_executor, boost::system::error_code, std::vector&lt;std::vector&lt;stewkk::sql::Value, std::allocator&lt;stewkk::sql::Value&gt; &gt;, std::allocator&lt;std::vector&lt;stewkk::sql::Value, std::allocator&lt;stewkk::sql::Value&gt; &gt; &gt; &gt; &gt;, boost::asio::any_io_executor, void&gt;::handler_work (39,894,763 samples, 1.05%)</title><rect x="153.0" y="981" width="12.4" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="156.01" y="991.5" ></text>
+</g>
+<g >
+<title>void* boost::asio::detail::thread_info_base::allocate&lt;boost::asio::detail::thread_info_base::awaitable_frame_tag&gt; (40,555,284 samples, 1.07%)</title><rect x="380.9" y="981" width="12.6" height="15.0" fill="rgb(226,99,23)" rx="2" ry="2" />
+<text  x="383.88" y="991.5" ></text>
+</g>
+<g >
+<title>boost::asio::detail::awaitable_thread&lt;boost::asio::any_io_executor&gt;::pump (2,146,150,142 samples, 56.49%)</title><rect x="469.8" y="1013" width="666.5" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="472.75" y="1023.5" >boost::asio::detail::awaitable_thread&lt;boost::asio::any_io_executor&gt;::pump</text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::target_list (84,967,385 samples, 2.24%)</title><rect x="75.9" y="885" width="26.4" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="78.91" y="895.5" >s..</text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_lessless (84,967,385 samples, 2.24%)</title><rect x="75.9" y="821" width="26.4" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="78.91" y="831.5" >s..</text>
+</g>
+<g >
+<title>stewkk::sql::ApplyProjection (80,555,549 samples, 2.12%)</title><rect x="1086.0" y="965" width="25.1" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="1089.04" y="975.5" >s..</text>
+</g>
+<g >
+<title>malloc (121,717,805 samples, 3.20%)</title><rect x="722.3" y="981" width="37.8" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="725.28" y="991.5" >mal..</text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="325" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="335.5" ></text>
+</g>
+<g >
+<title>[unknown] (5,237,329 samples, 0.14%)</title><rect x="31.0" y="1301" width="1.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="33.96" y="1311.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::simple_select_intersect (84,967,385 samples, 2.24%)</title><rect x="75.9" y="933" width="26.4" height="15.0" fill="rgb(252,217,51)" rx="2" ry="2" />
+<text  x="78.91" y="943.5" >s..</text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_typecast (25,034,228 samples, 0.66%)</title><rect x="94.5" y="533" width="7.8" height="15.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="97.53" y="543.5" ></text>
+</g>
+<g >
+<title>void boost::asio::experimental::detail::channel_operation::handler_work&lt;boost::asio::detail::awaitable_handler&lt;boost::asio::any_io_executor, boost::system::error_code, std::vector&lt;std::vector&lt;stewkk::sql::Value, std::allocator&lt;stewkk::sql::Value&gt; &gt;, std::allocator&lt;std::vector&lt;stewkk::sql::Value, std::allocator&lt;stewkk::sql::Value&gt; &gt; &gt; &gt; &gt;, boost::asio::any_io_executor, void&gt;::immediate&lt;boost::asio::detail::completion_payload_handler&lt;boost::asio::detail::completion_payload&lt;void  (40,315,717 samples, 1.06%)</title><rect x="520.6" y="933" width="12.6" height="15.0" fill="rgb(247,195,46)" rx="2" ry="2" />
+<text  x="523.64" y="943.5" ></text>
+</g>
+<g >
+<title>cfree@GLIBC_2.2.5 (118,555,905 samples, 3.12%)</title><rect x="861.2" y="981" width="36.9" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="864.23" y="991.5" >cfr..</text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="85" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="95.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_unary_qualop (25,034,228 samples, 0.66%)</title><rect x="94.5" y="645" width="7.8" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="97.53" y="655.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="437" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="447.5" ></text>
+</g>
+<g >
+<title>malloc_consolidate (40,780,288 samples, 1.07%)</title><rect x="482.6" y="949" width="12.6" height="15.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="485.56" y="959.5" ></text>
+</g>
+<g >
+<title>boost::asio::detail::awaitable_thread&lt;boost::asio::any_io_executor&gt;::pump (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="789" width="12.7" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="1114.06" y="799.5" ></text>
+</g>
+<g >
+<title>void boost::asio::experimental::detail::channel_operation::handler_work&lt;boost::asio::detail::awaitable_handler&lt;boost::asio::any_io_executor, boost::system::error_code, std::vector&lt;std::vector&lt;stewkk::sql::Value, std::allocator&lt;stewkk::sql::Value&gt; &gt;, std::allocator&lt;std::vector&lt;stewkk::sql::Value, std::allocator&lt;stewkk::sql::Value&gt; &gt; &gt; &gt; &gt;, boost::asio::any_io_executor, void&gt;::immediate&lt;boost::asio::detail::completion_payload_handler&lt;boost::asio::detail::completion_payload&lt;void  (82,382,664 samples, 2.17%)</title><rect x="165.4" y="949" width="25.6" height="15.0" fill="rgb(247,195,46)" rx="2" ry="2" />
+<text  x="168.41" y="959.5" >v..</text>
+</g>
+<g >
+<title>void boost::asio::detail::initiate_dispatch::operator (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="757" width="12.7" height="15.0" fill="rgb(207,11,2)" rx="2" ry="2" />
+<text  x="1114.06" y="767.5" ></text>
+</g>
+<g >
+<title>unlink_chunk.isra.0 (40,780,288 samples, 1.07%)</title><rect x="482.6" y="933" width="12.6" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="485.56" y="943.5" ></text>
+</g>
+<g >
+<title>void boost::asio::detail::initiate_co_spawn&lt;boost::asio::any_io_executor&gt;::operator (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="645" width="12.7" height="15.0" fill="rgb(212,32,7)" rx="2" ry="2" />
+<text  x="1114.06" y="655.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="117" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="127.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::adaptivePredict (25,034,228 samples, 0.66%)</title><rect x="94.5" y="453" width="7.8" height="15.0" fill="rgb(209,18,4)" rx="2" ry="2" />
+<text  x="97.53" y="463.5" ></text>
+</g>
+<g >
+<title>void boost::asio::detail::initiate_post_with_executor&lt;boost::asio::any_io_executor&gt;::operator (39,685,691 samples, 1.04%)</title><rect x="621.7" y="917" width="12.3" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="624.71" y="927.5" ></text>
+</g>
+<g >
+<title>malloc (121,118,658 samples, 3.19%)</title><rect x="280.1" y="997" width="37.6" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="283.06" y="1007.5" >mal..</text>
+</g>
+<g >
+<title>boost::asio::experimental::detail::channel_receive_op&lt;boost::asio::detail::completion_payload&lt;void  (40,315,717 samples, 1.06%)</title><rect x="520.6" y="949" width="12.6" height="15.0" fill="rgb(250,211,50)" rx="2" ry="2" />
+<text  x="523.64" y="959.5" ></text>
+</g>
+<g >
+<title>__memset_evex_unaligned_erms (5,237,329 samples, 0.14%)</title><rect x="31.0" y="1317" width="1.6" height="15.0" fill="rgb(218,60,14)" rx="2" ry="2" />
+<text  x="33.96" y="1327.5" ></text>
+</g>
+<g >
+<title>_int_malloc (15,496,168 samples, 0.41%)</title><rect x="71.1" y="757" width="4.8" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="74.10" y="767.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="517" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="527.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (15,496,168 samples, 0.41%)</title><rect x="71.1" y="885" width="4.8" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="74.10" y="895.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::PredictionContext::getCachedContext (25,034,228 samples, 0.66%)</title><rect x="94.5" y="389" width="7.8" height="15.0" fill="rgb(237,150,36)" rx="2" ry="2" />
+<text  x="97.53" y="399.5" ></text>
+</g>
+<g >
+<title>void boost::asio::io_context::basic_executor_type&lt;std::allocator&lt;void&gt;, 4ul&gt;::execute&lt;boost::asio::detail::executor_function&gt; (936,893,606 samples, 24.66%)</title><rect x="115.1" y="1077" width="291.0" height="15.0" fill="rgb(240,163,39)" rx="2" ry="2" />
+<text  x="118.13" y="1087.5" >void boost::asio::io_context::basic_exe..</text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::addDFAState (25,034,228 samples, 0.66%)</title><rect x="94.5" y="437" width="7.8" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="97.53" y="447.5" ></text>
+</g>
+<g >
+<title>void boost::asio::detail::executor_function::complete&lt;boost::asio::detail::binder0&lt;boost::asio::detail::binder1&lt;boost::asio::detail::awaitable_handler&lt;boost::asio::any_io_executor, boost::system::error_code&gt;, boost::system::error_code&gt; &gt;, std::allocator&lt;void&gt; &gt; (936,893,606 samples, 24.66%)</title><rect x="115.1" y="1061" width="291.0" height="15.0" fill="rgb(233,133,31)" rx="2" ry="2" />
+<text  x="118.13" y="1071.5" >void boost::asio::detail::executor_func..</text>
+</g>
+<g >
+<title>_int_free (40,556,729 samples, 1.07%)</title><rect x="848.6" y="981" width="12.6" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="851.64" y="991.5" ></text>
+</g>
+<g >
+<title>non-virtual thunk to antlr4::Lexer::nextToken (9,372,331 samples, 0.25%)</title><rect x="68.2" y="981" width="2.9" height="15.0" fill="rgb(248,201,48)" rx="2" ry="2" />
+<text  x="71.19" y="991.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="101" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="111.5" ></text>
+</g>
+<g >
+<title>memchr@plt (41,302,733 samples, 1.09%)</title><rect x="1164.5" y="1333" width="12.8" height="15.0" fill="rgb(221,74,17)" rx="2" ry="2" />
+<text  x="1167.49" y="1343.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::Executor&lt;stewkk::sql::CachedJitCompiledExpressionExecutor&gt;::SpawnExecutor (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="997" width="12.7" height="15.0" fill="rgb(214,41,9)" rx="2" ry="2" />
+<text  x="1114.06" y="1007.5" ></text>
+</g>
+<g >
+<title>void boost::asio::detail::executor_function::complete&lt;boost::asio::detail::binder0&lt;boost::asio::detail::awaitable_async_op_handler&lt;void  (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="709" width="12.7" height="15.0" fill="rgb(214,41,10)" rx="2" ry="2" />
+<text  x="1114.06" y="719.5" ></text>
+</g>
+<g >
+<title>pthread_once@GLIBC_2.2.5 (18,957,272 samples, 0.50%)</title><rect x="12.5" y="1285" width="5.9" height="15.0" fill="rgb(233,133,31)" rx="2" ry="2" />
+<text  x="15.46" y="1295.5" ></text>
+</g>
+<g >
+<title>void boost::asio::detail::awaitable_handler&lt;boost::asio::any_io_executor, boost::system::error_code&gt;::operator (855,700,610 samples, 22.52%)</title><rect x="140.3" y="1045" width="265.8" height="15.0" fill="rgb(207,9,2)" rx="2" ry="2" />
+<text  x="143.35" y="1055.5" >void boost::asio::detail::awaitable..</text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (15,496,168 samples, 0.41%)</title><rect x="71.1" y="853" width="4.8" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="74.10" y="863.5" ></text>
+</g>
+<g >
+<title>boost::asio::experimental::detail::channel_receive_op&lt;boost::asio::detail::completion_payload&lt;void  (162,126,040 samples, 4.27%)</title><rect x="583.7" y="949" width="50.3" height="15.0" fill="rgb(250,211,50)" rx="2" ry="2" />
+<text  x="586.68" y="959.5" >boost..</text>
+</g>
+<g >
+<title>void boost::asio::execution::detail::any_executor_base::execute&lt;boost::asio::detail::binder0&lt;boost::asio::detail::awaitable_async_op_handler&lt;void  (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="741" width="12.7" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="1114.06" y="751.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="261" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="271.5" ></text>
+</g>
+<g >
+<title>void boost::asio::detail::initiate_post_with_executor&lt;boost::asio::any_io_executor&gt;::operator (41,323,068 samples, 1.09%)</title><rect x="191.0" y="933" width="12.8" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="193.99" y="943.5" ></text>
+</g>
+<g >
+<title>malloc (80,410,706 samples, 2.12%)</title><rect x="898.1" y="965" width="24.9" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="901.05" y="975.5" >m..</text>
+</g>
+<g >
+<title>boost::asio::awaitable&lt;std::vector&lt;std::vector&lt;stewkk::sql::Value, std::allocator&lt;stewkk::sql::Value&gt; &gt;, std::allocator&lt;std::vector&lt;stewkk::sql::Value, std::allocator&lt;stewkk::sql::Value&gt; &gt; &gt; &gt;, boost::asio::any_io_executor&gt; boost::asio::async_result&lt;boost::asio::use_awaitable_t&lt;boost::asio::any_io_executor&gt;, void  (81,850,497 samples, 2.15%)</title><rect x="495.2" y="997" width="25.4" height="15.0" fill="rgb(239,157,37)" rx="2" ry="2" />
+<text  x="498.22" y="1007.5" >b..</text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::a_expr_unary_sign (25,034,228 samples, 0.66%)</title><rect x="94.5" y="581" width="7.8" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="97.53" y="591.5" ></text>
+</g>
+<g >
+<title>void boost::asio::experimental::detail::channel_service&lt;boost::asio::detail::posix_mutex&gt;::async_receive&lt;boost::asio::experimental::channel_traits&lt;&gt;, void  (40,315,717 samples, 1.06%)</title><rect x="520.6" y="981" width="12.6" height="15.0" fill="rgb(234,135,32)" rx="2" ry="2" />
+<text  x="523.64" y="991.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="677" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="687.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::codegen::PostgreSQLParser::root (100,463,553 samples, 2.64%)</title><rect x="71.1" y="1045" width="31.2" height="15.0" fill="rgb(254,226,54)" rx="2" ry="2" />
+<text  x="74.10" y="1055.5" >st..</text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closureCheckingStopState (34,013,412 samples, 0.90%)</title><rect x="75.9" y="229" width="10.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="78.91" y="239.5" ></text>
+</g>
+<g >
+<title>antlr4::BufferedTokenStream::fetch (9,372,331 samples, 0.25%)</title><rect x="68.2" y="997" width="2.9" height="15.0" fill="rgb(229,114,27)" rx="2" ry="2" />
+<text  x="71.19" y="1007.5" ></text>
+</g>
+<g >
+<title>uw_frame_state_for (40,605,147 samples, 1.07%)</title><rect x="18.4" y="1285" width="12.6" height="15.0" fill="rgb(236,144,34)" rx="2" ry="2" />
+<text  x="21.35" y="1295.5" ></text>
+</g>
+<g >
+<title>boost::asio::detail::awaitable_thread&lt;boost::asio::any_io_executor&gt;::pump (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="949" width="12.7" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="1114.06" y="959.5" ></text>
+</g>
+<g >
+<title>stewkk::sql::ReceiveTuples (40,675,052 samples, 1.07%)</title><rect x="393.5" y="1029" width="12.6" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="396.48" y="1039.5" ></text>
+</g>
+<g >
+<title>void boost::asio::execution::detail::any_executor_base::execute&lt;boost::asio::detail::binder0&lt;boost::asio::detail::awaitable_async_op_handler&lt;void  (40,958,645 samples, 1.08%)</title><rect x="1111.1" y="581" width="12.7" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="1114.06" y="591.5" ></text>
+</g>
+<g >
+<title>benchmark::RunSpecifiedBenchmarks (3,601,603,158 samples, 94.80%)</title><rect x="43.1" y="1269" width="1118.6" height="15.0" fill="rgb(234,136,32)" rx="2" ry="2" />
+<text  x="46.11" y="1279.5" >benchmark::RunSpecifiedBenchmarks</text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::closure_ (34,013,412 samples, 0.90%)</title><rect x="75.9" y="213" width="10.6" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="78.91" y="223.5" ></text>
+</g>
+<g >
+<title>boost::asio::detail::awaitable_thread&lt;boost::asio::any_io_executor&gt;::~awaitable_thread (40,667,781 samples, 1.07%)</title><rect x="127.7" y="1045" width="12.6" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="130.72" y="1055.5" ></text>
+</g>
+<g >
+<title>std::_Function_handler&lt;stewkk::sql::Value  (40,183,704 samples, 1.06%)</title><rect x="1098.6" y="949" width="12.5" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="1101.58" y="959.5" ></text>
+</g>
+<g >
+<title>void boost::asio::execution::detail::any_executor_base::destroy_object&lt;boost::asio::io_context::basic_executor_type&lt;std::allocator&lt;void&gt;, 4ul&gt; &gt; (41,302,658 samples, 1.09%)</title><rect x="102.3" y="1093" width="12.8" height="15.0" fill="rgb(247,197,47)" rx="2" ry="2" />
+<text  x="105.30" y="1103.5" ></text>
+</g>
+<g >
+<title>antlr4::Lexer::nextToken (9,372,331 samples, 0.25%)</title><rect x="68.2" y="965" width="2.9" height="15.0" fill="rgb(249,203,48)" rx="2" ry="2" />
+<text  x="71.19" y="975.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::computeStartState (15,496,168 samples, 0.41%)</title><rect x="71.1" y="965" width="4.8" height="15.0" fill="rgb(239,157,37)" rx="2" ry="2" />
+<text  x="74.10" y="975.5" ></text>
+</g>
+<g >
+<title>antlr4::atn::ParserATNSimulator::adaptivePredict (34,013,412 samples, 0.90%)</title><rect x="75.9" y="789" width="10.6" height="15.0" fill="rgb(209,18,4)" rx="2" ry="2" />
+<text  x="78.91" y="799.5" ></text>
+</g>
+</g>
+</svg>

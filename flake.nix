@@ -32,6 +32,8 @@
             zlib
             zlib.dev
             gdb
+	    perf
+	    perl
           ];
 
           nativeBuildInputs = [

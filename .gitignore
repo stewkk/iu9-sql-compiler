@@ -4,3 +4,4 @@
 **/codegen/
 /build-sanitizers/
 /build-release/
+FlameGraph/

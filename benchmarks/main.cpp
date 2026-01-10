@@ -18,7 +18,7 @@ const static std::string kProjectDir = std::getenv("PWD");
 
 static constexpr char kSimpleSelectSmall[]{"SELECT users.id FROM users;"};
 static constexpr char kJoinSmall[]{"SELECT * FROM employees RIGHT JOIN departments ON employees.department_id = departments.id;"};
-static constexpr char kComplexSmall[]{"SELECT departments.id*2, employees.id+1 FROM employees RIGHT JOIN departments ON employees.department_id = departments.id AND departments.id > 3 AND departments.id*2*2/2/2*2 < 30;"};
+static constexpr char kComplex5[]{"SELECT departments.id*2, employees.id+1 FROM employees RIGHT JOIN departments ON employees.department_id = departments.id AND departments.id > 3 AND departments.id*2*2/2/2*2 < 30;"};
 static constexpr char kComplex500[]{"SELECT departments_500.id*2, employees_200.id+1 FROM employees_200 RIGHT JOIN departments_500 ON employees_200.department_id = departments_500.id AND departments_500.id > 3 AND departments_500.id*2*2/2/2*2 < 30;"};
 static constexpr char kComplex1000[]{"SELECT departments_1000.id*2, employees_200.id+1 FROM employees_200 RIGHT JOIN departments_1000 ON employees_200.department_id = departments_1000.id AND departments_1000.id > 3 AND departments_1000.id*2*2/2/2*2 < 30;"};
 static constexpr char kComplex2000[]{"SELECT departments_2000.id*2, employees_200.id+1 FROM employees_200 RIGHT JOIN departments_2000 ON employees_200.department_id = departments_2000.id AND departments_2000.id > 3 AND departments_2000.id*2*2/2/2*2 < 30;"};
@@ -40,6 +40,9 @@ void BM_SQL(benchmark::State& state) {
         Executor<ExprExecutor> executor(std::move(seq_scan),
                                         co_await boost::asio::this_coro::executor);
 
+        // NOTE: precompile query
+        benchmark::DoNotOptimize(co_await executor.Execute(op));
+
         for (auto _ : state) {
           benchmark::DoNotOptimize(co_await executor.Execute(op));
         }
@@ -55,8 +58,8 @@ BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kSimpleSelectSmall>);
 BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kJoinSmall>);
 BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kJoinSmall>);
 
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplexSmall>);
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplexSmall>);
+BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex5>);
+BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex5>);
 
 BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex500>);
 BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex500>);
