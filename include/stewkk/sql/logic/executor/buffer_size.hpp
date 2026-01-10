@@ -4,7 +4,7 @@
 
 namespace stewkk::sql {
 
-constexpr static std::size_t kBufSize = 10;
+constexpr static std::size_t kBufSize = 2048;
 
 } // stewkk::sql
 

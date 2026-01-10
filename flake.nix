@@ -21,7 +21,12 @@
         pythonEnv = pkgs.python313.withPackages (ps: [
           ps.pip
           ps.virtualenv
+          ps.pygments
         ]);
+        tex = (pkgs.texlive.combine {
+            inherit (pkgs.texlive) scheme-full
+              latexmk;
+          });
       in {
         devShells.default = pkgs.mkShell.override {stdenv = pkgs.llvmPackages_21.stdenv;} {
           buildInputs = with pkgs; [
@@ -32,8 +37,11 @@
             zlib
             zlib.dev
             gdb
-	    perf
-	    perl
+            perf
+            perl
+            tex
+            plantuml
+	    inkscape
           ];
 
           nativeBuildInputs = [

@@ -52,32 +52,82 @@ void BM_SQL(benchmark::State& state) {
   ctx.run();
 }
 
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kSimpleSelectSmall>);
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kSimpleSelectSmall>);
+BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kSimpleSelectSmall>)->UseRealTime();
+BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kSimpleSelectSmall>)->UseRealTime();
 
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kJoinSmall>);
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kJoinSmall>);
+BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kJoinSmall>)->UseRealTime();
+BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kJoinSmall>)->UseRealTime();
 
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex5>);
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex5>);
+BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex5>)->UseRealTime();
+BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex5>)->UseRealTime();
 
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex500>);
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex500>);
+BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex500>)->UseRealTime();
+BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex500>)->UseRealTime();
 
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex1000>);
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex1000>);
+BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex1000>)->UseRealTime();
+BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex1000>)->UseRealTime();
 
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex2000>);
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex2000>);
+BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex2000>)->UseRealTime();
+BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex2000>)->UseRealTime();
 
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex4000>);
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex4000>);
+BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex4000>)->UseRealTime();
+BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex4000>)->UseRealTime();
 
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex8000>);
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex8000>);
+BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex8000>)->UseRealTime();
+BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex8000>)->UseRealTime();
 
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex16000>);
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex16000>);
+BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex16000>)->UseRealTime();
+BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex16000>)->UseRealTime();
+
+template <typename ExprExecutor, const char* Query>
+void BM_SQL_Multithreaded(benchmark::State& state) {
+  std::ofstream nullstream("/dev/null");
+  std::clog.rdbuf(nullstream.rdbuf());
+  boost::asio::io_context ctx;
+  boost::asio::co_spawn(
+      ctx,
+      [&state]() -> boost::asio::awaitable<void> {
+        boost::asio::thread_pool pool{4};
+        std::stringstream s{Query};
+        Operator op = GetAST(s).value();
+        CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
+        Executor<ExprExecutor> executor(std::move(seq_scan),
+                                        pool.executor());
+
+        // NOTE: precompile query
+        benchmark::DoNotOptimize(co_await executor.Execute(op));
+
+        for (auto _ : state) {
+          co_await boost::asio::co_spawn(pool, [&]() -> boost::asio::awaitable<void> {
+            benchmark::DoNotOptimize(co_await executor.Execute(op));
+          }, boost::asio::use_awaitable);
+        }
+      }(),
+      [](std::exception_ptr p) {});
+
+  ctx.run();
+}
+
+BENCHMARK(BM_SQL_Multithreaded<InterpretedExpressionExecutor, kComplex5>)->UseRealTime();
+BENCHMARK(BM_SQL_Multithreaded<CachedJitCompiledExpressionExecutor, kComplex5>)->UseRealTime();
+
+BENCHMARK(BM_SQL_Multithreaded<InterpretedExpressionExecutor, kComplex500>)->UseRealTime();
+BENCHMARK(BM_SQL_Multithreaded<CachedJitCompiledExpressionExecutor, kComplex500>)->UseRealTime();
+
+BENCHMARK(BM_SQL_Multithreaded<InterpretedExpressionExecutor, kComplex1000>)->UseRealTime();
+BENCHMARK(BM_SQL_Multithreaded<CachedJitCompiledExpressionExecutor, kComplex1000>)->UseRealTime();
+
+BENCHMARK(BM_SQL_Multithreaded<InterpretedExpressionExecutor, kComplex2000>)->UseRealTime();
+BENCHMARK(BM_SQL_Multithreaded<CachedJitCompiledExpressionExecutor, kComplex2000>)->UseRealTime();
+
+BENCHMARK(BM_SQL_Multithreaded<InterpretedExpressionExecutor, kComplex4000>)->UseRealTime();
+BENCHMARK(BM_SQL_Multithreaded<CachedJitCompiledExpressionExecutor, kComplex4000>)->UseRealTime();
+
+BENCHMARK(BM_SQL_Multithreaded<InterpretedExpressionExecutor, kComplex8000>)->UseRealTime();
+BENCHMARK(BM_SQL_Multithreaded<CachedJitCompiledExpressionExecutor, kComplex8000>)->UseRealTime();
+
+BENCHMARK(BM_SQL_Multithreaded<InterpretedExpressionExecutor, kComplex16000>)->UseRealTime();
+BENCHMARK(BM_SQL_Multithreaded<CachedJitCompiledExpressionExecutor, kComplex16000>)->UseRealTime();
 
 }  // namespace stewkk::sql
 

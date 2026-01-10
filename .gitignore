@@ -5,3 +5,8 @@
 /build-sanitizers/
 /build-release/
 FlameGraph/
+/.vscode/
+/perf.data
+/perf.data.old
+**/.auctex-auto/
+**/build/
