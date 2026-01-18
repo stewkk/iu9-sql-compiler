@@ -95,6 +95,7 @@
 \usepackage{tikz}
 \usetikzlibrary{shapes.misc}
 \usetikzlibrary{trees}
+\usetikzlibrary{arrows.meta}
 
 %%% Списки %%%
 \usepackage{enumitem}
@@ -1019,7 +1020,7 @@ Clickhouse.
 которые делают JIT-компиляцию нецелесообразной для несложных или затрагивающих
 небольшое количество кортежей запросов.
 
-\section{Разработка СУБД}
+\section{Разработка модельной СУБД}
 
 В рамках данной работы была разработана модельная реляционная СУБД,
 поддерживающая опциональную JIT-компиляцию выражений.
@@ -1063,7 +1064,72 @@ Clickhouse.
 
 \subsection{Исполнение запросов}
 
-Далее, запрос в формате реляционной алгебры необходимо исполнить.
+Далее, запрос необходимо исполнить. Для того, чтобы не увеличивать количество
+внутренних представлений, запрос принято решение интерпретировать запрос
+напрямую в форме реляционной алгебры.
+
+Модель исполнения была выбрана векторизированная. Это сделано для того, чтобы не
+органичивать возможности параллельного исполнения в рамках одного запроса и
+использовать потенциал современных процессоров по-максимуму.
+
+Порядок обработки был выбран снизу-вверх, а коммуникация между операторами
+реализована с помощью потокобезопасных каналов, как в языке программирования Go.
+Это упрощает рассуждения и уменьшает возможную площать для возникновения ошибок
+в реализации.
+
+Таким образом, каждый оператор создает по отдельному каналу для кортежей и типов
+атрибутов своих потомков. Затем вызывает их в цикле читает из канала
+кортежи~\refImage{fig:query_execution}. Такая схема легко реализуется и
+предполагает одинаковый интерфейс у всех операторов, что позволяет с легкостью
+их комбинировать.
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[
+    node distance=1.5cm,
+    every node/.style={draw, rectangle, minimum width=2.5cm, minimum height=1cm, align=center},
+    arrow style/.style={line width=1pt, double distance=3pt, arrows = {-Latex[length=0pt 3 0]}},
+    label node/.style={draw=none, rectangle=none, minimum width=0, minimum height=0}
+  ]
+    \begin{scope}[xshift=-4cm]
+      \node (users_left) at (0,0) {users};
+      \node (groups_left) at (3.5,0) {groups};
+      
+      \node[minimum width=4.5cm, minimum height=1.5cm] (join_left) at (1.75,2.5) {$\leftouterjoin$\\ON users.group\_id = groups.id};
+      
+      \node[minimum width=4cm, minimum height=1.5cm] (filter_left) at (1.75,5.5) {$\sigma$\\users.age $>$ 18};
+      
+      \node[minimum width=4cm, minimum height=1.5cm] (proj_left) at (1.75,8.5) {$\pi$\\users.id, groups.id};
+      
+      \draw[arrow style] (users_left) -- node[label node, left, xshift=-0.5cm] {\scriptsize атрубуты} (join_left);
+      \draw[arrow style] (groups_left) -- node[label node, right, xshift=0.5cm] {\scriptsize атрубуты} (join_left);
+      \draw[arrow style] (join_left) -- node[label node, left, xshift=-0.5cm] {\scriptsize атрубуты} (filter_left);
+      \draw[arrow style] (filter_left) -- node[label node, left, xshift=-0.5cm] {\scriptsize атрубуты} (proj_left);
+      
+      \node[label node] at (1.75,10.5) {\textbf{Этап 1}};
+    \end{scope}
+    
+    \begin{scope}[xshift=4cm]
+      \node (users_right) at (0,0) {users};
+      \node (groups_right) at (3.5,0) {groups};
+      
+      \node[minimum width=4.5cm, minimum height=1.5cm] (join_right) at (1.75,2.5) {$\leftouterjoin$\\ON users.group\_id = groups.id};
+      
+      \node[minimum width=4cm, minimum height=1.5cm] (filter_right) at (1.75,5.5) {$\sigma$\\users.age $>$ 18};
+      
+      \node[minimum width=4cm, minimum height=1.5cm] (proj_right) at (1.75,8.5) {$\pi$\\users.id, groups.id};
+      
+      \draw[arrow style] (users_right) -- node[label node, left, xshift=-0.5cm] {\scriptsize кортежи} (join_right);
+      \draw[arrow style] (groups_right) -- node[label node, right, xshift=0.5cm] {\scriptsize кортежи} (join_right);
+      \draw[arrow style] (join_right) -- node[label node, left, xshift=-0.5cm] {\scriptsize кортежи} (filter_right);
+      \draw[arrow style] (filter_right) -- node[label node, left, xshift=-0.5cm] {\scriptsize кортежи} (proj_right);
+      
+      \node[label node] at (1.75,10.5) {\textbf{Этап 2}};
+    \end{scope}
+  \end{tikzpicture}
+  \caption{Двухэтапное исполнение запроса.}
+\label{fig:query_execution}
+\end{figure}
 
 \subsection{Модуль хранения данных}
 
@@ -1078,7 +1144,7 @@ Clickhouse.
 логический. Пример отношения \verb|users|, состоящего из двух атрибутов:
 \verb|id| и \verb|age|, можно увидеть на листинге~\ref{lst:users_relation}.
 
-\begin{listing}
+\begin{listing}[H]
   \caption{Пример CSV файла, где хранится отношение users.}
   \label{lst:users_relation}
   \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{text}
@@ -1094,8 +1160,614 @@ id:int,age:int
 Для чтения данных из CSV файла применяется алгоритм последовательного
 сканирования, ввиду удобства реализации и очевидной оценки сложности.
 
-%    про исполнение запроса
-%    про llvm
-%
+\subsection{Алгоритмы для операторов реляционной алгебры}
+
+Первый и простейший оператор, проекция, реализуется с помощью цикла, отражающего
+каждый кортеж в новый с нужными атрибутами~\refAlgo{lst:projection}. Это
+работает, т.к. $A_{1}, \ldots, A_{n}$ --- выражения, которые могут включать
+атрибуты, константы и операции над ними, что позволяет добавлять значения,
+производные от существующих.
+
+\begin{listing}[H]
+  \caption{Алгоритм выполнения проекции.}
+  \label{lst:projection}
+  \begin{algorithmic}[1]
+    \Procedure{Projection}{$\pi_{A_1, \ldots, A_n}(R)$, $\text{out\_attr\_chan}$, $\text{out\_tuples\_chan}$}
+      \State $(\text{attrs}, \text{tuples}) \gets \text{Compute}(R)$
+      \State $\text{out\_attr\_chan} \gets \text{map}(\text{GetExpressionType}, [A_1, \ldots, A_n])$
+      \For{$\text{tuple} \in \text{tuples}$}
+        \For{$\text{expr} \in [A_1, \ldots, A_n]$}
+          \State $\text{out\_tuples\_chan} \gets \text{CalcExpression}(\text{expr}, \text{tuple})$
+        \EndFor
+      \EndFor
+    \EndProcedure
+  \end{algorithmic}
+\end{listing}
+
+Следующий оператор, фильтрация, реализуется аналогично~\refAlgo{lst:filtration}. Включать ли в результат
+текущий кортеж определяет значение выражения над ним.
+
+\begin{listing}[H]
+  \caption{Алгоритм выполнения фильтрации.}
+  \label{lst:filtration}
+  \begin{algorithmic}[1]
+    \Procedure{Filter}{$\sigma_{\text{predicate}}(R)$, $\text{out\_attr\_chan}$, $\text{out\_tuples\_chan}$}
+      \State $(\text{attrs}, \text{tuples}) \gets \text{Compute}(R)$
+      \State $\text{out\_attr\_chan} \gets \text{attrs}$
+      \For{$\text{tuple} \in \text{tuples}$}
+        \If{$\text{CalcExpression}(\text{predicate}, \text{tuple}) = \text{true}$}
+          \State $\text{out\_tuples\_chan} \gets \text{tuple}$
+        \EndIf
+      \EndFor
+    \EndProcedure
+  \end{algorithmic}
+\end{listing}
+
+Оператор соединения реализуется с помощью материализации одного из отношений на
+диск и последующего многократного чтения и объединения с кортежами из второго
+отношения~\refAlgo{lst:cross-join}.
+
+\begin{listing}[H]
+  \caption{Алгоритм выполнения декартова произведения.}
+  \label{lst:cross-join}
+  \begin{algorithmic}[1]
+    \Procedure{CrossJoin}{$R_1 \times R_2$, $\text{out\_attr\_chan}$, $\text{out\_tuples\_chan}$}
+      \State $\text{out\_attr\_chan} \gets \text{Concat}(\text{attrs}_1, \text{attrs}_2)$
+      \State $\text{materialized}_1 \gets \text{Materialize}(\text{Compute}(R_1))$
+      \State $(\text{attrs}_2, \text{tuples}_2) \gets \text{Compute}(R_2)$
+      \For{$\text{tuple}_2 \in \text{tuples}_2$}
+        \For{$\text{tuple}_1 \in \text{materialized}_1$}
+          \State $\text{joined} \gets \text{ConcatTuples}(\text{tuple}_1, \text{tuple}_2)$
+          \State $\text{out\_tuples\_chan} \gets \text{joined}$
+        \EndFor
+      \EndFor
+    \EndProcedure
+  \end{algorithmic}
+\end{listing}
+
+Алгоритмы для \verb|OUTER| соединений аналоичны реализации \verb|INNER JOIN|, но
+добавляют фильтрацию после генерации соединенных кортежей.
+
+Наибольший интерес представляет вычисление выражений, которое, как можно
+заметить, используется в реализации операторов реляционной алгебры повсеместно.
+
+В случае вычисления выражения путем прямой интерпретации, необходимо рекурсией
+обойти дерево, которым это выражение представлено, и вычислить каждую операцию.
+Каждая вершина такого дерева требует вызов функции, что для больших и сложных
+выражений, умножить на количество кортежей в отношении, выливается в большие
+накладные расходы на рекурсию~\refAlgo{lst:expression-interpretation}.
+
+\begin{listing}[H]
+  \caption{Алгоритм интерпретации выражения.}
+  \label{lst:expression-interpretation}
+  \begin{algorithmic}[1]
+    \Function{CalcExpression}{$\text{expr}$, $\text{tuple}$, $\text{attrs}$}
+      \If{$\text{expr}$ --- бинарная операция $(lhs, op, rhs)$}
+        \State $\text{val}_1 \gets \textbf{\text{CalcExpression}}(lhs, \text{tuple}, \text{attrs})$
+        \State $\text{val}_2 \gets \textbf{\text{CalcExpression}}(rhs, \text{tuple}, \text{attrs})$
+        \State \Return $\text{ApplyOperator}(op, \text{val}_1, \text{val}_2)$
+      \ElsIf{$\text{expr}$ --- унарная операция $(op, child)$}
+        \State $\text{val} \gets \textbf{\text{CalcExpression}}(child, \text{tuple}, \text{attrs})$
+        \State \Return $\text{ApplyUnaryOperator}(op, \text{val})$
+      \ElsIf{$\text{expr}$ --- атрибут $A$}
+        \State \Return $\text{Lookup}(A, \text{tuple}, \text{attrs})$
+      \ElsIf{$\text{expr}$ --- константа $c$}
+        \State \Return $c$
+      \ElsIf{$\text{expr}$ --- литерал $l$}
+        \State \Return $l$
+      \EndIf
+    \EndFunction
+  \end{algorithmic}
+\end{listing}
+
+\subsection{JIT-компиляция}
+
+Проблема высоких накладных расходов при рекурсивной интерпретации выражений
+решается с помощью JIT-компиляции. Во время исполнения запроса, каждое выражение
+перед исполнением компилируется в машинный код, что позволяет напрямую выполнить
+набор инструкций для вычисления каждого выражения.
+
+Скомпилированный код кэшируется в словарь, а затем переиспользуется для
+вычисления каждого выражения.
+
+В качестве фреймворка для JIT-компиляции был выбран LLVM, а в частности
+современный интерфейс \verb|ORC v2|, ввиду наличия широкого набора
+оптимизационных проходов, хорошей документации и понятного API для JIT.
+
+Скомпилированный код представляет собой функцию, которая принимает на вход
+указатель на результат, указатель на кортеж и указатель на информацию о типах и
+названиях атрибутов. Результат вычисления выражения записывается по
+соответствующему указателю.
+
+Выражение вычисляется как комбинация операций эквивалентных исходному дереву.
+Ветвления не используются в целях оптимизации.
+
+Выбраны следующие оптимизационные проходы, актуальные для данной задачи:
+
+\begin{itemize}
+  \item \verb|EarlyCSEPass| --- раннее устранение общих подвыражений;
+  \item \verb|SROAPass| --- скалярная замена агрегатов;
+  \item \verb|InstCombinePass| --- комбинирование инструкций, включая сворачивание констант;
+  \item \verb|SimplifyCFGPass| --- упрощение графа потока управления;
+  \item \verb|ReassociatePass| --- переассоциация выражений;
+  \item \verb|GVNPass| --- глобальная нумерация значений;
+  \item \verb|MemCpyOptPass| --- оптимизация копирований памяти;
+  \item \verb|SimplifyCFGPass| --- повторное упрощение графа потока управления;
+  \item \verb|InstCombinePass| --- повторное комбинирование инструкций;
+  \item \verb|ADCEPass| --- агрессивное удаление мёртвого кода.
+\end{itemize}
+
+\verb|EarlyCSEPass| --- легковесный проход, который исключает дублирующие
+вычисления, путем обхода дерева доминаторов.
+
+\verb|SROAPass| --- заменяет выделения памяти под структуры на скаляры, что
+упрощает IR.
+
+\verb|InstCombinePass| --- кобинирует инструкции, делая алгебраические
+преобразования.
+
+\verb|SimplifyCFGPass| --- убирает мертвый код.
+
+\verb|ReassociatePass| --- меняет местами операнды и делает некоторые
+алгебраические преобразования, чтобы позволить другим проходам сделать
+дополнительные оптимизации.
+
+\verb|GVNPass| --- убирает лишние, дублирующиеся, вычисления, где это возможно.
+
+\verb|MemCpyOptPass| --- оптимизирует некоторые копирования и инициализации.
+
+\verb|ADCEPass| --- удаляет мертвый код после всех других проходов.
+
+Вместе все эти проходы делают все возможные оптимизации для ускорения вычисления
+выражений.
+
+\section{Реализация модельной СУБД}
+
+Для выполнения поставленной задачи необходимо реализовать парсер, преобразование
+в реляционную алгебру, выполнение соответствующих операторов и JIT-компиляцию
+выражений, а также модульные тесты и бенчмарки производительности.
+
+В качестве языка программирования использовался C++, ввиду следующих его
+особенностей:
+
+\begin{itemize}
+  \item Высокая производительность. Современные СУБД обрабатывают огромные
+        потоки данных от миллионов клиентов, поэтому важны минимальное
+        потребление ресурсов и задержки.
+  \item Возможность работать на низком уровне. Ручное управление памятью и
+        прямая работа с системными вызовами открывает возможности для
+        оптимизаций и позволяет сделать время обработки запросов предсказуемым.
+  \item Поддержка ООП и RAII. Позволяет разрабатывать системный код читаемым и
+        поддерживаемым.
+  \item Широкий выбор библиотек для производительного сетевого взаимодействия и
+        бинарной сериализации данных.
+\end{itemize}
+
+Все эти причины позволили C++ стать де-факто стандартным языком для реализации
+СУБД.
+
+Разработка проекта осуществлялась в редакторе кода Emacs. Данный редактор может
+быть использван в качестве IDE благодаря обширной библиотеке плагинов.
+
+Для сборки использовалось окружение NixOS. Этот дистрибутив Linux построен на
+пакетном менеджере \verb|nix| и позволяет декларативно и воспроизводимо задавать
+зависимости для каждого проекта, используя функциональный доменно-специфичный
+язык.
+
+В качестве системы сборки использован CMake, а компилятором выступает clang с
+поддержкой стандарта C++23.
+
+Для реализации конкурентной обработки запросов, были использованы C++20 корутины
+в связке с boost::asio, так как это становится стандартным способом реализации
+асинхронной модели в C++, и позволяет писать код, который выглядит линейно, но
+исполняется конкурентно.
+
+\subsection{Особенности реализации парсера}
+
+Для реализации парсера был выбран ANTLR4, ввиду его удобства и возможности
+генерировать лексические и синтаксические анализаторы под практически любой язык
+программирования.
+
+Грамматика PostgreSQL была взята из официального репозитория проекта
+ANTLR4~\cite{Antlr4PostgreSQL}. Она была портирована автоматически из грамматики
+для Bison~\cite{PostgresBisonGrammar} из официального репозитория Postgres,
+поэтому является наиболее полной из существующих.
+
+ANTLR4 генерирует несколько файлов на C++, в том числе лексический и
+синтаксический анализаторы, а также класс \verb|Visitor| для обхода абстрактного
+синтаксического дерева.
+
+Основная функция определяющая интерфейс парсера представлена в
+листинге~\ref{lst:getAst}. Она принимает поток, откуда читает запрос, а
+возвращает \verb|Operator|~\refAlgo{lst:operator}, который является деревом из
+операторов реляционной алгебры.
+
+\begin{listing}[H]
+  \caption{Интерфейс парсера.}
+  \label{lst:getAst}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{C++}
+Result<Operator> GetAST(std::istream& in);
+  \end{minted}
+\end{listing}
+
+\begin{listing}[H]
+  \caption{Типы Operator, Table и Projection.}
+  \label{lst:operator}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{C++}
+using Operator = std::variant<Table, Projection, Filter, CrossJoin, Join>;
+
+struct Table {
+    std::string name;
+    auto operator<=>(const Table& other) const = default;
+};
+
+struct Projection {
+    std::vector<Expression> expressions;
+    std::shared_ptr<Operator> source;
+    bool operator==(const Projection& other) const;
+};
+  \end{minted}
+\end{listing}
+
+Функция \verb|GetAST| внутри строит абстрактное синтаксическое дерево и обходит
+его с помощью \verb|Visitor|, который и генерирует представление запроса в виде
+дерева из \verb|Operator|.
+
+Дополнительно реализована визуализация дерева из операторов реляционной алгебры
+в формате Graphviz с помощью функции \verb|GetDotRepresentation|.
+
+\subsection{Особенности реализации хранения данных}
+
+Данные хранятся в одной директории, где каждому отношению соответствует файл с
+CSV таблицей. Название файла совпадает с названием отношения.
+
+Для чтения таблиц реализован класс \verb|CsvDirSequentialScanner|~\refAlgo{lst:csv-dir-seq-scanner}.
+
+\begin{listing}[H]
+  \caption{Объявление класса CsvDirSequentialScanner.}
+  \label{lst:csv-dir-seq-scanner}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{C++}
+struct CsvDirSequentialScanner {
+    std::string dir;
+
+    boost::asio::awaitable<Result<>> operator()(const std::string& table_name,
+                                                AttributesInfoChannel& attrs_chan,
+                                                TuplesChannel& tuples_chan) const;
+};
+  \end{minted}
+\end{listing}
+
+\subsection{Особенности реализации исполнения запроса}
+
+За исполнение запросов отвечает класс \verb|Executor|~\refAlgo{lst:executor}. Он
+реализует исполнение всего дерева операторов, и каждого оператора отдельно, с
+помощью функций \verb|Execute|.
+
+\begin{listing}[H]
+  \caption{Объявление класса Executor.}
+  \label{lst:executor}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{C++}
+template <typename ExpressionExecutor = InterpretedExpressionExecutor>
+class Executor {
+public:
+  using SequentialScan = std::function<boost::asio::awaitable<Result<>>(
+      const std::string& table_name, AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan)>;
+  Executor(SequentialScan seq_scan, boost::asio::any_io_executor executor);
+  boost::asio::awaitable<Result<Relation>> Execute(const Operator& op);
+private:
+  boost::asio::awaitable<void> Execute(const Operator& op, AttributesInfoChannel& attr_chan,
+                                       TuplesChannel& tuples_chan);
+  boost::asio::awaitable<void> ExecuteProjection(const Projection& proj, AttributesInfoChannel& attr_chan,
+                                                 TuplesChannel& tuples_chan);
+...
+  boost::asio::awaitable<void> SpawnExecutor(const Operator& op, AttributesInfoChannel& attr_chan, TuplesChannel& tuple_chan);
+private:
+  SequentialScan sequential_scan_;
+  ExpressionExecutor expression_executor_;
+};
+  \end{minted}
+\end{listing}
+
+Этот класс параметризуется интерфейсами \verb|SequentialScan| и
+\verb|ExpressionExecutor|.
+
+Первый служит для того, чтобы выбирать различные реализации чтения таблиц с
+диска.
+
+\verb|ExpressionExecutor| является шаблонным параметром и нужен для выбора
+реализации исполнения выражений. Реализовано три таких класса:
+
+\begin{itemize}
+  \item \verb|InterpretedExpressionExecutor| --- реализует обыкновенную
+        интерпретацию выражений с помощью рекурсии;
+  \item \verb|JitCompiledExpressionExecutor| --- реализует JIT-компиляцию
+        выражения;
+  \item
+        \verb|CachedJitCompiledExpressionExecutor|~\refAlgo{lst:cached-jit-executor}
+        --- кэширует результаты JIT-компиляции для переиспользования.
+\end{itemize}
+
+\begin{listing}[H]
+  \caption{Объявление класса CachedJitCompiledExpressionExecutor.}
+  \label{lst:cached-jit-executor}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{C++}
+using ExecExpression = std::function<Value(const Tuple& source, const AttributesInfo& source_attrs)>;
+class CachedJitCompiledExpressionExecutor {
+  public:
+    explicit CachedJitCompiledExpressionExecutor(boost::asio::any_io_executor executor);
+    boost::asio::awaitable<ExecExpression> GetExpressionExecutor(const Expression& expr, const AttributesInfo& attrs);
+  private:
+    JITCompiler compiler_;
+    std::unordered_map<std::string, ExecExpression> cache_;
+};
+  \end{minted}
+\end{listing}
+
+Значения внутри выражений передаются в виде объектов класса
+\verb|Value|~\refAlgo{lst:value}. Этот класс состоит из флага \verb|is_null|,
+означающего определено ли данное значение и объекта \verb|NonNullValue|, где
+\verb|NonNullValue| --- объединение \verb|int64_t| и \verb|bool|.
+
+\begin{listing}[H]
+  \caption{Объявление класса Value.}
+  \label{lst:value}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{C++}
+union NonNullValue {
+    int64_t int_value;
+    bool bool_value;
+};
+
+struct Value {
+    bool is_null;
+    NonNullValue value;
+
+    bool operator==(const Value& other) const;
+};
+  \end{minted}
+\end{listing}
+
+Отношения представлены в виде списка атрибутов и списка кортежей. Атрибуты
+представлены в виде структуры с полями: имя таблицы, название атрибута и тип
+атрибута. Кортеж --- вектор объектов класса \verb|Value|.
+
+Коммуникация между операторами осуществляется при помощи класса
+\verb|boost::asio::concurrent_channel|. Он предоставляет интерфейс, схожий с
+каналами в языке Go. Его особенности:
+
+\begin{itemize}
+  \item потокобезопасность;
+  \item буферизированность;
+  \item асинхронность при использовании \verb|async_read| и \verb|async_write|;
+  \item совместимость с корутинами.
+\end{itemize}
+
+В модельной СУБД используется два типа каналов: \verb|TuplesChannel| для
+передачи кортежей и \verb|AttributesChannel| для передачи атрибутов отношений~\refAlgo{lst:channels}.
+
+\begin{listing}[H]
+  \caption{Объявление алиасов для каналов.}
+  \label{lst:channels}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{C++}
+using TuplesChannel = boost::asio::experimental::concurrent_channel<
+void(boost::system::error_code, Tuples)>;
+using AttributesInfoChannel = boost::asio::experimental::concurrent_channel<
+void(boost::system::error_code, AttributesInfo)>;
+  \end{minted}
+\end{listing}
+
+\subsection{Особенности реализации JIT-компиляции}
+
+JIT-компиляция происходит в классе
+\verb|JITCompiler|~\refAlgo{lst:jit_compiler}. Метод \verb|CompileExpression|
+принимает поддерево в реляционной алгебре и список доступных атрибутов, а
+возвращает \verb|CompiledExpression| --- указатель на скомпилированную функцию,
+которую можно по нему вызвать.
+
+\begin{listing}[H]
+  \caption{Объявление класса JITCompiler.}
+  \label{lst:jit_compiler}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{C++}
+class JITCompiler {
+    public:
+        using CompiledExpression = void (*)(Value*, const Value*, const AttributeInfo*);
+        explicit JITCompiler(boost::asio::any_io_executor executor);
+        boost::asio::awaitable<std::pair<CompiledExpression, llvm::orc::ResourceTrackerSP>>
+        CompileExpression(const Expression& expr, const AttributesInfo& attrs);
+    private:
+      llvm::Function* GenerateIR(llvm::Module& llvm_module, const Expression& expr,
+                                 const AttributesInfo& attrs);
+    private:
+        std::unique_ptr<llvm::orc::LLJIT> jit_;
+        std::atomic<uint64_t> id_;
+        boost::asio::strand<boost::asio::any_io_executor> jit_strand_;
+};
+  \end{minted}
+\end{listing}
+
+В конструкторе~\refAlgo{lst:jit_compiler_constructor} производится настройка
+оптимизирующих проходов и остальной инфраструктуры llvm.
+
+На примере класса \verb|GenerateIRVisitor|~\refAlgo{lst:ir_generator} можно
+увидеть, как производится генерация LLVM IR. Здесь нет ветвлений и вызовов
+функций, что позволяет генерировать оптимальный код, и делать это быстро.
+Результат генерации после оптимизации для выражения на листинге~\ref{lst:expression_for_ir} можно увидеть на
+листинге~\ref{lst:ir_example}.
+
+\begin{listing}[H]
+  \caption{Пример выражения.}
+  \label{lst:expression_for_ir}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{text}
+users.age > 30 AND users.age < 60 OR users.age = 10;
+  \end{minted}
+\end{listing}
+
+\begin{listing}[H]
+  \caption{LLVM IR для примера на листинге~\ref{lst:expression_for_ir}.}
+  \label{lst:ir_example}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{text}
+; ModuleID = 'expr_module_0'
+source_filename = "expr_module_0"
+target datalayout = "e-m:e-p270:32:32-p271:32\
+:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+
+%Value = type { i8, i64 }
+
+define void @eval_expr_1(ptr noalias %0, ptr %1, ptr %2) {
+entry:
+  %struct_ptr = getelementptr inbounds nuw i8, ptr %1, i64 16
+  %loaded_struct = load %Value, ptr %struct_ptr, align 8
+  %value.is_null = extractvalue %Value %loaded_struct, 0
+  %is_null = icmp ne i8 %value.is_null, 0
+  %value.value = extractvalue %Value %loaded_struct, 1
+  %is_null_i8 = zext i1 %is_null to i8
+  %result.with_is_null = insertvalue %Value undef, i8 %is_null_i8, 0
+  %3 = add i64 %value.value, -31
+  %4 = icmp ult i64 %3, 29
+  %5 = icmp eq i64 %value.value, 10
+  %6 = or i1 %5, %4
+  %i1_to_i64_zext38 = zext i1 %6 to i64
+  %result41 = insertvalue %Value %result.with_is_null, i64 %i1_to_i64_zext38, 1
+  store %Value %result41, ptr %0, align 8
+  ret void
+}
+  \end{minted}
+\end{listing}
+
+\section{Тестирование}
+
+Тестирование разработанной модельной СУБД осуществлялось с помощью модульных
+тестов. Также для замеров производительности были реализованы бенчмарки.
+
+\subsection{Модульные тесты}
+
+Модульные тесты реализованы с использованием библиотеки googletests и проверяют
+корректность реализации основных классов в парсере и исполнителе выражений.
+
+Пример такого теста приведен в листинге~\ref{lst:googletest}.
+
+\begin{listing}[H]
+  \caption{Пример модульного теста.}
+  \label{lst:googletest}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{cpp}
+TEST(ParserTest, SelectSingleColumnFromSingleTable) {
+  std::stringstream s{"SELECT users.id FROM users;"};
+
+  Operator got = GetAST(s).value();
+
+  ASSERT_THAT(got, VariantWith<Projection>(
+      Projection{std::vector<Expression>{
+      {Attribute{"users", "id"}}},
+      std::make_shared<Operator>(Table{"users"})}));
+}
+  \end{minted}
+\end{listing}
+
+\subsection{Бенчмарки}
+
+Тесты производительности реализованы с помощью библиотеки google benchmarks. Они
+служат для измерения производительности \verb|SELECT| запросов с JIT-компиляцией
+и без в различных профилях нагрузки и с различными настройками. Пример такого
+бенчмарка можно увидеть в листинге~\ref{lst:bench}.
+
+\begin{listing}[H]
+  \caption{Пример бенчмарка.}
+  \label{lst:bench}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{cpp}
+template <typename ExprExecutor, const char* Query>
+void BM_SQL(benchmark::State& state) {
+  std::ofstream nullstream("/dev/null");
+  std::clog.rdbuf(nullstream.rdbuf());
+  boost::asio::io_context ctx;
+  boost::asio::co_spawn(
+      ctx,
+      [&state]() -> boost::asio::awaitable<void> {
+        std::stringstream s{Query};
+        Operator op = GetAST(s).value();
+        CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
+        Executor<ExprExecutor> executor(
+          std::move(seq_scan),
+          co_await boost::asio::this_coro::executor
+        );
+        benchmark::DoNotOptimize(co_await executor.Execute(op));
+        for (auto _ : state) {
+          benchmark::DoNotOptimize(co_await executor.Execute(op));
+        }
+      }(),
+      [](std::exception_ptr p) {});
+  ctx.run();
+}
+  \end{minted}
+\end{listing}
+
+При дебаге проблем с производительностью также было удобно пользоваться утилитой
+\verb|perf|, с помощью которой были построены и проанализированы ``флеймграфы''.
+
+Далее, с помощью \verb|Python| и библиотеки \verb|pandas| были проанализированы
+результаты выполнения бенчмарков~\refImage{fig:perf}. На рисунке по оси абсцисс
+изображен условный размер используемых отображений в количестве кортежей. Как
+можно увидеть на рисунке~\ref{fig:speedup}, на среднем количестве кортежей, где
+не так сильно влияет время на чтение и запись на диск, получается около $40\%$
+прироста к производительности.
+
+\newpage
+\anonsection{ЗАКЛЮЧЕНИЕ}  %Заключение
+
+В ходе выполнения курсовой работы была разработана модельная реляционная СУБД с
+поддержкой опциональной JIT-компиляции выражений, реализация проверена с помощью
+модульных тестов, а также проведены измерения производительности.
+
+Цель курсовой работы была достигнута. Получена стабильная система,
+демонстрирующая возможности JIT-компиляции для оптимизации запросов на чтение.
+
+В заключение, несмотря на достигнутые положительные результаты, существует
+потенциал для дальнейшего улучшения реализации модельной СУБД. Это включает в
+себя поддержку большего объема синтаксиса языка SQL, а также реализация более
+продвинутых вариаций алгоритмов для основных операций реляционной алгебры.
+
+\newpage
+\renewcommand\refname{СПИСОК ИСПОЛЬЗОВАННЫХ ИСТОЧНИКОВ}
+% Список литературы
+\clearpage
+\phantomsection
+\addcontentsline{toc}{section}{\protect\numberline{}\refname}
+%\bibliographystyle{ugost2008s}  %utf8gost71u.bst} %utf8gost705u} %gost2008s}
+{\catcode`"\active\def"{\relax}
+% \bibliography{biblio2}
+\printbibliography
+}
+\newpage
+\settocdepth{section}
+\anonsection{ПРИЛОЖЕНИЕ А}
+\vspace{-30pt}
+
+\begin{listing}[H]
+  \caption{Реализация конструктора класса JITCompiler.}
+  \label{lst:jit_compiler_constructor}
+  \inputminted[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{cpp}{./listings/jit_compiler_constructor.cpp}
+\end{listing}
+
+\begin{listing}[H]
+  \caption{Класс GenerateIRVisitor}
+  \label{lst:ir_generator}
+  \inputminted[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{cpp}{./listings/ir_generator.cpp}
+\end{listing}
+
+\begin{figure}[H]
+  \centering
+  \begin{minipage}[t]{\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{perf}
+  \end{minipage}
+  \caption{Результаты бенчмарков.}\label{fig:perf}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \begin{minipage}[t]{\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{speedup}
+  \end{minipage}
+  \caption{Относительный прирост производительности.}\label{fig:speedup}
+\end{figure}
 
 \end{document}

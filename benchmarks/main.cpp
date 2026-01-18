@@ -40,7 +40,6 @@ void BM_SQL(benchmark::State& state) {
         Executor<ExprExecutor> executor(std::move(seq_scan),
                                         co_await boost::asio::this_coro::executor);
 
-        // NOTE: precompile query
         benchmark::DoNotOptimize(co_await executor.Execute(op));
 
         for (auto _ : state) {
