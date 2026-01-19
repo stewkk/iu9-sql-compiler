@@ -1037,7 +1037,8 @@ Clickhouse.
 Из грамматики оставлены только \verb|SELECT| запросы, потому что в них зачастую
 встречаются выражения и они представляют наибольший интерес для оптимизаций.
 Также, именно запросы на чтение обычно автогенерируются системами визуализации
-данных.
+данных. Сокращенная версию грамматики для \verb|SELECT| запросов находится в
+листингах~\ref{lst:grammar1}~-~\ref{lst:grammar5}.
 
 На вход парсер получает запрос в виде строки. На выходе в случае успешного
 разбора получается синтаксическое дерево, а в случае ошибки или
@@ -1282,7 +1283,8 @@ id:int,age:int
 Выражение вычисляется как комбинация операций эквивалентных исходному дереву.
 Ветвления не используются в целях оптимизации.
 
-Выбраны следующие оптимизационные проходы, актуальные для данной задачи:
+Выбраны следующие оптимизационные проходы из доступных в LLVM, актуальные для
+данной задачи:
 
 \begin{itemize}
   \item \verb|EarlyCSEPass| --- раннее устранение общих подвыражений;
@@ -1769,5 +1771,35 @@ void BM_SQL(benchmark::State& state) {
   \end{minipage}
   \caption{Относительный прирост производительности.}\label{fig:speedup}
 \end{figure}
+
+\begin{listing}[H]
+  \caption{Грамматика для SELECT (часть 1).}
+  \label{lst:grammar1}
+  \inputminted[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{cpp}{./listings/grammar1.g4}
+\end{listing}
+
+\begin{listing}[H]
+  \caption{Грамматика для SELECT (часть 2).}
+  \label{lst:grammar2}
+  \inputminted[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{cpp}{./listings/grammar2.g4}
+\end{listing}
+
+\begin{listing}[H]
+  \caption{Грамматика для SELECT (часть 3).}
+  \label{lst:grammar3}
+  \inputminted[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{cpp}{./listings/grammar3.g4}
+\end{listing}
+
+\begin{listing}[H]
+  \caption{Грамматика для SELECT (часть 4).}
+  \label{lst:grammar4}
+  \inputminted[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{cpp}{./listings/grammar4.g4}
+\end{listing}
+
+\begin{listing}[H]
+  \caption{Грамматика для SELECT (часть 5).}
+  \label{lst:grammar5}
+  \inputminted[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{cpp}{./listings/grammar5.g4}
+\end{listing}
 
 \end{document}
