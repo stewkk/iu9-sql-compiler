@@ -1155,10 +1155,10 @@ dot~\refImage{fig:query-plan}.
       
       \node[minimum width=4cm, minimum height=1.5cm] (proj_left) at (1.75,8.5) {$\pi$\\users.id, groups.id};
       
-      \draw[arrow style] (users_left) -- node[label node, left, xshift=-0.5cm] {\scriptsize атрубуты} (join_left);
-      \draw[arrow style] (groups_left) -- node[label node, right, xshift=0.5cm] {\scriptsize атрубуты} (join_left);
-      \draw[arrow style] (join_left) -- node[label node, left, xshift=-0.5cm] {\scriptsize атрубуты} (filter_left);
-      \draw[arrow style] (filter_left) -- node[label node, left, xshift=-0.5cm] {\scriptsize атрубуты} (proj_left);
+      \draw[arrow style] (users_left) -- node[label node, left, xshift=-0.5cm] {\scriptsize атрибуты} (join_left);
+      \draw[arrow style] (groups_left) -- node[label node, right, xshift=0.5cm] {\scriptsize атрибуты} (join_left);
+      \draw[arrow style] (join_left) -- node[label node, left, xshift=-0.5cm] {\scriptsize атрибуты} (filter_left);
+      \draw[arrow style] (filter_left) -- node[label node, left, xshift=-0.5cm] {\scriptsize атрибуты} (proj_left);
       
       \node[label node] at (1.75,10.5) {\textbf{Этап 1}};
     \end{scope}
