@@ -1,4 +1,4 @@
-.PHONY: build
+.PHONY: build all bib clean uml view pres
 
 all: build
 
@@ -14,7 +14,10 @@ clean:
 
 uml:
 	@plantuml dbms_scheme.puml
+	@plantuml dbms_scheme_impl.puml
 
 view:
 	@evince ./build/report.pdf
 
+pres:
+	@latexmk -f -pdf -output-directory=build -shell-escape ./presentation.tex
