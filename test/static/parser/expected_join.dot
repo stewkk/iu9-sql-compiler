@@ -1,0 +1,5 @@
+digraph G { rankdir=BT; "crossjoin_users_books"[label="×"]
+"users" -> "crossjoin_users_books"
+"books" -> "crossjoin_users_books"
+"users"
+"books" }

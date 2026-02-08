@@ -21,21 +21,37 @@
         pythonEnv = pkgs.python313.withPackages (ps: [
           ps.pip
           ps.virtualenv
+          ps.pygments
         ]);
+        tex = (pkgs.texlive.combine {
+            inherit (pkgs.texlive) scheme-full
+              latexmk;
+          });
       in {
         devShells.default = pkgs.mkShell.override {stdenv = pkgs.llvmPackages_21.stdenv;} {
           buildInputs = with pkgs; [
             code-cursor-fhs
             pythonEnv
+            antlr
+            cmake
+            zlib
+            zlib.dev
+            gdb
+            perf
+            perl
+            tex
+            plantuml
+	    inkscape
           ];
 
           nativeBuildInputs = [
-            pkgs.clang-tools_19
+            pkgs.clang-tools
           ];
 
           NIX_LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
             pkgs.stdenv.cc.cc
             pkgs.zlib
+            pkgs.zlib.dev
           ];
 
           NIX_LD = pkgs.lib.fileContents "${pkgs.stdenv.cc}/nix-support/dynamic-linker";
@@ -61,4 +77,3 @@
         };
       });
 }
-
