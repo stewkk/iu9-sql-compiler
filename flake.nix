@@ -42,6 +42,8 @@
             tex
             plantuml
 	    inkscape
+            llvmPackages_21.llvm
+            llvmPackages_21.llvm.dev
           ];
 
           nativeBuildInputs = [

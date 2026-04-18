@@ -5,6 +5,9 @@ PARSER_SOURCE_DIR := $(CURRENT_DIR)/src/stewkk/sql/logic/parser
 build:
 	cmake --build build -- -j 6
 
+sanitize:
+	cmake --build build-sanitizers -- -j 8
+
 codegen:
 	@antlr -Dlanguage=Cpp -visitor -o $(CODEGEN_DIR) -package stewkk::sql::codegen $(PARSER_SOURCE_DIR)/PostgreSQLParser.g4 $(PARSER_SOURCE_DIR)/PostgreSQLLexer.g4
 
