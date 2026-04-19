@@ -27,6 +27,7 @@ add_library(libsql
   logic/optimizer/group.cpp
   logic/optimizer/memo.cpp
   logic/optimizer/rules.cpp
+  logic/optimizer/rule.cpp
   logic/transformation_rules/join_commutativity.cpp
   logic/transformation_rules/join_associativity.cpp
 )

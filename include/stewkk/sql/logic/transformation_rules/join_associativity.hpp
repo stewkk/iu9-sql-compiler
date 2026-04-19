@@ -8,7 +8,7 @@ namespace stewkk::sql {
 class JoinAssociativity : public TransformationRule {
   public:
     bool IsApplicable(utils::NotNull<LogicalExpr*> expr) override;
-    utils::NotNull<LogicalExpr*> Apply(utils::NotNull<LogicalExpr*> expr, Memo& memo) override;
+    LogicalOperator ApplyImpl(utils::NotNull<LogicalExpr*> expr, Memo& memo) override;
 };
 
 }  // namespace stewkk::sql

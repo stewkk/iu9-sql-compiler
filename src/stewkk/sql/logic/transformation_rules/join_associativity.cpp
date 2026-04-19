@@ -14,7 +14,7 @@ bool JoinAssociativity::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
 }
 
 // (A ⋈₁ B) ⋈₂ C  →  A ⋈₁∧₂ (B ⋈₂ C)
-utils::NotNull<LogicalExpr*> JoinAssociativity::Apply(utils::NotNull<LogicalExpr*> expr, Memo& memo) {
+LogicalOperator JoinAssociativity::ApplyImpl(utils::NotNull<LogicalExpr*> expr, Memo& memo) {
   const auto& outer = std::get<logical::Join>(expr->root_operator);
   for (const auto& inner_expr : outer.lhs->GetLogicalExprs()) {
     if (!std::holds_alternative<logical::Join>(inner_expr->root_operator)) continue;
@@ -25,9 +25,10 @@ utils::NotNull<LogicalExpr*> JoinAssociativity::Apply(utils::NotNull<LogicalExpr
         std::make_shared<Expression>(outer.qual),
     }};
     auto new_rhs = memo.AddGroup(logical::Join{inner.rhs, outer.rhs, outer.type, Literal::kTrue});
-    return expr->group->AddLogicalExpr(logical::Join{inner.lhs, new_rhs, inner.type, combined_qual});
+    // FIXME: should return more than one operators!!!
+    return logical::Join{inner.lhs, new_rhs, inner.type, combined_qual};
   }
-  return expr;
+  throw std::runtime_error{"cant perform JoinAssociativity"};
 }
 
 }  // namespace stewkk::sql
