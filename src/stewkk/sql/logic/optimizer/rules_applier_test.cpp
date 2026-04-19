@@ -12,11 +12,15 @@ TEST(RulesApplierTest, ChecksThatRuleAlreadyApplied) {
   auto* expr = join_group->GetLogicalExprs()[0].get();
 
   RulesApplier applier(MakeMainRules());
-  constexpr RuleId kJoinCommutativity = 0;
+  constexpr TransformationRuleId kJoinCommutativity{0};
 
   EXPECT_TRUE(applier.IsApplicable(kJoinCommutativity, expr));
   applier.Apply(kJoinCommutativity, expr, memo);
   EXPECT_FALSE(applier.IsApplicable(kJoinCommutativity, expr));
+}
+
+TEST(RulesApplierTest, ApplyImplementationRule) {
+    // FIXME
 }
 
 }  // namespace stewkk::sql

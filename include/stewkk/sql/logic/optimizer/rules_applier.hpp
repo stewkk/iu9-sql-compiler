@@ -8,21 +8,25 @@
 
 namespace stewkk::sql {
 
+
+struct TransformationRuleId {
+    size_t value;
+};
+
+struct ImplementationRuleId {
+    size_t value;
+};
+
 template<size_t NTransformation, size_t NImplementation>
 class RulesApplier {
   public:
-    explicit RulesApplier(Rules<NTransformation, NImplementation> rules)
-        : rules_(std::move(rules)) {}
+    explicit RulesApplier(Rules<NTransformation, NImplementation> rules);
 
-    bool IsApplicable(RuleId rule, utils::NotNull<LogicalExpr*> expr) {
-        return !applied_transformation_rules_[expr.get()][rule] &&
-               rules_.transformation_rules[rule]->IsApplicable(expr);
-    }
+    bool IsApplicable(TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr);
+    utils::NotNull<LogicalExpr*> Apply(TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr, Memo& memo);
 
-    utils::NotNull<LogicalExpr*> Apply(RuleId rule, utils::NotNull<LogicalExpr*> expr, Memo& memo) {
-        applied_transformation_rules_[expr.get()][rule] = 1;
-        return rules_.transformation_rules[rule]->Apply(expr, memo);
-    }
+    bool IsApplicable(ImplementationRuleId rule, utils::NotNull<LogicalExpr*> expr);
+    utils::NotNull<PhysicalExpr*> Apply(ImplementationRuleId rule, utils::NotNull<LogicalExpr*> expr, Memo& memo);
 
   private:
     Rules<NTransformation, NImplementation> rules_;

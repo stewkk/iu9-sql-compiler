@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+
 #include <stewkk/sql/logic/optimizer/logical_expr.hpp>
 #include <stewkk/sql/logic/optimizer/physical_expr.hpp>
 #include <stewkk/sql/logic/optimizer/group.hpp>

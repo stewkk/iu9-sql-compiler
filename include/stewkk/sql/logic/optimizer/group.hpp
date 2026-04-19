@@ -10,7 +10,6 @@
 namespace stewkk::sql {
 
 using LogicalOperator = decltype(LogicalExpr::root_operator);
-using RuleId = size_t;
 
 class Group {
   public:
