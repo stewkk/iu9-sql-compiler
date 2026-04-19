@@ -4,9 +4,5 @@
 
 namespace stewkk::sql {
 
-class Optimizer {
-    public:
-        Operator Optimize(Operator expression);
-};
 
 }  // namespace stewkk::sql
