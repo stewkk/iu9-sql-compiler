@@ -24,7 +24,7 @@ LogicalOperator JoinAssociativity::ApplyImpl(utils::NotNull<LogicalExpr*> expr, 
         BinaryOp::kAnd,
         std::make_shared<Expression>(outer.qual),
     }};
-    auto new_rhs = memo.AddGroup(logical::Join{inner.rhs, outer.rhs, outer.type, Literal::kTrue});
+    auto new_rhs = memo.AddGroup(logical::Join{inner.rhs, outer.rhs, outer.type, Literal::kTrue})->group;
     // FIXME: should return more than one operators!!!
     return logical::Join{inner.lhs, new_rhs, inner.type, combined_qual};
   }

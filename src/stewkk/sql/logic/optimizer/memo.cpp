@@ -36,16 +36,42 @@ size_t Memo::GroupCount() const {
     return groups_.size();
 }
 
-utils::NotNull<Group*> Memo::AddGroup(LogicalOperator root_operator) {
+utils::NotNull<LogicalExpr*> Memo::AddGroup(LogicalOperator root_operator) {
     auto key = ToKey(root_operator);
     auto it = expr_index_.find(key);
     if (it != expr_index_.end()) {
-        return it->second;
+        return it->second->GetLogicalExprs()[0].get();
     }
     auto& ptr = groups_.emplace_back(new Group(groups_.size()));
-    ptr->AddLogicalExpr(std::move(root_operator));
+    auto expr = ptr->AddLogicalExpr(std::move(root_operator));
     expr_index_[key] = ptr.get();
-    return ptr.get();
+    return expr;
+}
+
+utils::NotNull<LogicalExpr*> Memo::Populate(const Operator& op) {
+    return std::visit(utils::Overloaded{
+        [this](const Table& t) {
+            return AddGroup(logical::Table{t.name});
+        },
+        [this](const Filter& f) {
+            auto source = Populate(*f.source);
+            return AddGroup(logical::Filter{source->group, f.expr});
+        },
+        [this](const Projection& p) {
+            auto source = Populate(*p.source);
+            return AddGroup(logical::Projection{source->group, p.expressions});
+        },
+        [this](const CrossJoin& j) {
+            auto lhs = Populate(*j.lhs);
+            auto rhs = Populate(*j.rhs);
+            return AddGroup(logical::CrossJoin{lhs->group, rhs->group});
+        },
+        [this](const Join& j) {
+            auto lhs = Populate(*j.lhs);
+            auto rhs = Populate(*j.rhs);
+            return AddGroup(logical::Join{lhs->group, rhs->group, j.type, j.qual});
+        },
+    }, op);
 }
 
 }  // namespace stewkk::sql

@@ -10,8 +10,8 @@ namespace stewkk::sql {
 class JoinCommutativityTest : public ::testing::Test {
   protected:
     void SetUp() override {
-      a = memo.AddGroup(logical::Table{"a"});
-      b = memo.AddGroup(logical::Table{"b"});
+      a = memo.AddGroup(logical::Table{"a"})->group;
+      b = memo.AddGroup(logical::Table{"b"})->group;
     }
 
     Memo memo;
@@ -21,7 +21,7 @@ class JoinCommutativityTest : public ::testing::Test {
 };
 
 TEST_F(JoinCommutativityTest, ReturnsSwappedJoin) {
-  auto join_group = memo.AddGroup(logical::Join{a, b, JoinType::kInner, Literal::kTrue});
+  auto join_group = memo.AddGroup(logical::Join{a, b, JoinType::kInner, Literal::kTrue})->group;
   auto* expr = join_group->GetLogicalExprs()[0].get();
 
   auto result = rule.Apply(expr, memo);
@@ -32,7 +32,7 @@ TEST_F(JoinCommutativityTest, ReturnsSwappedJoin) {
 }
 
 TEST_F(JoinCommutativityTest, AddsNewJoinIntoGroup) {
-  auto join_group = memo.AddGroup(logical::Join{a, b, JoinType::kInner, Literal::kTrue});
+  auto join_group = memo.AddGroup(logical::Join{a, b, JoinType::kInner, Literal::kTrue})->group;
   auto* expr = join_group->GetLogicalExprs()[0].get();
 
   rule.Apply(expr, memo);
@@ -46,11 +46,11 @@ TEST_F(JoinCommutativityTest, AddsNewJoinIntoGroup) {
 class JoinAssociativityTest : public ::testing::Test {
   protected:
     void SetUp() override {
-      a  = memo.AddGroup(logical::Table{"a"});
-      b  = memo.AddGroup(logical::Table{"b"});
-      c  = memo.AddGroup(logical::Table{"c"});
-      ab = memo.AddGroup(logical::Join{a, b, JoinType::kInner, Literal::kTrue});
-      abc = memo.AddGroup(logical::Join{ab, c, JoinType::kInner, Literal::kFalse});
+      a   = memo.AddGroup(logical::Table{"a"})->group;
+      b   = memo.AddGroup(logical::Table{"b"})->group;
+      c   = memo.AddGroup(logical::Table{"c"})->group;
+      ab  = memo.AddGroup(logical::Join{a, b, JoinType::kInner, Literal::kTrue})->group;
+      abc = memo.AddGroup(logical::Join{ab, c, JoinType::kInner, Literal::kFalse})->group;
     }
 
     Memo memo;

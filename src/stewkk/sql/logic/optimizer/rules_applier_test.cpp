@@ -6,9 +6,9 @@ namespace stewkk::sql {
 
 TEST(RulesApplierTest, ChecksThatRuleAlreadyApplied) {
   Memo memo;
-  auto a = memo.AddGroup(logical::Table{"a"});
-  auto b = memo.AddGroup(logical::Table{"b"});
-  auto join_group = memo.AddGroup(logical::Join{a, b, JoinType::kInner, Literal::kTrue});
+  auto a = memo.AddGroup(logical::Table{"a"})->group;
+  auto b = memo.AddGroup(logical::Table{"b"})->group;
+  auto join_group = memo.AddGroup(logical::Join{a, b, JoinType::kInner, Literal::kTrue})->group;
   auto* expr = join_group->GetLogicalExprs()[0].get();
 
   RulesApplier applier(MakeMainRules());

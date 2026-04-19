@@ -12,7 +12,8 @@ namespace stewkk::sql {
 class Memo {
   public:
     size_t GroupCount() const;
-    utils::NotNull<Group*> AddGroup(LogicalOperator root_operator);
+    utils::NotNull<LogicalExpr*> AddGroup(LogicalOperator root_operator);
+    utils::NotNull<LogicalExpr*> Populate(const Operator& op);
 
   private:
     std::vector<std::unique_ptr<Group>> groups_;
