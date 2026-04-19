@@ -15,57 +15,6 @@ using ::testing::Eq;
 
 namespace stewkk::sql {
 
-// class ExpressionRulesApplier {
-//   public:
-//     ExpressionRulesApplier(LogicalExpr&& expr, const Rules& rules, GroupKey group)
-//         : expr_(std::move(expr)),
-//           rules_(rules),
-//           is_applied_(rules_.Count(), false),
-//           group_(std::move(group)) {}
-
-//     ExpressionRulesApplier ApplyRule(RuleNumber rule, Memo& memo) {
-//       is_applied_[rule] = true;
-//       return ExpressionRulesApplier(rules_.Apply(expr_, rule, memo), rules_, group_);
-//     }
-
-//   bool IsApplicable(RuleNumber rule, Memo& memo, bool transformation_rules_only=false) const {
-//     return !IsApplied(rule) && (!transformation_rules_only || rules_.IsTransformationRule(rule)) && rules_.IsApplicable(rule, expr_, memo);
-//   }
-
-//   GroupKey GetGroup() const { return group_; }
-//   const LogicalExpr& GetExpr() const { return expr_; }
-
-//   std::vector<GroupKey> GetChildren() const {
-//     return std::visit(Overloaded{
-//       [](const logical::Table&)                       -> std::vector<GroupKey> { return {}; },
-//       [](const logical::Filter& f)                    -> std::vector<GroupKey> { return {f.source}; },
-//       [](const logical::Projection& p)                -> std::vector<GroupKey> { return {p.source}; },
-//       [](const logical::CrossJoin& j)                 -> std::vector<GroupKey> { return {j.lhs, j.rhs}; },
-//       [](const logical::Join& j)                      -> std::vector<GroupKey> { return {j.lhs, j.rhs}; },
-//     }, expr_);
-//   }
-
-//   private:
-//     bool IsApplied(RuleNumber rule) const { return is_applied_[rule]; }
-
-//     const LogicalExpr expr_;
-//     const Rules& rules_;
-//     GroupKey group_;
-//     std::vector<char> is_applied_;
-// };
-
-// class Memo {
-//  public:
-//   explicit Memo(const Operator& expr, const Rules& rules) : mapping_(), rules_(rules), root_(AddGroup(expr, rules)) {}
-
-//   Group& GetRoot() {
-//     return mapping_.find(root_)->second;
-//   }
-
-//   GroupKey AddGroup(const LogicalExpr& expr) {
-//     return AddGroup(expr, rules_);
-//   }
-
 //   GroupKey AddGroup(const LogicalExpr& expr, const Rules& rules) {
 //     return std::visit(Overloaded{
 //       [this, &rules](const logical::Table& t) {
@@ -96,12 +45,6 @@ namespace stewkk::sql {
 //       },
 //     }, expr);
 //   }
-
-//     // TODO: replace with raw ptr (or some non-null wrapper)
-//   Group& GetGroup(GroupKey key) {
-//     return mapping_.find(key)->second;
-//   }
-
 //   private:
 
 //   GroupKey AddGroup(const Operator& expr, const Rules& rules) {
@@ -140,11 +83,6 @@ namespace stewkk::sql {
 //       },
 //     }, expr);
 //   }
-
-//   std::unordered_map<GroupKey, Group> mapping_;
-//   const Rules& rules_;
-//   GroupKey root_;
-// };
 
 // class Optimizer {
 //     public:

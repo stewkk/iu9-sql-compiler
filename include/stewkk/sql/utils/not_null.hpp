@@ -18,6 +18,8 @@ class NotNull {
 
     operator T() const { return ptr_; }  // NOLINT(google-explicit-constructor)
 
+    bool operator==(const NotNull& other) const = default;
+
   private:
     T ptr_;
 };

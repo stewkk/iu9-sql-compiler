@@ -21,10 +21,13 @@ class Group {
     utils::NotNull<PhysicalExpr*> AddPhysicalExpr();
     std::span<const LogicalExprPtr> GetLogicalExprs() const;
 
+    size_t id() const;
+
   private:
     friend class Memo;
-    Group() = default;
+    explicit Group(size_t id) : id_(id) {}
 
+    size_t id_;
     std::vector<LogicalExprPtr>  logical_exprs_;
     std::vector<PhysicalExprPtr> physical_exprs_;
 };

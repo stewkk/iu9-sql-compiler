@@ -2,6 +2,8 @@
 
 #include <vector>
 #include <memory>
+#include <string>
+#include <unordered_map>
 
 #include <stewkk/sql/logic/optimizer/group.hpp>
 
@@ -14,6 +16,7 @@ class Memo {
 
   private:
     std::vector<std::unique_ptr<Group>> groups_;
+    std::unordered_map<std::string, Group*> expr_index_;
 };
 
 }  // namespace stewkk::sql

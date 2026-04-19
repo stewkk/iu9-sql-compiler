@@ -8,6 +8,7 @@ target_sources(unittests PRIVATE
   ${PROJECT_SOURCE_DIR}/src/stewkk/sql/logic/optimizer/rule_test.cpp
   ${PROJECT_SOURCE_DIR}/src/stewkk/sql/logic/optimizer/rules_applier_test.cpp
   ${PROJECT_SOURCE_DIR}/src/stewkk/sql/logic/optimizer/optimizer_test.cpp
+  ${PROJECT_SOURCE_DIR}/src/stewkk/sql/logic/optimizer/memo_test.cpp
 )
 target_compile_features(unittests PRIVATE cxx_std_23)
 set_target_properties(unittests PROPERTIES

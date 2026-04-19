@@ -18,4 +18,8 @@ std::span<const Group::LogicalExprPtr> Group::GetLogicalExprs() const {
     return logical_exprs_;
 }
 
+size_t Group::id() const {
+    return id_;
+}
+
 }  // namespace stewkk::sql
