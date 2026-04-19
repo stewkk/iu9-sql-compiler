@@ -7,83 +7,13 @@
 
 #include <stewkk/sql/logic/parser/parser.hpp>
 #include <stewkk/sql/logic/optimizer/optimizer.hpp>
+#include <stewkk/sql/logic/optimizer/rule.hpp>
 #include <stewkk/sql/logic/result/result.hpp>
+#include <stewkk/sql/utils/overloaded.hpp>
 
 using ::testing::Eq;
 
 namespace stewkk::sql {
-
-template<class... Ts> struct Overloaded : Ts... { using Ts::operator()...; };
-
-using GroupKey = std::string;
-
-namespace logical {
-
-using Table = Table;
-
-struct Filter {
-  GroupKey source;
-  Expression predicate;
-};
-
-struct Projection {
-  GroupKey source;
-  std::vector<Expression> expressions;
-};
-
-struct CrossJoin {
-  GroupKey lhs;
-  GroupKey rhs;
-};
-
-struct Join {
-  GroupKey lhs;
-  GroupKey rhs;
-  using Type = JoinType;
-  Type type;
-  Expression qual;
-};
-
-} // namespace logical
-
-using LogicalExpr = std::variant<logical::Table, logical::Filter, logical::Projection, logical::Join, logical::CrossJoin>;
-
-using RuleNumber = size_t;
-
-class Memo;
-
-class Rule {
-  public:
-    virtual bool IsApplicable(LogicalExpr expr, Memo& memo) = 0;
-    virtual bool IsTransformationRule() const = 0;
-    virtual LogicalExpr Apply(const LogicalExpr& expr, Memo& memo) = 0;
-    virtual ~Rule() = default;
-};
-
-class Rules {
-  public:
-
-  explicit Rules(std::vector<std::unique_ptr<Rule>> rules) : rules_(std::move(rules)) {}
-
-  size_t Count() const {
-    return rules_.size();
-  }
-
-  LogicalExpr Apply(const LogicalExpr& expr, RuleNumber rule, Memo& memo) const {
-    return rules_[rule]->Apply(expr, memo);
-  }
-
-  bool IsApplicable(RuleNumber rule, const LogicalExpr& expr, Memo& memo) const {
-    return rules_[rule]->IsApplicable(expr, memo);
-  }
-
-  bool IsTransformationRule(RuleNumber rule) const {
-    return rules_[rule]->IsTransformationRule();
-  }
-
-  private:
-    std::vector<std::unique_ptr<Rule>> rules_;
-};
 
 class ExpressionRulesApplier {
   public:
@@ -101,10 +31,6 @@ class ExpressionRulesApplier {
   bool IsApplicable(RuleNumber rule, Memo& memo, bool transformation_rules_only=false) const {
     return !IsApplied(rule) && (!transformation_rules_only || rules_.IsTransformationRule(rule)) && rules_.IsApplicable(rule, expr_, memo);
   }
-
-    bool IsTransformationRule(RuleNumber rule) const {
-      return rules_.IsTransformationRule(rule);
-    }
 
   GroupKey GetGroup() const { return group_; }
   const LogicalExpr& GetExpr() const { return expr_; }
@@ -126,24 +52,6 @@ class ExpressionRulesApplier {
     const Rules& rules_;
     GroupKey group_;
     std::vector<char> is_applied_;
-};
-
-class Group {
-  public:
-    Group(GroupKey key, ExpressionRulesApplier expr) : key_(std::move(key)), logical_exprs_({std::move(expr)}) {}
-    const GroupKey& GetKey() const {
-      return key_;
-    }
-    std::span<ExpressionRulesApplier> GetExpressions() {
-      return logical_exprs_;
-    }
-    ExpressionRulesApplier& AddExpression(ExpressionRulesApplier expr) {
-      logical_exprs_.emplace_back(std::move(expr));
-      return logical_exprs_.back();
-    }
-  private:
-    const GroupKey key_;
-    std::vector<ExpressionRulesApplier> logical_exprs_;
 };
 
 class Memo {
@@ -237,19 +145,6 @@ class Memo {
   const Rules& rules_;
   GroupKey root_;
 };
-
-// DSU data-structure needed?
-
-TEST(OptimizerTest, GetGroup) {
-  Operator join_ab = Join{
-      .type = JoinType::kInner,
-      .qual = Literal::kTrue,
-      .lhs = std::make_shared<Operator>(Table{.name = "A"}),
-      .rhs = std::make_shared<Operator>(Table{.name = "B"}),
-  };
-
-  Memo memo(join_ab, Rules{{}});
-}
 
 class Optimizer {
     public:
@@ -366,51 +261,6 @@ class Optimizer {
         std::unordered_set<GroupKey> explored_groups_;
         const size_t rules_count_;
 };
-
-class JoinCommutativity : public Rule {
-  public:
-    bool IsApplicable(LogicalExpr expr, Memo&) override {
-      return std::holds_alternative<logical::Join>(expr);
-    }
-
-    bool IsTransformationRule() const override { return true; }
-
-    LogicalExpr Apply(const LogicalExpr& expr, Memo&) override {
-      auto join = std::get<logical::Join>(expr);
-      std::swap(join.lhs, join.rhs);
-      return join;
-    }
-};
-
-class JoinAssociativity : public Rule {
-  public:
-    bool IsApplicable(LogicalExpr expr, Memo& memo) override {
-      if (!std::holds_alternative<logical::Join>(expr)) return false;
-      const auto& outer = std::get<logical::Join>(expr);
-      for (auto& applier : memo.GetGroup(outer.lhs).GetExpressions()) {
-        if (!std::holds_alternative<logical::Join>(applier.GetExpr())) return false;
-      }
-      return true;
-    }
-
-    bool IsTransformationRule() const override { return true; }
-
-    LogicalExpr Apply(const LogicalExpr& expr, Memo& memo) override {
-      const auto& outer = std::get<logical::Join>(expr);
-      for (auto& applier : memo.GetGroup(outer.lhs).GetExpressions()) {
-        const auto& inner = std::get<logical::Join>(applier.GetExpr());
-        auto combined_qual = Expression{BinaryExpression{
-            std::make_shared<Expression>(inner.qual),
-            BinaryOp::kAnd,
-            std::make_shared<Expression>(outer.qual),
-        }};
-        auto new_rhs = memo.AddGroup(logical::Join{inner.rhs, outer.rhs, outer.type, Literal::kTrue});
-        return logical::Join{inner.lhs, new_rhs, inner.type, combined_qual};
-      }
-      return expr;
-    }
-};
-
 
 TEST(OptimizerTest, Simple) {
   std::stringstream s{"SELECT * FROM users;"};
