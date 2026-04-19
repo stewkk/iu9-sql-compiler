@@ -2,21 +2,10 @@
 
 #include <stewkk/sql/logic/optimizer/rule.hpp>
 #include <stewkk/sql/logic/optimizer/memo.hpp>
+#include <stewkk/sql/logic/transformation_rules/join_commutativity.hpp>
+#include <stewkk/sql/logic/transformation_rules/join_associativity.hpp>
 
 namespace stewkk::sql {
-
-class JoinCommutativity : public TransformationRule {
-  public:
-    bool IsApplicable(utils::NotNull<LogicalExpr*> expr) override {
-      return std::holds_alternative<logical::Join>(expr->root_operator);
-    }
-
-    utils::NotNull<LogicalExpr*> Apply(utils::NotNull<LogicalExpr*> expr, Memo&) override {
-      auto join = std::get<logical::Join>(expr->root_operator);
-      std::swap(join.lhs, join.rhs);
-      return expr->group->AddLogicalExpr(std::move(join));
-    }
-};
 
 class JoinCommutativityTest : public ::testing::Test {
   protected:
@@ -49,38 +38,10 @@ TEST_F(JoinCommutativityTest, AddsNewJoinIntoGroup) {
   rule.Apply(expr, memo);
 
   EXPECT_EQ(join_group->GetLogicalExprs().size(), 2u);
-  const auto& new_join = std::get<logical::Join>(join_group->GetLogicalExprs()[1]->root_operator);
+  const auto& new_join = std::get<logical::Join>(join_group->GetLogicalExprs()[1].get()->root_operator);
   EXPECT_EQ(new_join.lhs.get(), b);
   EXPECT_EQ(new_join.rhs.get(), a);
 }
-
-class JoinAssociativity : public TransformationRule {
-  public:
-    bool IsApplicable(utils::NotNull<LogicalExpr*> expr) override {
-      if (!std::holds_alternative<logical::Join>(expr->root_operator)) return false;
-      const auto& outer = std::get<logical::Join>(expr->root_operator);
-      for (const auto& inner_expr : outer.lhs->GetLogicalExprs()) {
-        if (std::holds_alternative<logical::Join>(inner_expr->root_operator)) return true;
-      }
-      return false;
-    }
-
-    utils::NotNull<LogicalExpr*> Apply(utils::NotNull<LogicalExpr*> expr, Memo& memo) override {
-      const auto& outer = std::get<logical::Join>(expr->root_operator);
-      for (const auto& inner_expr : outer.lhs->GetLogicalExprs()) {
-        if (!std::holds_alternative<logical::Join>(inner_expr->root_operator)) continue;
-        const auto& inner = std::get<logical::Join>(inner_expr->root_operator);
-        auto combined_qual = Expression{BinaryExpression{
-            std::make_shared<Expression>(inner.qual),
-            BinaryOp::kAnd,
-            std::make_shared<Expression>(outer.qual),
-        }};
-        auto new_rhs = memo.AddGroup(logical::Join{inner.rhs, outer.rhs, outer.type, Literal::kTrue});
-        return expr->group->AddLogicalExpr(logical::Join{inner.lhs, new_rhs, inner.type, combined_qual});
-      }
-      return expr;
-    }
-};
 
 class JoinAssociativityTest : public ::testing::Test {
   protected:
@@ -113,7 +74,7 @@ TEST_F(JoinAssociativityTest, ReturnsCorrectExpression) {
   const auto& outer = std::get<logical::Join>(result->root_operator);
   EXPECT_EQ(outer.lhs.get(), a);
   EXPECT_EQ(outer.type, JoinType::kInner);
-  const auto& inner = std::get<logical::Join>(outer.rhs->GetLogicalExprs()[0]->root_operator);
+  const auto& inner = std::get<logical::Join>(outer.rhs->GetLogicalExprs()[0].get()->root_operator);
   EXPECT_EQ(inner.lhs.get(), b);
   EXPECT_EQ(inner.rhs.get(), c);
   EXPECT_EQ(inner.qual, Expression{Literal::kTrue});

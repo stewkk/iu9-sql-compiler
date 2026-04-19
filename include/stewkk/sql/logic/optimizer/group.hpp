@@ -10,25 +10,16 @@
 namespace stewkk::sql {
 
 using LogicalOperator = decltype(LogicalExpr::root_operator);
+using RuleId = size_t;
 
 class Group {
   public:
     using LogicalExprPtr  = std::unique_ptr<LogicalExpr>;
     using PhysicalExprPtr = std::unique_ptr<PhysicalExpr>;
 
-    utils::NotNull<LogicalExpr*> AddLogicalExpr(LogicalOperator root_operator) {
-        auto& ptr = logical_exprs_.emplace_back(
-            std::make_unique<LogicalExpr>(std::move(root_operator), this));
-        return ptr.get();
-    }
-
-    utils::NotNull<PhysicalExpr*> AddPhysicalExpr() {
-        auto& ptr = physical_exprs_.emplace_back(
-            std::make_unique<PhysicalExpr>(this));
-        return ptr.get();
-    }
-
-    std::span<const LogicalExprPtr> GetLogicalExprs() const { return logical_exprs_; }
+    utils::NotNull<LogicalExpr*> AddLogicalExpr(LogicalOperator root_operator);
+    utils::NotNull<PhysicalExpr*> AddPhysicalExpr();
+    std::span<const LogicalExprPtr> GetLogicalExprs() const;
 
   private:
     friend class Memo;

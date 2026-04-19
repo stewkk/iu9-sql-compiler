@@ -24,6 +24,11 @@ add_library(libsql
   logic/executor/materialization.cpp
   logic/executor/llvm.cpp
   logic/optimizer/optimizer.cpp
+  logic/optimizer/group.cpp
+  logic/optimizer/memo.cpp
+  logic/optimizer/rules.cpp
+  logic/transformation_rules/join_commutativity.cpp
+  logic/transformation_rules/join_associativity.cpp
 )
 add_library(stewkk::libsql ALIAS libsql)
 target_compile_features(libsql PUBLIC cxx_std_23)
