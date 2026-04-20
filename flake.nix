@@ -2,7 +2,7 @@
   description = "An example project using flutter";
 
   inputs.nixpkgs = {
-    url = "github:NixOS/nixpkgs";
+    url = "github:nixos/nixpkgs/nixos-unstable";
   };
   inputs.flake-utils.url = "github:numtide/flake-utils";
   inputs.flake-compat = {
@@ -22,6 +22,9 @@
           ps.pip
           ps.virtualenv
           ps.pygments
+          ps.jupyter
+          ps.ipykernel
+          ps.notebook
         ]);
         tex = (pkgs.texlive.combine {
             inherit (pkgs.texlive) scheme-full
@@ -30,7 +33,16 @@
       in {
         devShells.default = pkgs.mkShell.override {stdenv = pkgs.llvmPackages_21.stdenv;} {
           buildInputs = with pkgs; [
-            code-cursor-fhs
+            (pkgs.vscode-with-extensions.override {
+              vscode = pkgs.vscode-fhs;
+              vscodeExtensions = with pkgs.vscode-extensions; [
+                ms-python.python
+                ms-python.vscode-pylance
+                ms-toolsai.jupyter
+		anthropic.claude-code
+		ms-vscode.cpptools
+              ];
+            })
             pythonEnv
             antlr
             cmake
@@ -44,6 +56,7 @@
 	    inkscape
             llvmPackages_21.llvm
             llvmPackages_21.llvm.dev
+	    nodejs_20
           ];
 
           nativeBuildInputs = [
@@ -73,6 +86,8 @@
     if [ -f requirements.txt ]; then
       pip install -r requirements.txt
     fi
+
+    python -m ipykernel install --user --name iu9-sql-compiler --display-name "Python (iu9-sql-compiler)"
 
     python --version
   '';
