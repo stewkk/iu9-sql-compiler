@@ -1,7 +1,6 @@
 #pragma once
 
-#include <vector>
-#include <memory>
+#include <deque>
 #include <string>
 #include <unordered_map>
 
@@ -16,8 +15,8 @@ class Memo {
     utils::NotNull<LogicalExpr*> Populate(const Operator& op);
 
   private:
-    std::vector<std::unique_ptr<Group>> groups_;
-    std::unordered_map<std::string, Group*> expr_index_;
+    std::deque<Group> groups_;
+    std::unordered_map<std::string, LogicalExpr*> expr_index_;
 };
 
 }  // namespace stewkk::sql

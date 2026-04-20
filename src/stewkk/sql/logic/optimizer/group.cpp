@@ -3,22 +3,18 @@
 namespace stewkk::sql {
 
 utils::NotNull<LogicalExpr*> Group::AddLogicalExpr(LogicalOperator root_operator) {
-    auto& ptr = logical_exprs_.emplace_back(
-        std::make_unique<LogicalExpr>(std::move(root_operator), this));
-    return ptr.get();
+    return &logical_exprs_.emplace_back(std::move(root_operator), this);
 }
 
 utils::NotNull<PhysicalExpr*> Group::AddPhysicalExpr() {
-    auto& ptr = physical_exprs_.emplace_back(
-        std::make_unique<PhysicalExpr>(this));
-    return ptr.get();
+    return &physical_exprs_.emplace_back(this);
 }
 
-std::span<const Group::LogicalExprPtr> Group::GetLogicalExprs() const {
-    return logical_exprs_;
+Group::LogicalExprs Group::GetLogicalExprs() {
+    return std::views::transform(logical_exprs_, ToNotNull{});
 }
 
-size_t Group::id() const {
+size_t Group::GetId() const {
     return id_;
 }
 

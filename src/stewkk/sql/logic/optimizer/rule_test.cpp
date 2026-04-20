@@ -22,7 +22,7 @@ class JoinCommutativityTest : public ::testing::Test {
 
 TEST_F(JoinCommutativityTest, ReturnsSwappedJoin) {
   auto join_group = memo.AddGroup(logical::Join{a, b, JoinType::kInner, Literal::kTrue})->group;
-  auto* expr = join_group->GetLogicalExprs()[0].get();
+  auto expr = join_group->GetLogicalExprs()[0];
 
   auto result = rule.Apply(expr, memo);
 
@@ -33,12 +33,12 @@ TEST_F(JoinCommutativityTest, ReturnsSwappedJoin) {
 
 TEST_F(JoinCommutativityTest, AddsNewJoinIntoGroup) {
   auto join_group = memo.AddGroup(logical::Join{a, b, JoinType::kInner, Literal::kTrue})->group;
-  auto* expr = join_group->GetLogicalExprs()[0].get();
+  auto expr = join_group->GetLogicalExprs()[0];
 
   rule.Apply(expr, memo);
 
   EXPECT_EQ(join_group->GetLogicalExprs().size(), 2u);
-  const auto& new_join = std::get<logical::Join>(join_group->GetLogicalExprs()[1].get()->root_operator);
+  const auto& new_join = std::get<logical::Join>(join_group->GetLogicalExprs()[1]->root_operator);
   EXPECT_EQ(new_join.lhs.get(), b);
   EXPECT_EQ(new_join.rhs.get(), a);
 }
@@ -63,18 +63,18 @@ class JoinAssociativityTest : public ::testing::Test {
 };
 
 TEST_F(JoinAssociativityTest, CreatesNewGroup) {
-  rule.Apply(abc->GetLogicalExprs()[0].get(), memo);
+  rule.Apply(abc->GetLogicalExprs()[0], memo);
 
   EXPECT_EQ(memo.GroupCount(), 6u);
 }
 
 TEST_F(JoinAssociativityTest, ReturnsCorrectExpression) {
-  auto result = rule.Apply(abc->GetLogicalExprs()[0].get(), memo);
+  auto result = rule.Apply(abc->GetLogicalExprs()[0], memo);
 
   const auto& outer = std::get<logical::Join>(result->root_operator);
   EXPECT_EQ(outer.lhs.get(), a);
   EXPECT_EQ(outer.type, JoinType::kInner);
-  const auto& inner = std::get<logical::Join>(outer.rhs->GetLogicalExprs()[0].get()->root_operator);
+  const auto& inner = std::get<logical::Join>(outer.rhs->GetLogicalExprs()[0]->root_operator);
   EXPECT_EQ(inner.lhs.get(), b);
   EXPECT_EQ(inner.rhs.get(), c);
   EXPECT_EQ(inner.qual, Expression{Literal::kTrue});

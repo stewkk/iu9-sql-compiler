@@ -19,6 +19,9 @@ using ::testing::Eq;
 namespace stewkk::sql {
     
 // FIXME: проверить, не возникает ли висячих ссылок нигде?
+// FIXME: branch and bound
+// FIXME: физические операторы!
+// FIXME: сделать API в виде DoStep(), которое возвращает какой-то внутренний стейт оптимизатора
 
 std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<LogicalExpr*> expr) {
     return std::visit(utils::Overloaded{
@@ -40,6 +43,10 @@ std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<LogicalExpr*> exp
     }, expr->root_operator);
 }
 
+std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<PhysicalExpr*> expr) {
+  return {};
+}
+
 template<size_t NTransformation, size_t NImplementation>
 class Optimizer {
     public:
@@ -56,20 +63,30 @@ private:
         explored_groups_.insert(group);
       }
 
-      void OptimizeInputs() {
+      void OptimizeInputs(utils::NotNull<PhysicalExpr*> expr, size_t child_index = 0) {
+        auto children = GetChildren(expr);
+        if (child_index >= children.size()) {
+          // FIXME: update best plan
+          return;
+        }
+        tasks_.emplace([this, expr, child_index]() {
+          OptimizeInputs(expr, child_index+1);
+        });
+        tasks_.emplace([this, expr]() {
+          OptimizeGroup(expr->group);
+        });
       }
 
-      // void ApplyRule(ExpressionRulesApplier& expr, RuleNumber rule) {
-      //   auto new_expr = expr.ApplyRule(rule, memo_);
-      //   auto group = memo_.GetGroup(new_expr.GetGroup());
-      //   auto new_expr_ref = group.AddExpression(std::move(new_expr));
-      //   if (new_expr.IsTransformationRule(rule)) {
-      //     tasks_.emplace([this, &new_expr_ref]() { ExploreExpression(new_expr_ref); });
-      //   } else {
-      //     tasks_.emplace(root->root_operator[this, &new_expr_ref]() {
-      //     OptimizeInputs(new_expr_ref); });
-      //   }
-      // }
+      void ApplyRule(TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr) {
+        auto new_expr = rules_applier_.Apply(rule, expr, memo_);
+        tasks_.emplace([this, new_expr]() { ExploreExpression(new_expr); });
+      }
+
+      void ApplyRule(ImplementationRuleId rule, utils::NotNull<LogicalExpr*> expr) {
+        auto new_expr = rules_applier_.Apply(rule, expr, memo_);
+        tasks_.emplace(
+            [this, new_expr]() { OptimizeInputs(new_expr); });
+      }
 
       void OptimizeExpression(utils::NotNull<LogicalExpr*> expr) {
         for (size_t rule = 0; rule < NImplementation; rule++) {
@@ -77,7 +94,7 @@ private:
             continue;
           }
           tasks_.emplace([this, expr, rule]() {
-              rules_applier_.Apply(ImplementationRuleId{rule}, expr, memo_);
+            ApplyRule(ImplementationRuleId{rule}, expr);
           });
         }
 
@@ -97,7 +114,7 @@ private:
             continue;
           }
           tasks_.emplace([this, expr, rule]() {
-              rules_applier_.Apply(TransformationRuleId{rule}, expr, memo_);
+            ApplyRule(TransformationRuleId{rule}, expr);
           });
         }
 
@@ -113,8 +130,8 @@ private:
 
       void ExploreGroup(utils::NotNull<Group*> group) {
         SetExplored(group);
-        for (auto& expr : group->GetLogicalExprs()) {
-          tasks_.emplace([this, expr = expr.get()]() {
+        for (auto expr : group->GetLogicalExprs()) {
+          tasks_.emplace([this, expr]() {
             ExploreExpression(expr);
           });
         }
@@ -131,8 +148,8 @@ private:
           return;
         }
 
-        for (auto& expr : group->GetLogicalExprs()) {
-          tasks_.emplace([this, expr = expr.get()](){
+        for (auto expr : group->GetLogicalExprs()) {
+          tasks_.emplace([this, expr](){
             OptimizeExpression(expr);
           });
         }

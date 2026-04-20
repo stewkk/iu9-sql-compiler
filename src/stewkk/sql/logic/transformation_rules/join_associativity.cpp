@@ -7,7 +7,7 @@ namespace stewkk::sql {
 bool JoinAssociativity::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
   if (!std::holds_alternative<logical::Join>(expr->root_operator)) return false;
   const auto& outer = std::get<logical::Join>(expr->root_operator);
-  for (const auto& inner_expr : outer.lhs->GetLogicalExprs()) {
+  for (auto inner_expr : outer.lhs->GetLogicalExprs()) {
     if (std::holds_alternative<logical::Join>(inner_expr->root_operator)) return true;
   }
   return false;
@@ -16,7 +16,7 @@ bool JoinAssociativity::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
 // (A ⋈₁ B) ⋈₂ C  →  A ⋈₁∧₂ (B ⋈₂ C)
 LogicalOperator JoinAssociativity::ApplyImpl(utils::NotNull<LogicalExpr*> expr, Memo& memo) {
   const auto& outer = std::get<logical::Join>(expr->root_operator);
-  for (const auto& inner_expr : outer.lhs->GetLogicalExprs()) {
+  for (auto inner_expr : outer.lhs->GetLogicalExprs()) {
     if (!std::holds_alternative<logical::Join>(inner_expr->root_operator)) continue;
     const auto& inner = std::get<logical::Join>(inner_expr->root_operator);
     auto combined_qual = Expression{BinaryExpression{
