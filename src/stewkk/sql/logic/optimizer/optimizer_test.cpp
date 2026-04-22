@@ -43,6 +43,8 @@ std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<LogicalExpr*> exp
     }, expr->root_operator);
 }
 
+using Limit = std::optional<std::int64_t>;
+
 std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<PhysicalExpr*> expr) {
   return {};
 }
@@ -63,38 +65,40 @@ private:
         explored_groups_.insert(group);
       }
 
-      void OptimizeInputs(utils::NotNull<PhysicalExpr*> expr, size_t child_index = 0) {
+      void OptimizeInputs(utils::NotNull<PhysicalExpr*> expr, Limit limit, size_t child_index = 0) {
         auto children = GetChildren(expr);
         if (child_index >= children.size()) {
           // FIXME: update best plan
           return;
         }
-        tasks_.emplace([this, expr, child_index]() {
-          OptimizeInputs(expr, child_index+1);
+        tasks_.emplace([this, expr, child_index, limit]() {
+          OptimizeInputs(expr, limit, child_index+1);
         });
-        tasks_.emplace([this, expr]() {
-          OptimizeGroup(expr->group);
+        // FIXME: UpdateCostLimit
+        tasks_.emplace([this, expr, limit]() {
+          OptimizeGroup(expr->group, limit);
         });
       }
 
-      void ApplyRule(TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr) {
+      void ApplyRule(TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr, Limit limit) {
         auto new_expr = rules_applier_.Apply(rule, expr, memo_);
-        tasks_.emplace([this, new_expr]() { ExploreExpression(new_expr); });
+        tasks_.emplace([this, new_expr, limit]() { ExploreExpression(new_expr, limit); });
       }
 
-      void ApplyRule(ImplementationRuleId rule, utils::NotNull<LogicalExpr*> expr) {
+      void ApplyRule(ImplementationRuleId rule, utils::NotNull<LogicalExpr*> expr, Limit limit) {
         auto new_expr = rules_applier_.Apply(rule, expr, memo_);
+        // FIXME: UpdateCostLimit!
         tasks_.emplace(
-            [this, new_expr]() { OptimizeInputs(new_expr); });
+            [this, new_expr, limit]() { OptimizeInputs(new_expr, limit); });
       }
 
-      void OptimizeExpression(utils::NotNull<LogicalExpr*> expr) {
+      void OptimizeExpression(utils::NotNull<LogicalExpr*> expr, Limit limit) {
         for (size_t rule = 0; rule < NImplementation; rule++) {
           if (!rules_applier_.IsApplicable(ImplementationRuleId{rule}, expr)) {
             continue;
           }
-          tasks_.emplace([this, expr, rule]() {
-            ApplyRule(ImplementationRuleId{rule}, expr);
+          tasks_.emplace([this, expr, rule, limit]() {
+            ApplyRule(ImplementationRuleId{rule}, expr, limit);
           });
         }
 
@@ -102,19 +106,19 @@ private:
           if (IsExplored(child)) {
             continue;
           }
-          tasks_.emplace([this, child]() {
-            ExploreGroup(child);
+          tasks_.emplace([this, child, limit]() {
+            ExploreGroup(child, limit);
           });
         }
       }
 
-      void ExploreExpression(utils::NotNull<LogicalExpr*> expr) {
+      void ExploreExpression(utils::NotNull<LogicalExpr*> expr, Limit limit) {
         for (size_t rule = 0; rule < NTransformation; rule++) {
           if (!rules_applier_.IsApplicable(TransformationRuleId{rule}, expr)) {
             continue;
           }
-          tasks_.emplace([this, expr, rule]() {
-            ApplyRule(TransformationRuleId{rule}, expr);
+          tasks_.emplace([this, expr, rule, limit]() {
+            ApplyRule(TransformationRuleId{rule}, expr, limit);
           });
         }
 
@@ -122,35 +126,35 @@ private:
           if (IsExplored(child)) {
             continue;
           }
-          tasks_.emplace([this, child]() {
-            ExploreGroup(child);
+          tasks_.emplace([this, child, limit]() {
+            ExploreGroup(child, limit);
           });
         }
       }
 
-      void ExploreGroup(utils::NotNull<Group*> group) {
+      void ExploreGroup(utils::NotNull<Group*> group, Limit limit) {
         SetExplored(group);
         for (auto expr : group->GetLogicalExprs()) {
-          tasks_.emplace([this, expr]() {
-            ExploreExpression(expr);
+          tasks_.emplace([this, expr, limit]() {
+            ExploreExpression(expr, limit);
           });
         }
       }
 
-      void OptimizeGroup(utils::NotNull<Group*> group) {
+      void OptimizeGroup(utils::NotNull<Group*> group, Limit limit=std::nullopt) {
         if (!IsExplored(group)) {
-          tasks_.emplace([this, group](){
-            OptimizeGroup(group);
+          tasks_.emplace([this, group, limit](){
+            OptimizeGroup(group, limit);
           });
-          tasks_.emplace([this, group](){
-            ExploreGroup(group);
+          tasks_.emplace([this, group, limit](){
+            ExploreGroup(group, limit);
           });
           return;
         }
 
         for (auto expr : group->GetLogicalExprs()) {
-          tasks_.emplace([this, expr](){
-            OptimizeExpression(expr);
+          tasks_.emplace([this, expr, limit](){
+            OptimizeExpression(expr, limit);
           });
         }
       }
