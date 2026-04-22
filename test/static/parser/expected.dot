@@ -1,0 +1,5 @@
+digraph G { rankdir=BT; "π users.id"
+"σ users.age > 18" -> "π users.id"
+"σ users.age > 18"
+"users" -> "σ users.age > 18"
+"users" }

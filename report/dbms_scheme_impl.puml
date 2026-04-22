@@ -1,0 +1,39 @@
+@startuml
+scale 2
+skinparam defaultFontSize 22
+
+top to bottom direction
+
+
+package "Фронтенд SQL" {
+  component "ANTLR4 lexer/parser\n(PostgreSQL grammar)" as Antlr
+  component "Visitor:\nSQL → реляционная алгебра (AST)" as Visitor
+}
+
+package "Модель запроса" {
+  component "Relational Algebra AST:\nOperator, Expression" as RA
+}
+
+package "Исполнение запроса" {
+  component "Executor:\nC++20 корутины + каналы" as Exec
+  component "Операторы:\nProjection / Filter /\nJoin / CrossJoin" as Ops
+  component "Expression executor:\nинтерпретатор\nили LLVM-JIT (ORCv2)\n(+ кэш)" as ExprExec
+  component "Материализация" as Spill
+  component "Sequential scan" as Scan
+}
+
+Antlr -right-> Visitor
+Visitor -right-> RA
+RA -right-> Exec
+
+Exec -right-> ExprExec
+
+Exec --> Ops
+ExprExec -down[hidden]-> Ops
+
+Ops -down-> Scan
+Ops -down-> Spill
+
+Scan -down[hidden]-> Spill
+
+@enduml
