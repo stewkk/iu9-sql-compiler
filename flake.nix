@@ -25,6 +25,7 @@
           ps.jupyter
           ps.ipykernel
           ps.notebook
+          ps.pymssql
         ]);
         tex = (pkgs.texlive.combine {
             inherit (pkgs.texlive) scheme-full
@@ -41,6 +42,7 @@
                 ms-toolsai.jupyter
 		anthropic.claude-code
 		ms-vscode.cpptools
+		asvetliakov.vscode-neovim
               ];
             })
             pythonEnv

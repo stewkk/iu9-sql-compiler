@@ -31,6 +31,11 @@ add_library(libsql
   logic/optimizer/rule.cpp
   logic/transformation_rules/join_commutativity.cpp
   logic/transformation_rules/join_associativity.cpp
+  logic/implementation_rules/implement_table.cpp
+  logic/implementation_rules/implement_filter.cpp
+  logic/implementation_rules/implement_projection.cpp
+  logic/implementation_rules/implement_join.cpp
+  logic/implementation_rules/implement_cross_join.cpp
 )
 add_library(stewkk::libsql ALIAS libsql)
 target_compile_features(libsql PUBLIC cxx_std_23)

@@ -10,3 +10,5 @@ FlameGraph/
 /perf.data.old
 **/.auctex-auto/
 **/build/
+/.odbc/
+**/__pycache__

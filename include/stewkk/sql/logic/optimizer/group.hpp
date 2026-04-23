@@ -9,6 +9,7 @@
 namespace stewkk::sql {
 
 using LogicalOperator = decltype(LogicalExpr::root_operator);
+using PhysicalOperator = decltype(PhysicalExpr::root_operator);
 
 class Group {
   private:
@@ -22,7 +23,7 @@ class Group {
         ToNotNull>;
 
     utils::NotNull<LogicalExpr*> AddLogicalExpr(LogicalOperator root_operator);
-    utils::NotNull<PhysicalExpr*> AddPhysicalExpr();
+    utils::NotNull<PhysicalExpr*> AddPhysicalExpr(PhysicalOperator root_operator);
     LogicalExprs GetLogicalExprs();
 
     size_t GetId() const;

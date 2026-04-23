@@ -1,0 +1,6 @@
+[submodule "research/datasets"]
+	path = research/datasets
+	url = git@github.com:ronaldbradford/data.git
+[submodule "research/imdb-sqlserver"]
+	path = research/imdb-sqlserver
+	url = git@github.com:sqlsunday/imdb-to-sqlserver.git
