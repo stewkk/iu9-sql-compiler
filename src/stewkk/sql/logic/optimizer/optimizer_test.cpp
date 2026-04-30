@@ -256,6 +256,7 @@ private:
       }
 
         public:
+      // FIXME: сделать генерацию лучшего плана в виде просто дерева.
       PhysicalExpr* Optimize() {
         tasks_.emplace([this]() {
           OptimizeGroup(root_->group);
