@@ -2,6 +2,8 @@
 \documentclass[fontsize=14pt, russian]{scrartcl}
 \input{header.tex}
 \addbibresource{biblio.bib}
+
+\usepackage{svg}
     
 \begin{document}
 \sloppy
@@ -364,11 +366,10 @@ SQL-запроса и построение синтаксического дер
 
 Одной из подзадач рамках построения оптимального плана является определение
 порядка выполнения соединений. Для соединения \(n\) отношений количество
-возможных порядков соединения выражается как \(O((n-1)! \cdot C_{n-1})\), где
-\(C_k\) --- \(k\)-е число Каталана. Таким образом, пространство поиска растет
-экспоненциально с увеличением числа соединяемых таблиц.
-
-{\color{red}: TODO: ссылка на статью есть в лекциях Andy}
+возможных порядков их выполнения выражается как
+\(O(n! \cdot C_{n-1}) = O(\frac{(2n-2)!}{(n-1)!})\)~\cite{IntroToTheJoinOrderingProblem},
+где \(C_k\) --- \(k\)-е число Каталана. Таким образом, пространство поиска
+растет экспоненциально с увеличением числа соединяемых таблиц.
 
 Поскольку полный перебор \(\mathcal{P}_L\) для достаточно больших \(n\)
 невозможен, на практике речь идёт о поиске плана с приемлемо малой стоимостью в
@@ -387,11 +388,53 @@ SQL-запроса и построение синтаксического дер
 \(50\) строк \texttt{lineitem}. Соответственно, общее число страниц составляет
 \(P_C = 10^3\), \(P_O = 1{,}25 \cdot 10^5\), \(P_L = 10^6\).
 
-Запрос состоит в соединении трёх таблиц по внешним ключам с
-последующей агрегацией. Рассмотрим два альтернативных плана.
+Для запроса из листинга~\ref{lst:join_query}
+рассмотрим два альтернативных плана~\refImage{fig::join_plan_comparison}:
+\begin{listing}
+  \caption{Соединение \texttt{customer}, \texttt{orders} и \texttt{lineitem}.}
+  \label{lst:join_query}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{SQL}
+  SELECT *
+  FROM customer c
+  JOIN orders o ON c.c_custkey = o.o_custkey
+  JOIN lineitem l ON o.o_orderkey = l.l_orderkey
+  \end{minted}
+\end{listing}
 
-{\color{red} TODO: визуализация планов (tikz) в виде дерева с кардинальностью
-  отношений на ребрах}
+\begin{figure}[!htb]\centering
+\begin{tikzpicture}[
+    rel/.style={rectangle, draw, rounded corners=2pt, minimum width=2.45cm,
+                minimum height=0.8cm, align=center, font=\small},
+    op/.style={rectangle, draw, fill=gray!12, minimum width=4.25cm,
+               minimum height=1.2cm, align=center, font=\small}
+]
+    \node[op] (p1j2) at (-4.4, 2.9) {Hash Join\\\scriptsize \(10^6\) чтений};
+    \node[op] (p1j1) at (-6.5, 1.2) {Hash Join\\\scriptsize \(1{,}26 \cdot 10^5\) чтений};
+    \node[rel] (p1l) at (-2.3, 1.2) {\texttt{lineitem}};
+    \node[rel] (p1c) at (-7.8, -0.3) {\texttt{customer}};
+    \node[rel] (p1o) at (-4.4, -0.3) {\texttt{orders}};
+
+    \draw[->] (p1j1) -- (p1j2);
+    \draw[->] (p1l) -- (p1j2);
+    \draw[->] (p1c) -- (p1j1);
+    \draw[->] (p1o) -- (p1j1);
+    \node[font=\small\bfseries] at (-4.4, 4.0) {План \(P_1\)};
+
+    \node[op] (p2j2) at (4.4, 2.9) {Nested Loop Join\\\scriptsize \(1{,}25 \cdot 10^{14}\) чтений};
+    \node[op] (p2j1) at (2.3, 1.2) {Nested Loop Join\\\scriptsize \(1{,}25 \cdot 10^8\) чтений};
+    \node[rel] (p2l) at (6.5, 1.2) {\texttt{lineitem}};
+    \node[rel] (p2c) at (1.0, -0.3) {\texttt{customer}};
+    \node[rel] (p2o) at (4.4, -0.3) {\texttt{orders}};
+
+    \draw[->] (p2j1) -- (p2j2);
+    \draw[->] (p2l) -- (p2j2);
+    \draw[->] (p2c) -- (p2j1);
+    \draw[->] (p2o) -- (p2j1);
+    \node[font=\small\bfseries] at (4.4, 4.0) {План \(P_2\)};
+\end{tikzpicture}
+\caption{Сравнение планов для запроса из листинга~\ref{lst:join_query}.}
+\label{fig::join_plan_comparison}
+\end{figure}
 
 \begin{itemize}
   \item План \(P_1\):
@@ -411,21 +454,97 @@ SQL-запроса и построение синтаксического дер
         чтения, что на восемь порядков превышает \(P_1\).
 \end{itemize}
 
-{\color{red} TODO: пример с логическими трансформациями, аналогично визуализация
-  планов (tikz). Адаптировать абзац ниже.}
+На еще одном примере запроса из листинга~\ref{lst:logical_transform_query}
+рассмотрим влияние логических преобразований. Отношение \texttt{Emp} содержит
+\(10{,}000\) кортежей, что эквивалентно \(1{,}000\) страницам. \texttt{Dept}
+включает \(500\) записей и \(50\) страниц соответственно. Атрибут
+\texttt{Emp.did} является внешним ключом к \texttt{Dept.did}, поэтому каждому
+кортежу из \texttt{Dept} соответствует \(10{,}000 / 500 = 20\) из \texttt{Emp}.
+Пусть на \texttt{Emp.did} и \texttt{Dept.dname} построены индексы, а в
+промежуточную страницу помещается \(5\) кортежей.
 
-Различие на восемь порядков в первом случае показывает, что разница между
-удачным и неудачным планами может составлять сотни миллионов раз. Если
-исполнение \(P_1\) на современной системе занимает порядка секунд, то наивный
-\(P_2\) будет завершен через десятки лет. Более того, если в плане \(P_1\)
-дополнительно использовать индекс по внешнему ключу при соединении с
-\texttt{lineitem}, стоимость может снизиться ещё в несколько раз.
+\begin{listing}
+  \caption{Пример запроса с проекцией, фильтрацией и соединением.}
+  \label{lst:logical_transform_query}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{SQL}
+  SELECT DISTINCT ename
+  FROM Emp E JOIN Dept D ON E.did = D.did
+  WHERE D.dname = 'Toy'
+  \end{minted}
+\end{listing}
 
-Этот пример наглядно демонстрирует, что оптимизатор отвечает не за доли
-процентов производительности, а за принципиальную возможность исполнения сложных
-аналитических запросов за приемлемое время. Именно поэтому разработка
-качественного оптимизатора занимает центральное место в проектировании любой
-реляционной СУБД.
+\begin{figure}[!htb]\centering
+\begin{tikzpicture}[
+    rel/.style={rectangle, draw, rounded corners=2pt, minimum width=2.0cm,
+                minimum height=0.8cm, align=center, font=\small},
+    op/.style={rectangle, draw, fill=gray!12, minimum width=4.5cm,
+               minimum height=1.2cm, align=center, font=\small}
+]
+    \node[font=\small\bfseries] at (-3.5, 8.8) {План \(P_1\)};
+    \node[op] (p1proj)  at (-3.5, 7.7) {\(\pi_{\texttt{ename}}\)};
+    \node[op] (p1sig2)  at (-3.5, 6.2) {\(\sigma_{\texttt{dname}=\texttt{'Toy'}}\)};
+    \node[op] (p1sig1)  at (-3.5, 4.7) {\(\sigma_{\texttt{Emp.did}=\texttt{Dept.did}}\)};
+    \node[op] (p1cp)    at (-3.5, 3.2) {\(\texttt{Emp} \times \texttt{Dept}\)\\\scriptsize \(50{,}050\) чтений};
+    \node[rel] (p1emp)  at (-5.2, 1.7) {\texttt{Emp}};
+    \node[rel] (p1dept) at (-1.8, 1.7) {\texttt{Dept}};
+
+    \draw[->] (p1emp)  -- (p1cp);
+    \draw[->] (p1dept) -- (p1cp);
+    \draw[->] (p1cp)   -- (p1sig1);
+    \draw[->] (p1sig1) -- (p1sig2);
+    \draw[->] (p1sig2) -- (p1proj);
+
+    \node[font=\small\bfseries] at (3.5, 8.8) {План \(P_2\)};
+    \node[op] (p2proj) at (3.5, 7.7) {\(\pi_{\texttt{ename}}\)};
+    \node[op] (p2join) at (3.5, 5.5) {Index NL Join\\\(\texttt{Emp.did}=\texttt{Dept.did}\)\\\scriptsize \(23\) чтения};
+    \node[rel] (p2emp) at (1.6, 3.5) {\texttt{Emp}};
+    \node[op] (p2sig)  at (5.4, 3.5) {\(\sigma_{\texttt{dname}=\texttt{'Toy'}}\)\\\scriptsize \(3\) чтения};
+    \node[rel] (p2dept) at (5.4, 1.8) {\texttt{Dept}};
+
+    \draw[->] (p2emp)  -- (p2join);
+    \draw[->] (p2sig)  -- (p2join);
+    \draw[->] (p2join) -- (p2proj);
+    \draw[->] (p2dept) -- (p2sig);
+\end{tikzpicture}
+\caption{Сравнение планов для запроса из
+  листинга~\ref{lst:logical_transform_query}.}
+\label{fig::logical_transform_plans}
+\end{figure}
+
+Рассмотрим два плана~\refImage{fig::logical_transform_plans}:
+
+\begin{itemize}
+  \item План \(P_1\) соответствует прямому преобразованию запроса в реляционную
+        алгебру. Если рассматривать стоимость исполнения такого плана в модели
+        итераторов, то каждый оператор запрашивает у дочернего следующий кортеж
+        через вызов \texttt{next()}, поэтому \(\sigma\) и~\(\pi\) работают в
+        режиме конвейера и не инициируют обращений к диску. Вся стоимость
+        ввода-вывода сосредоточена в операторе~\(\times\), реализованном через
+        вложенные циклы с \texttt{Dept} в роли внешней таблицы: \texttt{Dept}
+        читается один раз, а \texttt{Emp} перечитывается полностью для каждой
+        страницы~\texttt{Dept}:
+        \[
+          50 + 50 \times 1{,}000 = 50{,}050 \text{ чтений.}
+        \]
+
+  \item План \(P_2\) является оптимизированным вариантом, где применено правило
+        проталкивания предиката и декартово произведение заменено на соединение
+        по предикату. Причем для доступа к таблице \texttt{Dept} применяется
+        сканирование по индексу, что дает всего \(3\) чтения с диска. Соединение
+        реализуется через вложенные циклы с использованием индекса, что в итоге дает:
+        \[
+          3 + (3 + 20) = 26 \text{ чтений.}
+        \]
+\end{itemize}
+
+Оба приведенных примера наглядно демонстрируют, что оптимизатор отвечает не за
+доли процентов производительности, а за принципиальную возможность исполнения
+сложных аналитических запросов за приемлемое время. В первом случае разница
+между физическими планами составляет восемь порядков: если \(P_1\) завершается
+за секунды, то наивный \(P_2\) потребует десятков лет. Во втором случае даже
+единственное логическое преобразование, в виде протаскивания предиката, снижает
+число чтений с диска в \(1{,}900\) раз. Именно поэтому качественный оптимизатор
+является конкурентным преимуществом и одной из самых важных частей СУБД.
 
 \section{Обзор архитектур оптимизаторов}
 
@@ -433,11 +552,9 @@ SQL-запроса и построение синтаксического дер
 
 \subsection{System R}
 
-{\color{red} TODO: ссылка на статью по System R. Есть в лекциях Andy}
-
-Оптимизатор System~R, разработанный в IBM Research в конце 1970-х годов, стал
-первым стоимостным оптимизатором запросов и заложил фундаментальные принципы,
-используемые во всех последующих системах.
+Оптимизатор System~R, разработанный в IBM Research в конце 1970-х
+годов~\cite{Selinger1979}, стал первым стоимостным оптимизатором запросов и
+заложил фундаментальные принципы, используемые во всех последующих системах.
 
 Архитектуру, аналогичную System~R, реализуют PostgreSQL и ранние версии IBM DB2.
 
@@ -483,13 +600,10 @@ SQL-запроса и построение синтаксического дер
 \subsection{Volcano}
 
 Volcano --- расширяемый, основанный на правилах, стоимостной оптимизатор
-запросов, разработанный Грефе в 1993 году. Volcano ввел ряд концепций, ставших
-основой для последующих расширяемых оптимизаторов: физические свойства
-выражений, обеспечивающие правила, структуру данных Memo и нисходящий алгоритм
-поиска на основе динамического программирования.
-
-{color{red} TODO: ссылка на статью (взять из лекций Andy). Добавить системы
-  использующие Volcano}
+запросов, разработанный Грефе в 1993 году~\cite{GraefeMcKenna1993}. Volcano ввел
+ряд концепций, ставших основой для последующих расширяемых оптимизаторов:
+физические свойства выражений, обеспечивающие правила, структуру данных Memo и
+нисходящий алгоритм поиска на основе динамического программирования.
 
 Volcano разделяет поиск на две фазы:
 
@@ -519,7 +633,7 @@ Volcano разделяет поиск на две фазы:
 \section{Архитектура Cascades}
 
 Cascades --- это расширяемая архитектура оптимизатора запросов, являющаяся
-логическим продолжением идеи Volcano.
+логическим продолжением идеи Volcano~\cite{Graefe1995}.
 
 Основными объектами Cascades являются:
 
@@ -591,38 +705,102 @@ Memo является основной структурой данных Cascade
 предоставляемые физические свойства, например сортировка выходного потока, и
 рассчитанная стоимость исполнения этого оператора.
 
-На рисунке~\ref{fig:memo-structure} показан пример Memo для запроса с тремя
-отношениями. Группа \(G_5\) представляет результат соединения трех отношений, а
-внутри нее находятся два логически эквивалентных выражения с разной
-ассоциацией соединений. Дочерние выражения ссылаются на группы, поэтому общие
-подпланы не дублируются.
+\begin{listing}
+  \caption{Пример запроса.}
+  \label{lst:query}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{SQL}
+    SELECT * FROM A JOIN B ON p_1 JOIN C ON p_2;
+  \end{minted}
+\end{listing}
 
-{\color{red} TODO: поправить схему}
-{\color{red} TODO: привести сам запрос}
+На рисунке~\ref{fig:memo-structure} показан пример Memo для запроса из
+листинга~\ref{lst:query}. Например, группа \(G_5\) представляет результат
+соединения трех отношений, в ней находятся два логически эквивалентных выражения
+с разной ассоциацией соединений и четыре физические реализации для них. Входными
+данными для операторов являются группы группы, поэтому общие подвыражения не
+дублируются.
+
 \begin{figure}[H]
     \centering
     \begin{tikzpicture}[
-        group/.style={draw, rounded corners, align=left, minimum width=4.0cm, minimum height=1.5cm},
-        expr/.style={draw, align=center, fill=white, minimum width=3.3cm, minimum height=0.6cm},
-        arrow/.style={-{Stealth[length=2mm]}, thick}
+        scale=0.85, transform shape,
+        group/.style={draw, rounded corners, text width=4.8cm, inner sep=5pt},
+        arrow/.style={-{Stealth[length=2.5mm]}, thick},
+        altarrow/.style={-{Stealth[length=2.5mm]}, thick, dashed}
     ]
-        \node[group] (g1) at (0,0) {\textbf{Группа G1}\\Scan(A)};
-        \node[group] (g2) at (5,0) {\textbf{Группа G2}\\Scan(B)};
-        \node[group] (g3) at (10,0) {\textbf{Группа G3}\\Scan(C)};
-        \node[group] (g4) at (2.5,-3) {\textbf{Группа G4}\\Join(G1,G2)\\HashJoin(G1,G2)};
-        \node[group] (g6) at (7.5,-3) {\textbf{Группа G6}\\Join(G2,G3)\\HashJoin(G2,G3)};
-        \node[group] (g5) at (5,-6) {\textbf{Группа G5}\\Join(G4,G3)\\Join(G1,G6)};
+        \node[group] (g5) at (6,0) {
+            \textbf{Группа G5}\\[2pt]
+            \hrule\vspace{2pt}
+            \textit{Логические:}\\
+            Join(G4,G3)\\
+            Join(G1,G6)\\[2pt]
+            \hrule\vspace{2pt}
+            \textit{Физические:}\\
+            HashJoin(G4,G3)\\
+            NestedLoopJoin(G4,G3)\\
+            HashJoin(G1,G6)\\
+            NestedLoopJoin(G1,G6)
+        };
+        \node[group] (g4) at (3,-6) {
+            \textbf{Группа G4}\\[2pt]
+            \hrule\vspace{2pt}
+            \textit{Логические:}\\
+            Join(G1,G2)\\[2pt]
+            \hrule\vspace{2pt}
+            \textit{Физические:}\\
+            HashJoin(G1,G2)\\
+            NestedLoopJoin(G1,G2)
+        };
+        \node[group] (g6) at (9,-6) {
+            \textbf{Группа G6}\\[2pt]
+            \hrule\vspace{2pt}
+            \textit{Логические:}\\
+            Join(G2,G3)\\[2pt]
+            \hrule\vspace{2pt}
+            \textit{Физические:}\\
+            HashJoin(G2,G3)\\
+            NestedLoopJoin(G2,G3)
+        };
+        \node[group] (g1) at (0,-12) {
+            \textbf{Группа G1}\\[2pt]
+            \hrule\vspace{2pt}
+            \textit{Логические:}\\
+            Scan(A)\\[2pt]
+            \hrule\vspace{2pt}
+            \textit{Физические:}\\
+            SeqScan(A)
+        };
+        \node[group] (g2) at (6,-12) {
+            \textbf{Группа G2}\\[2pt]
+            \hrule\vspace{2pt}
+            \textit{Логические:}\\
+            Scan(B)\\[2pt]
+            \hrule\vspace{2pt}
+            \textit{Физические:}\\
+            SeqScan(B)
+        };
+        \node[group] (g3) at (12,-12) {
+            \textbf{Группа G3}\\[2pt]
+            \hrule\vspace{2pt}
+            \textit{Логические:}\\
+            Scan(C)\\[2pt]
+            \hrule\vspace{2pt}
+            \textit{Физические:}\\
+            SeqScan(C)
+        };
 
+        \draw[arrow] (g5) -- (g4);
+        \draw[arrow, rounded corners=5pt]
+            (g5.east) -- (15.5,0) -- (15.5,-12) -- (g3.east);
+        \draw[altarrow] (g5) -- (g6);
+        \draw[altarrow, rounded corners=5pt]
+            (g5.west) -- (-3.5,0) -- (-3.5,-12) -- (g1.west);
         \draw[arrow] (g4) -- (g1);
         \draw[arrow] (g4) -- (g2);
         \draw[arrow] (g6) -- (g2);
         \draw[arrow] (g6) -- (g3);
-        \draw[arrow] (g5) -- (g4);
-        \draw[arrow] (g5) -- (g6);
-        \draw[arrow] (g5) -- (g3);
-        \draw[arrow] (g5) -- (g1);
     \end{tikzpicture}
-    \caption{Пример структуры Memo с группами эквивалентных выражений}
+    \caption{Пример структуры Memo.}
     \label{fig:memo-structure}
 \end{figure}
 
@@ -646,40 +824,11 @@ Cascades организует оптимизацию как выполнение
 На рисунке~\ref{fig:cascades-tasks} показана схема взаимодействия задач в
 оптимизаторе.
 
-{\color{red} TODO: поправить рисунок}
-
 \begin{figure}[H]
-    \centering
-    \begin{tikzpicture}[
-        node distance=0.9cm and 1.1cm,
-        block/.style={draw, rounded corners, align=center, minimum width=3.4cm, minimum height=0.9cm},
-        small/.style={draw, rounded corners, align=center, minimum width=2.9cm, minimum height=0.8cm},
-        arrow/.style={-{Stealth[length=2mm]}, thick}
-    ]
-        \node[block] (root) {запрос\\к оптимизации};
-        \node[block, right=of root] (memo) {вставка\\в Memo};
-        \node[block, right=of memo] (optgroup) {задача\\оптимизации группы};
-        \node[small, below left=of optgroup] (explore) {исследовать\\группу};
-        \node[small, below=of optgroup] (implement) {реализовать\\выражение};
-        \node[small, below right=of optgroup] (enforce) {обеспечить\\свойство};
-        \node[small, below=of explore] (rules) {применить\\правила};
-        \node[small, below=of implement] (cost) {оценить\\стоимость};
-        \node[small, below=of enforce] (winner) {обновить\\победителя};
-
-        \draw[arrow] (root) -- (memo);
-        \draw[arrow] (memo) -- (optgroup);
-        \draw[arrow] (optgroup) -- (explore);
-        \draw[arrow] (optgroup) -- (implement);
-        \draw[arrow] (optgroup) -- (enforce);
-        \draw[arrow] (explore) -- (rules);
-        \draw[arrow] (rules) -| (memo);
-        \draw[arrow] (implement) -- (cost);
-        \draw[arrow] (cost) -- (winner);
-        \draw[arrow] (enforce) -- (winner);
-        \draw[arrow] (winner) -| (optgroup);
-    \end{tikzpicture}
-    \caption{Взаимодействие задач в оптимизаторе Cascades}
-    \label{fig:cascades-tasks}
+\centering
+\includegraphics[width=0.8\textwidth]{cascades.pdf}
+\caption{Схема взаимодействия задач в оптимизаторе Cascades}
+\label{fig:cascades-tasks}
 \end{figure}
 
 На листинге~\ref{alg:cascades-search} приведен псевдокод алгоритма поиска в
@@ -914,6 +1063,8 @@ Cascades ветвями являются альтернативные выраж
 зависимости между атрибутами. Экспериментальные исследования показывают, что
 ошибки кардинальности часто являются одной из основных причин выбора неудачных
 планов~\cite{leis2015}.
+
+{\color{red} TODO: поправить ссылку}
 
 Для повышения качества оценок используются гистограммы, статистики по
 многоколоночным ключам, сведения об уникальности, функциональные зависимости,

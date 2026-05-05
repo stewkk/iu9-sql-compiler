@@ -55,10 +55,11 @@
             perl
             tex
             plantuml
-	    inkscape
+            inkscape
             llvmPackages_21.llvm
             llvmPackages_21.llvm.dev
-	    nodejs_20
+            nodejs_20
+            graphviz
           ];
 
           nativeBuildInputs = [
