@@ -831,63 +831,10 @@ Cascades организует оптимизацию как выполнение
 \label{fig:cascades-tasks}
 \end{figure}
 
-На листинге~\ref{alg:cascades-search} приведен псевдокод алгоритма поиска в
+На листингах~\ref{alg:cascades-search}-\ref{alg:cascades-search-3} приведен псевдокод алгоритма поиска в
 архитектуре Cascades.
 
-{color{red} TODO: поправить листинг, убрать в приложение}
-
-\begin{algorithm}[H]
-    \caption{Top-down Cascades search}
-    \label{alg:cascades-search}
-    \begin{algorithmic}[1]
-        \Function{Optimize}{$rootExpr, requiredProps$}
-            \State $rootGroup \gets Memo.Insert(rootExpr)$
-            \State $upperBound \gets +\infty$
-            \State \Return \Call{OptimizeGroup}{$rootGroup, requiredProps, upperBound$}
-        \EndFunction
-        \Statex
-        \Function{OptimizeGroup}{$group, props, bound$}
-            \If{$group$ has winner for $props$ with cost $\le bound$}
-                \State \Return stored winner
-            \EndIf
-            \State \Call{ExploreGroup}{$group$}
-            \State $bestPlan \gets null$
-            \State $bestCost \gets bound$
-            \ForAll{$expr \in group.expressions$}
-                \State $candidate \gets$ \Call{OptimizeExpression}{$expr, props, bestCost$}
-                \If{$candidate.cost < bestCost$}
-                    \State $bestPlan \gets candidate$
-                    \State $bestCost \gets candidate.cost$
-                \EndIf
-            \EndFor
-            \State \Call{StoreWinner}{$group, props, bestPlan, bestCost$}
-            \State \Return $bestPlan$
-        \EndFunction
-        \Statex
-        \Function{ExploreGroup}{$group$}
-            \ForAll{$expr \in group.logicalExpressions$}
-                \ForAll{$rule \in MatchingRules(expr)$}
-                    \If{\Call{IsApplicable}{$rule, expr$}}
-                        \State $newExpr \gets$ \Call{ApplyRule}{$rule, expr$}
-                        \State \Call{Memo.InsertIntoEquivalentGroup}{$newExpr, group$}
-                    \EndIf
-                \EndFor
-            \EndFor
-        \EndFunction
-        \Statex
-        \Function{OptimizeExpression}{$expr, props, bound$}
-            \If{$expr$ is logical}
-                \State generate physical expressions using implementation rules
-            \EndIf
-            \State optimize children with derived required properties
-            \State prune expression if lower bound exceeds $bound$
-            \State add local operator cost and enforcer cost if needed
-            \State \Return physical candidate
-        \EndFunction
-    \end{algorithmic}
-\end{algorithm}
-
-{color{red} TODO: добавить описание алгоритма}
+{\color{red} TODO: добавить описание алгоритма}
 
 \section{Правила трансформации и реализации}
 
@@ -971,7 +918,7 @@ Cascades организует оптимизацию как выполнение
 атрибуты заказов, а ограничение внешнего ключа гарантирует существование
 соответствующего клиента.
 
-{color{red}: дописать, мб примеры?}
+{\color{red} TODO: дописать, мб примеры?}
 
 \subsection{Правила реализации}
 
@@ -1000,7 +947,7 @@ Cascades организует оптимизацию как выполнение
 Если требуемый порядок нужен также родительскому оператору, потоковая агрегация
 может оказаться выгодной даже учитывая затраты на сортировку.
 
-{color{red} TODO: псевдокод алгоритмов}
+% {\color{red} TODO: псевдокод алгоритмов}
 
 \subsection{Обеспечивающие операторы}
 
@@ -1018,7 +965,7 @@ Cascades организует оптимизацию как выполнение
 \section{Метод ветвей и границ}
 
 Метод ветвей и границ используется для сокращения пространства поиска и, как
-следствие, неасимптотическим улучшением скорости работы алгоритма. В контексте
+следствие, неасимптотического улучшения скорости работы алгоритма. В контексте
 Cascades ветвями являются альтернативные выражения и комбинации физических
 реализаций дочерних групп, а границей является текущая лучшая стоимость плана
 для заданной группы и требуемых физических свойств. Если нижняя оценка стоимости
@@ -1062,9 +1009,7 @@ Cascades ветвями являются альтернативные выраж
 быть грубой, если данные имеют корреляции, сильный перекос или сложные
 зависимости между атрибутами. Экспериментальные исследования показывают, что
 ошибки кардинальности часто являются одной из основных причин выбора неудачных
-планов~\cite{leis2015}.
-
-{\color{red} TODO: поправить ссылку}
+планов~\cite{leis2015good}.
 
 Для повышения качества оценок используются гистограммы, статистики по
 многоколоночным ключам, сведения об уникальности, функциональные зависимости,
@@ -1094,7 +1039,7 @@ Cascades ветвями являются альтернативные выраж
 При этом локальная стоимость зависит от кардинальности входов и физических
 свойств, а также конкретного физического оператора.
 
-{\color{red} TODO: табличка формул для разных операторов}
+% {\color{red} TODO: табличка формул для разных операторов}
 
 \section{Дифференциальный анализ физических планов}
 
@@ -1105,8 +1050,6 @@ Cascades ветвями являются альтернативные выраж
 оптимизаторов упускают возможности для оптимизации из-за слишком
 строгих условий активации правил или отсутствия определенных правил
 в их наборе.
-
-{\color{red} TODO: почему нет формализации?}
 
 Данная проблема особенно актуальна при разработке нового оптимизатора: после
 реализации базового набора правил возникает вопрос о полноте и корректности
@@ -1185,7 +1128,7 @@ Cascades ветвями являются альтернативные выраж
 улучшение качества оптимизатора и позволяет новым или открытым оптимизаторам
 быстрее достигать качества устоявшихся промышленных оптимизаторов.
 
-{\color{red} TODO: описать как нормализовать и т.п.}
+% {\color{red} TODO: описать как нормализовать и т.п.}
 
 \renewcommand\refname{СПИСОК ИСПОЛЬЗОВАННЫХ ИСТОЧНИКОВ}
 \clearpage
@@ -1194,4 +1137,109 @@ Cascades ветвями являются альтернативные выраж
     \printbibliography
 }
 \newpage
+
+\settocdepth{section}
+\anonsection{ПРИЛОЖЕНИЕ А}
+\vspace{-30pt}
+
+\begin{algorithm}[H]
+    \caption{Алгоритм поиска (часть 1).}
+    \label{alg:cascades-search}
+    \begin{algorithmic}[1]
+
+    \Procedure{Optimize}{$root$}
+        \State Push task $\Call{OptimizeGroup}{root.group, \bot}$ onto task stack
+        \While{task stack is not empty}
+            \State Pop and execute next task
+        \EndWhile
+        \State \Return $best\_plan[root.group]$
+    \EndProcedure
+
+    \Procedure{OptimizeGroup}{$group, limit$}
+        \If{$best\_cost[group]$ exists \textbf{and} ($limit = \bot$ \textbf{or} $best\_cost[group] < limit$)}
+            \State \Return
+        \EndIf
+        \If{$group$ is not explored}
+            \State Push task $\Call{OptimizeGroup}{group, limit}$ onto task stack
+            \State Push task $\Call{ExploreGroup}{group, limit}$ onto task stack
+            \State \Return
+        \EndIf
+        \For{each logical expression $expr \in group$}
+            \State Push task $\Call{OptimizeExpression}{expr, limit}$ onto task stack
+        \EndFor
+    \EndProcedure
+
+    \Procedure{ExploreGroup}{$group, limit$}
+        \State Mark $group$ as explored
+        \For{each logical expression $expr \in group$}
+            \State Push task $\Call{ExploreExpression}{expr, limit}$ onto task stack
+        \EndFor
+    \EndProcedure
+    \end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+    \caption{Алгоритм поиска (часть 2).}
+    \label{alg:cascades-search-2}
+    \begin{algorithmic}[1]
+    \Procedure{ExploreExpression}{$expr, limit$}
+        \For{each applicable transformation rule $r$}
+            \State Push task $\Call{ApplyTransformation}{r, expr, limit}$ onto task stack
+        \EndFor
+        \For{each child group $child \in \Call{Children}{expr}$}
+            \If{$child$ is not explored}
+                \State Push task $\Call{ExploreGroup}{child, limit}$ onto task stack
+            \EndIf
+        \EndFor
+    \EndProcedure
+
+    \Procedure{OptimizeExpression}{$expr, limit$}
+        \For{each applicable implementation rule $r$}
+            \State Push task $\Call{ApplyImplementation}{r, expr, limit}$ onto task stack
+        \EndFor
+        \For{each child group $child \in \Call{Children}{expr}$}
+            \If{$child$ is not explored}
+                \State Push task $\Call{ExploreGroup}{child, limit}$ onto task stack
+            \EndIf
+        \EndFor
+    \EndProcedure
+
+    \Procedure{ApplyTransformation}{$rule, expr, limit$}
+        \State $new\_expr \leftarrow \Call{Apply}{rule, expr}$
+        \State Push task $\Call{ExploreExpression}{new\_expr, limit}$ onto task stack
+    \EndProcedure
+
+    \Procedure{ApplyImplementation}{$rule, expr, limit$}
+        \State $phys \leftarrow \Call{Apply}{rule, expr}$
+        \State $lc \leftarrow \Call{CalcLocalCost}{phys}$
+        \If{$limit \neq \bot$ \textbf{and} $lc \geq limit$}
+            \State \Return
+        \EndIf
+        \State $child\_limit \leftarrow (limit = \bot) \mathbin{?} \bot \mathbin{:} limit - lc$
+        \State Push task $\Call{OptimizeInputs}{phys, child\_limit, 0}$ onto task stack
+    \EndProcedure
+    \end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+    \caption{Алгоритм поиска (часть 3).}
+    \label{alg:cascades-search-3}
+    \begin{algorithmic}[1]
+    \Procedure{OptimizeInputs}{$expr, limit, i$}
+        \State $children \leftarrow \Call{Children}{expr}$
+        \If{$i \geq |children|$}
+            \State $total \leftarrow local\_cost[expr] + accum\_child\_cost[expr]$
+            \If{$best\_cost[expr.group]$ does not exist \textbf{or} $total < best\_cost[expr.group]$}
+                \State $best\_cost[expr.group] \leftarrow total$
+                \State $best\_plan[expr.group] \leftarrow expr$
+            \EndIf
+            \State \Return
+        \EndIf
+        \State $child \leftarrow children[i]$
+        \State Push task: \textbf{if} $best\_cost[child]$ exists \textbf{then} accumulate child cost \textbf{and} push $\Call{OptimizeInputs}{expr, \ldots, i+1}$
+        \State Push task $\Call{OptimizeGroup}{child, limit}$ onto task stack
+    \EndProcedure
+    \end{algorithmic}
+\end{algorithm}
+
 \end{document}

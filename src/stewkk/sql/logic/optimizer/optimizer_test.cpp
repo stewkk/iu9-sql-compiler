@@ -156,6 +156,7 @@ private:
           if (!best_cost_.contains(child.get())) return;
           auto cc = best_cost_.at(child.get());
           accum_child_cost_[expr.get()] += cc;
+          // FIXME add -LB(children[child_index+1..k])
           Limit next = limit ? std::optional{*limit - local_cost_[expr.get()] - accum_child_cost_[expr.get()]} : std::nullopt;
           if (next && *next < 0) return;
           OptimizeInputs(expr, next, child_index + 1);
