@@ -5,6 +5,7 @@ add_executable(unittests)
 target_sources(unittests PRIVATE
   ${PROJECT_SOURCE_DIR}/src/stewkk/sql/logic/parser/parser_test.cpp
   ${PROJECT_SOURCE_DIR}/src/stewkk/sql/logic/executor/executor_test.cpp
+  ${PROJECT_SOURCE_DIR}/src/stewkk/sql/logic/executor/plan_serializer_test.cpp
   ${PROJECT_SOURCE_DIR}/src/stewkk/sql/logic/optimizer/rule_test.cpp
   ${PROJECT_SOURCE_DIR}/src/stewkk/sql/logic/optimizer/rules_applier_test.cpp
   ${PROJECT_SOURCE_DIR}/src/stewkk/sql/logic/optimizer/optimizer_test.cpp

@@ -21,6 +21,7 @@ add_library(libsql
   logic/result/error.cpp
   logic/result/result.cpp
   logic/executor/plan.cpp
+  logic/executor/plan_serializer.cpp
   logic/executor/executor.cpp
   logic/executor/sequential_scan.cpp
   models/executor/tuple.cpp

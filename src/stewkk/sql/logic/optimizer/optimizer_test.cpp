@@ -14,6 +14,7 @@
 #include <stewkk/sql/logic/optimizer/rules.hpp>
 #include <stewkk/sql/logic/optimizer/rules_applier.hpp>
 #include <stewkk/sql/logic/executor/plan.hpp>
+#include <stewkk/sql/logic/executor/plan_serializer.hpp>
 
 using ::testing::Eq;
 
@@ -332,6 +333,8 @@ TEST(OptimizerTest, Simple) {
   Optimizer optimizer(op, MakeMainRules());
 
   auto got = optimizer.Optimize();
+  
+  ASSERT_THAT(SerializeDot(got), Eq("digraph G { rankdir=BT;\n  n0 [label=\"SeqScan\\\\nusers\"]\n}\n"));
 }
 
 }  // namespace stewkk::sql
