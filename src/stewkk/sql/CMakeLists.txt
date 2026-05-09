@@ -15,9 +15,12 @@ add_library(libsql
   logic/parser/PostgreSQLParserBase.cpp
   logic/parser/parser.cpp
   logic/parser/visitor.cpp
+  models/parser/expression.cpp
+  models/parser/join_type.cpp
   models/parser/relational_algebra_ast.cpp
   logic/result/error.cpp
   logic/result/result.cpp
+  logic/executor/plan.cpp
   logic/executor/executor.cpp
   logic/executor/sequential_scan.cpp
   models/executor/tuple.cpp

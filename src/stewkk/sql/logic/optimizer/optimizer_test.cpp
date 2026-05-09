@@ -13,6 +13,7 @@
 #include <stewkk/sql/logic/optimizer/memo.hpp>
 #include <stewkk/sql/logic/optimizer/rules.hpp>
 #include <stewkk/sql/logic/optimizer/rules_applier.hpp>
+#include <stewkk/sql/logic/executor/plan.hpp>
 
 using ::testing::Eq;
 
@@ -255,10 +256,52 @@ private:
           });
         }
       }
+      
+      PhysicalPlanNode BuildOptimalPlan(Group* group) {
+        auto best_expr = best_plan_[group];
+        if (!best_expr) {
+          throw std::runtime_error{"no optimal plan for group"};
+        }
+        return std::visit(
+            utils::Overloaded{
+                [](const physical::SeqScan& op) -> PhysicalPlanNode {
+                  return SeqScan{
+                      .table = op.table,
+                  };
+                },
+                [this](const physical::Projection& op) -> PhysicalPlanNode {
+                  return PhysicalProjection{
+                      .source
+                      = std::make_shared<PhysicalPlanNode>(BuildOptimalPlan(op.source.get())),
+                      .expressions = op.expressions,
+                  };
+                },
+                [this](const physical::Filter& op) -> PhysicalPlanNode {
+                  return PhysicalFilter{
+                      .source = std::make_shared<PhysicalPlanNode>(BuildOptimalPlan(op.source.get())),
+                      .predicate = op.predicate,
+                  };
+                },
+                [this](const physical::NestedLoopJoin& op) -> PhysicalPlanNode {
+                  return NestedLoopJoin{
+                      .lhs = std::make_shared<PhysicalPlanNode>(BuildOptimalPlan(op.lhs.get())),
+                      .rhs = std::make_shared<PhysicalPlanNode>(BuildOptimalPlan(op.rhs.get())),
+                      .type = op.type,
+                      .qual = op.qual,
+                  };
+                },
+                [this](const physical::NestedLoopCrossJoin& op) -> PhysicalPlanNode {
+                  return NestedLoopCrossJoin{
+                      .lhs = std::make_shared<PhysicalPlanNode>(BuildOptimalPlan(op.lhs.get())),
+                      .rhs = std::make_shared<PhysicalPlanNode>(BuildOptimalPlan(op.rhs.get())),
+                  };
+                },
+            },
+            best_expr->root_operator);
+      }
 
         public:
-      // FIXME: сделать генерацию лучшего плана в виде просто дерева.
-      PhysicalExpr* Optimize() {
+      PhysicalPlanNode Optimize() {
         tasks_.emplace([this]() {
           OptimizeGroup(root_->group);
         });
@@ -267,8 +310,7 @@ private:
           tasks_.pop();
           next_task();
         }
-        auto it = best_plan_.find(root_->group.get());
-        return it != best_plan_.end() ? it->second : nullptr;
+        return BuildOptimalPlan(root_->group.get());
       }
 
     private:
