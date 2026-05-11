@@ -28,6 +28,7 @@ add_library(libsql
   logic/executor/materialization.cpp
   logic/executor/llvm.cpp
   logic/optimizer/optimizer.cpp
+  logic/optimizer/cardinality.cpp
   logic/optimizer/group.cpp
   logic/optimizer/memo.cpp
   logic/optimizer/rules.cpp
