@@ -5,7 +5,7 @@
 namespace stewkk::sql {
 
 inline constexpr bool kDebug =
-#ifdef DEBUG
+#ifdef STEWKK_SQL_DEBUG
     true;
 #else
     false;

@@ -36,11 +36,23 @@ size_t Memo::GroupCount() const {
     return groups_.size();
 }
 
-utils::NotNull<LogicalExpr*> Memo::AddGroup(LogicalOperator root_operator) {
+LogicalExpr* Memo::GetGroup(LogicalOperator root_operator) const {
     auto key = ToKey(root_operator);
+    return GetGroup(key);
+}
+
+LogicalExpr* Memo::GetGroup(const std::string& key) const {
     auto it = expr_index_.find(key);
     if (it != expr_index_.end()) {
         return it->second;
+    }
+    return nullptr;
+}
+
+utils::NotNull<LogicalExpr*> Memo::AddGroup(LogicalOperator root_operator) {
+    auto key = ToKey(root_operator);
+    if (auto g = GetGroup(key); g) {
+        return g;
     }
     auto& group = groups_.emplace_back(Group(groups_.size()));
     auto expr = group.AddLogicalExpr(std::move(root_operator));

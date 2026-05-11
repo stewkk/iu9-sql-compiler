@@ -3,6 +3,7 @@
 #include <stdexcept>
 
 #include <stewkk/sql/utils/overloaded.hpp>
+#include <stewkk/sql/utils/log.hpp>
 #include <stewkk/sql/logic/executor/buffer_size.hpp>
 
 namespace stewkk::sql {
@@ -96,6 +97,7 @@ void Optimizer<NTransformation, NImplementation>::OptimizeInputs(
     int64_t total = local_cost_[expr.get()] + accum_child_cost_[expr.get()];
     auto* g = expr->group.get();
     if (!best_cost_.contains(g) || total < best_cost_.at(g)) {
+      Log("New best plan for group {} with cost {}", g->GetId(), total);
       best_cost_[g] = total;
       best_plan_[g] = expr.get();
     }
@@ -121,6 +123,7 @@ void Optimizer<NTransformation, NImplementation>::OptimizeInputs(
 template<size_t NTransformation, size_t NImplementation>
 void Optimizer<NTransformation, NImplementation>::ApplyRule(
     TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr, Limit limit) {
+  Log("Applying transformation rule {} to group {}", rule.value, expr->group->GetId());
   auto new_expr = rules_applier_.Apply(rule, expr, memo_);
   tasks_.emplace([this, new_expr, limit]() { ExploreExpression(new_expr, limit); });
 }
@@ -128,8 +131,10 @@ void Optimizer<NTransformation, NImplementation>::ApplyRule(
 template<size_t NTransformation, size_t NImplementation>
 void Optimizer<NTransformation, NImplementation>::ApplyRule(
     ImplementationRuleId rule, utils::NotNull<LogicalExpr*> expr, Limit limit) {
+  Log("Applying implementation rule {} to group {}", rule.value, expr->group->GetId());
   auto new_expr = rules_applier_.Apply(rule, expr, memo_);
   auto lc = CalcCost(new_expr, cardinality_);
+  Log("Local cost for group {} expression: {}", new_expr->group->GetId(), lc);
   local_cost_[new_expr.get()] = lc;
   accum_child_cost_[new_expr.get()] = 0;
 
@@ -142,6 +147,7 @@ void Optimizer<NTransformation, NImplementation>::ApplyRule(
 template<size_t NTransformation, size_t NImplementation>
 void Optimizer<NTransformation, NImplementation>::OptimizeExpression(
     utils::NotNull<LogicalExpr*> expr, Limit limit) {
+  Log("Optimizing expression in group {}", expr->group->GetId());
   for (size_t rule = 0; rule < NImplementation; rule++) {
     if (!rules_applier_.IsApplicable(ImplementationRuleId{rule}, expr)) {
       continue;
@@ -164,6 +170,7 @@ void Optimizer<NTransformation, NImplementation>::OptimizeExpression(
 template<size_t NTransformation, size_t NImplementation>
 void Optimizer<NTransformation, NImplementation>::ExploreExpression(
     utils::NotNull<LogicalExpr*> expr, Limit limit) {
+  Log("Exploring expression in group {}", expr->group->GetId());
   for (size_t rule = 0; rule < NTransformation; rule++) {
     if (!rules_applier_.IsApplicable(TransformationRuleId{rule}, expr)) {
       continue;
@@ -186,6 +193,7 @@ void Optimizer<NTransformation, NImplementation>::ExploreExpression(
 template<size_t NTransformation, size_t NImplementation>
 void Optimizer<NTransformation, NImplementation>::ExploreGroup(
     utils::NotNull<Group*> group, Limit limit) {
+  Log("Exploring group {}", group->GetId());
   SetExplored(group);
   for (auto expr : group->GetLogicalExprs()) {
     tasks_.emplace([this, expr, limit]() {
@@ -197,6 +205,7 @@ void Optimizer<NTransformation, NImplementation>::ExploreGroup(
 template<size_t NTransformation, size_t NImplementation>
 void Optimizer<NTransformation, NImplementation>::OptimizeGroup(
     utils::NotNull<Group*> group, Limit limit) {
+  Log("Optimizing group {}", group->GetId());
   if (auto it = best_cost_.find(group.get()); it != best_cost_.end()) {
     if (!limit || it->second < *limit) return;
   }
@@ -214,6 +223,7 @@ void Optimizer<NTransformation, NImplementation>::OptimizeGroup(
 
 template<size_t NTransformation, size_t NImplementation>
 PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(Group* group) {
+  Log("Building optimal plan for group {}", group->GetId());
   auto best_expr = best_plan_[group];
   if (!best_expr) {
     throw std::runtime_error{"no optimal plan for group"};
@@ -255,12 +265,14 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
 
 template<size_t NTransformation, size_t NImplementation>
 PhysicalPlanNode Optimizer<NTransformation, NImplementation>::Optimize() {
+  Log("Starting optimization");
   tasks_.emplace([this]() { OptimizeGroup(root_->group); });
   while (!tasks_.empty()) {
     auto next_task = std::move(tasks_.top());
     tasks_.pop();
     next_task();
   }
+  Log("Optimization complete, building plan");
   return BuildOptimalPlan(root_->group.get());
 }
 

@@ -12,9 +12,12 @@ class Memo {
   public:
     size_t GroupCount() const;
     utils::NotNull<LogicalExpr*> AddGroup(LogicalOperator root_operator);
+    LogicalExpr* GetGroup(LogicalOperator root_operator) const;
     utils::NotNull<LogicalExpr*> Populate(const Operator& op);
 
   private:
+    LogicalExpr* GetGroup(const std::string& key) const;
+
     std::deque<Group> groups_;
     std::unordered_map<std::string, LogicalExpr*> expr_index_;
 };
