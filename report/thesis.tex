@@ -331,14 +331,87 @@ SQL-запроса и построение синтаксического дер
         выбора физического плана.
 \end{enumerate}
 
-Данное преобразование необходимо по нескольким причинам. Во-первых, реляционная
-алгебра обладает формализованным набором правил эквивалентности, которые
-позволяют оптимизатору корректно преобразовывать план запроса без изменения
-семантики. Во-вторых, алгебраическое представление позволяет единообразно
-обрабатывать различные синтаксические формы SQL-запросов, порождающие одинаковые
-логические планы. Наконец, разделение на логические и физические операторы
-позволяет оптимизатору независимо исследовать порядок операций и алгоритмы их
-реализации.
+Приведём пример применения этих правил к SQL-запросу из
+листинга~\ref{lst:correlated_subquery}. Трансляция этого запроса в реляционную
+алгебру выполняется по следующим шагам:
+
+\begin{listing}[H]
+  \caption{Запрос с коррелированным подзапросом.}
+  \label{lst:correlated_subquery}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{SQL}
+  SELECT e.name
+  FROM Employee e
+  WHERE e.salary > (
+      SELECT AVG(salary)
+      FROM Employee
+      WHERE dept = e.dept
+  )
+  \end{minted}
+\end{listing}
+
+\begin{enumerate}
+  \item По базовому правилу оба вхождения таблицы остаются как есть
+        \(\Tr{\text{Employee}} = \text{Employee}\).
+  \item Внутренний подзапрос
+        \(Q'(e) = (\SELECT\ \AVG(\text{salary})\ \FROM\ \ldots \WHERE\ \ldots\))
+        транслируется по правилу группировки, где \(\bar{g} = \varnothing\),
+        \(\bar{f} = \AVG(\text{salary})\):
+        \[
+          \Tr{Q'(e)} = \Agg{\varnothing}{\AVG(\text{salary})}{\Sel{\text{dept} = e.\text{dept}}{\text{Employee}}}.
+        \]
+        Подзапрос коррелирован, так как зависит от атрибута \(e.\text{dept}\)
+        внешнего кортежа.
+  \item По правилу вложенных подзапросов результат \(\Tr{Q'(e)}\) присоединяется
+        к внешнему блоку оператором \(\mathcal{A}\), добавляя к каждому кортежу
+        столбец \(c\) с вычисленным значением средней зарплаты.
+  \item Оставшаяся часть внешнего запроса переводится по правилу
+        \texttt{SELECT-FROM-WHERE} с \(\bar{a} = (e.\text{name})\) и
+        \(p = (e.\text{salary} > c)\).
+\end{enumerate}
+
+Итоговое алгебраическое выражение имеет вид
+\[
+  \Projection{e.\text{name}}{\Sel{e.\text{salary} > c}{\Apply{\text{Employee}\;e}{\Agg{\varnothing}{\text{AVG}(\text{salary}) \to c}{\Sel{\text{dept} = e.\text{dept}}{\text{Employee}}}}}}.
+\]
+Соответствующее дерево операторов изображено на
+рисунке~\ref{fig:correlated_subquery_tree}.
+
+\begin{figure}[!htb]\centering
+\begin{tikzpicture}[
+    rel/.style={rectangle, draw, rounded corners=2pt, minimum width=2.2cm,
+                minimum height=0.8cm, align=center, font=\small},
+    op/.style={rectangle, draw, fill=gray!12, minimum width=2.6cm,
+               minimum height=0.9cm, align=center, font=\small},
+    level distance=1.15cm
+]
+    \node[op] (proj)  at (0, 6.5) {\(\Projection{e.\text{name}}{}\)};
+    \node[op] (sel1)  at (0, 5.2) {\(\Sel{e.\text{salary} > c}{}\)};
+    \node[op] (apply) at (0, 3.9) {\(\mathcal{A}\)};
+    \node[rel] (emp1) at (-2.8, 2.6) {\texttt{Employee} \(e\)};
+    \node[op] (agg)   at (2.8, 2.6) {\(\Agg{\varnothing}{\text{AVG}(\text{salary}) \to c}{}\)};
+    \node[op] (sel2)  at (2.8, 1.3) {\(\Sel{\text{dept} = e.\text{dept}}{}\)};
+    \node[rel] (emp2) at (2.8, 0) {\texttt{Employee}};
+
+    \draw[->] (sel1)  -- (proj);
+    \draw[->] (apply) -- (sel1);
+    \draw[->] (emp1)  -- (apply);
+    \draw[->] (agg)   -- (apply);
+    \draw[->] (sel2)  -- (agg);
+    \draw[->] (emp2)  -- (sel2);
+\end{tikzpicture}
+\caption{Дерево реляционной алгебры для запроса из
+листинга~\ref{lst:correlated_subquery}.}%
+\label{fig:correlated_subquery_tree}
+\end{figure}
+
+Преобразование в форму реляционной алгебры необходимо по нескольким причинам.
+Во-первых, это позволяет использовать формализованный набор правил
+эквивалентности, который позволяют оптимизатору корректно преобразовывать план
+запроса без изменения семантики. Во-вторых, алгебраическое представление
+позволяет единообразно обрабатывать различные синтаксические формы SQL-запросов,
+порождающие одинаковые логические планы. Наконец, разделение на логические и
+физические операторы позволяет оптимизатору независимо исследовать порядок
+операций и алгоритмы их реализации.
 
 \section{Поиск оптимального плана}
 
