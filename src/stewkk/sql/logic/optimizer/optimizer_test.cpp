@@ -348,4 +348,17 @@ TEST(OptimizerTest, Simple) {
   ASSERT_THAT(SerializeDot(got), Eq("digraph G { rankdir=BT;\n  n0 [label=\"SeqScan\\\\nusers\"]\n}\n"));
 }
 
+TEST(OptimizerTest, JoinCommutativity) {
+  std::stringstream s{"SELECT * FROM users JOIN orders ON users.id = orders.user_id;"};
+  Operator op = GetAST(s).value();
+  Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({
+      {"users", 10000},
+      {"orders", 100},
+  }));
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(Serialize(got), ::testing::HasSubstr("(SeqScan orders) (SeqScan users)"));
+}
+
 }  // namespace stewkk::sql
