@@ -113,7 +113,7 @@ Type GetExpressionTypeUnchecked(const Expression& expr, const AttributesInfo& av
   return std::visit(ExpressionTypeVisitor{available_attrs}, expr);
 }
 
-AttributesInfo GetAttributesAfterProjection(const AttributesInfo& attrs, const Projection& proj) {
+AttributesInfo GetAttributesAfterProjection(const AttributesInfo& attrs, const PhysicalProjection& proj) {
   AttributesInfo result_attributes;
   result_attributes.reserve(proj.expressions.size());
   for (const auto& target : proj.expressions) {

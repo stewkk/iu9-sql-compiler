@@ -14,6 +14,7 @@
 #include <stewkk/sql/logic/optimizer/rules.hpp>
 #include <stewkk/sql/logic/optimizer/rules_applier.hpp>
 #include <stewkk/sql/logic/executor/plan.hpp>
+#include <stewkk/sql/logic/executor/buffer_size.hpp>
 #include <stewkk/sql/logic/executor/plan_serializer.hpp>
 
 using ::testing::Eq;
@@ -67,7 +68,10 @@ std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<PhysicalExpr*> ex
 }
 
 class CardinalityEstimates {
-public:  
+public:
+  CardinalityEstimates(std::unordered_map<std::string, int64_t> table_sizes = {})
+      : table_sizes_(std::move(table_sizes)) {}
+
   int64_t GetCardinality(utils::NotNull<Group*> group) {
     if (auto it = cache_.find(group.get()); it != cache_.end()) {
       return it->second;
@@ -76,11 +80,14 @@ public:
     cache_[group.get()] = cardinality;
     return cardinality;
   }
-  
+
   private:
   int64_t GetCardinality(const LogicalOperator& op) {
     return std::visit(utils::Overloaded{
-        [](const logical::Table&) -> int64_t {
+        [this](const logical::Table& t) -> int64_t {
+            if (auto it = table_sizes_.find(t.name); it != table_sizes_.end()) {
+                return it->second;
+            }
             return 10;
         },
         [this](const logical::Filter& f) -> int64_t {
@@ -98,6 +105,7 @@ public:
     }, op);
   }
 
+  std::unordered_map<std::string, int64_t> table_sizes_;
   std::unordered_map<Group*, int64_t> cache_;
 };
 
@@ -113,12 +121,14 @@ int64_t CalcCost(utils::NotNull<PhysicalExpr*> expr, CardinalityEstimates& cardi
             return cardinality.GetCardinality(expr->group);
         },
         [&](const physical::NestedLoopJoin& j) -> int64_t {
-            return 3 * cardinality.GetCardinality(j.lhs) * cardinality.GetCardinality(j.rhs)
-                   + cardinality.GetCardinality(expr->group);
+            auto p_l = (cardinality.GetCardinality(j.lhs) + kBufSize - 1) / kBufSize;
+            auto p_r = (cardinality.GetCardinality(j.rhs) + kBufSize - 1) / kBufSize;
+            return p_l * (1 + p_r);
         },
         [&](const physical::NestedLoopCrossJoin& j) -> int64_t {
-            return 3 * cardinality.GetCardinality(j.lhs) * cardinality.GetCardinality(j.rhs)
-                   + cardinality.GetCardinality(expr->group);
+            auto p_l = (cardinality.GetCardinality(j.lhs) + kBufSize - 1) / kBufSize;
+            auto p_r = (cardinality.GetCardinality(j.rhs) + kBufSize - 1) / kBufSize;
+            return p_l * (1 + p_r);
         },
     }, expr->root_operator);
 }
@@ -126,9 +136,10 @@ int64_t CalcCost(utils::NotNull<PhysicalExpr*> expr, CardinalityEstimates& cardi
 template<size_t NTransformation, size_t NImplementation>
 class Optimizer {
     public:
-      Optimizer(const Operator& expr, Rules<NTransformation, NImplementation>&& rules)
+      Optimizer(const Operator& expr, Rules<NTransformation, NImplementation>&& rules,
+                CardinalityEstimates cardinality = {})
           : memo_(), rules_applier_(std::move(rules)), root_(memo_.Populate(expr)),
-          cardinality_() {
+          cardinality_(std::move(cardinality)) {
       }
 
 private:

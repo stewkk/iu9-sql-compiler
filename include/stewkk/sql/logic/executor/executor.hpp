@@ -17,8 +17,10 @@
 #include <stewkk/sql/logic/result/result.hpp>
 #include <stewkk/sql/models/executor/tuple.hpp>
 #include <stewkk/sql/logic/executor/channel.hpp>
-#include <stewkk/sql/models/parser/relational_algebra_ast.hpp>
+#include <stewkk/sql/logic/executor/plan.hpp>
 #include <stewkk/sql/logic/executor/llvm.hpp>
+
+// FIXME: add explicit instantiations and move implementations to .cpp
 
 namespace stewkk::sql {
 
@@ -54,20 +56,20 @@ public:
       const std::string& table_name, AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan)>;
   Executor(SequentialScan seq_scan, boost::asio::any_io_executor executor);
 
-  boost::asio::awaitable<Result<Relation>> Execute(const Operator& op);
+  boost::asio::awaitable<Result<Relation>> Execute(const PhysicalPlanNode& op);
 private:
-  boost::asio::awaitable<void> Execute(const Operator& op, AttributesInfoChannel& attr_chan,
+  boost::asio::awaitable<void> Execute(const PhysicalPlanNode& op, AttributesInfoChannel& attr_chan,
                                        TuplesChannel& tuples_chan);
-  boost::asio::awaitable<void> ExecuteProjection(const Projection& proj, AttributesInfoChannel& attr_chan,
+  boost::asio::awaitable<void> ExecuteProjection(const PhysicalProjection& proj, AttributesInfoChannel& attr_chan,
                                                  TuplesChannel& tuples_chan);
-  boost::asio::awaitable<void> ExecuteFilter(const Filter& filter, AttributesInfoChannel& attr_chan,
+  boost::asio::awaitable<void> ExecuteFilter(const PhysicalFilter& filter, AttributesInfoChannel& attr_chan,
                                              TuplesChannel& tuples_chan);
-  boost::asio::awaitable<void> ExecuteCrossJoin(const CrossJoin& cross_join,
+  boost::asio::awaitable<void> ExecuteCrossJoin(const NestedLoopCrossJoin& cross_join,
                                                 AttributesInfoChannel& attr_chan,
                                                 TuplesChannel& tuples_chan);
-  boost::asio::awaitable<void> ExecuteJoin(const Join& join, AttributesInfoChannel& attr_chan,
+  boost::asio::awaitable<void> ExecuteJoin(const NestedLoopJoin& join, AttributesInfoChannel& attr_chan,
                                            TuplesChannel& tuples_chan);
-  boost::asio::awaitable<void> SpawnExecutor(const Operator& op, AttributesInfoChannel& attr_chan, TuplesChannel& tuple_chan);
+  boost::asio::awaitable<void> SpawnExecutor(const PhysicalPlanNode& op, AttributesInfoChannel& attr_chan, TuplesChannel& tuple_chan);
 
 private:
   SequentialScan sequential_scan_;
@@ -76,7 +78,7 @@ private:
 
 Type GetExpressionType(const Expression& expr, const AttributesInfo& available_attrs);
 Type GetExpressionTypeUnchecked(const Expression& expr, const AttributesInfo& available_attrs);
-AttributesInfo GetAttributesAfterProjection(const AttributesInfo& attrs, const Projection& proj);
+AttributesInfo GetAttributesAfterProjection(const AttributesInfo& attrs, const PhysicalProjection& proj);
 
 template <typename Op, typename Ret>
   requires std::invocable<Op, int64_t, int64_t>
@@ -118,7 +120,7 @@ Executor<ExpressionExecutor>::Executor(SequentialScan seq_scan, boost::asio::any
     : sequential_scan_(std::move(seq_scan)), expression_executor_(executor) {}
 
 template <typename ExpressionExecutor>
-boost::asio::awaitable<Result<Relation>> Executor<ExpressionExecutor>::Execute(const Operator& op) {
+boost::asio::awaitable<Result<Relation>> Executor<ExpressionExecutor>::Execute(const PhysicalPlanNode& op) {
   auto [attr_chan, tuples_chan] = co_await GetChannels();
   co_await SpawnExecutor(op, attr_chan, tuples_chan);
 
@@ -146,27 +148,27 @@ boost::asio::awaitable<Result<Relation>> Executor<ExpressionExecutor>::Execute(c
 }
 
 template <typename ExpressionExecutor>
-boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Operator& op, AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan) {
+boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const PhysicalPlanNode& op, AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan) {
   struct ExecuteVisitor{
-    boost::asio::awaitable<void> operator()(const Table& table) {
-      co_await executor.sequential_scan_(table.name, attr_chan, tuples_chan);
+    boost::asio::awaitable<void> operator()(const SeqScan& seq_scan) {
+      co_await executor.sequential_scan_(seq_scan.table, attr_chan, tuples_chan);
       co_return;
     }
-    boost::asio::awaitable<void> operator()(const Projection& projection) {
+    boost::asio::awaitable<void> operator()(const PhysicalProjection& projection) {
       // NOTE: We are using multiset relational algebra projection (i.e. not
       // eleminating duplicate tuples)
       co_await executor.ExecuteProjection(projection, attr_chan, tuples_chan);
       co_return;
     }
-    boost::asio::awaitable<void> operator()(const Filter& filter) {
+    boost::asio::awaitable<void> operator()(const PhysicalFilter& filter) {
       co_await executor.ExecuteFilter(filter, attr_chan, tuples_chan);
       co_return;
     }
-    boost::asio::awaitable<void> operator()(const Join& join) {
+    boost::asio::awaitable<void> operator()(const NestedLoopJoin& join) {
       co_await executor.ExecuteJoin(join, attr_chan, tuples_chan);
       co_return;
     }
-    boost::asio::awaitable<void> operator()(const CrossJoin& cross_join) {
+    boost::asio::awaitable<void> operator()(const NestedLoopCrossJoin& cross_join) {
       co_await executor.ExecuteCrossJoin(cross_join, attr_chan, tuples_chan);
       co_return;
     }
@@ -180,7 +182,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Operato
 }
 
 template <typename ExpressionExecutor>
-boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteProjection(const Projection& proj,
+boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteProjection(const PhysicalProjection& proj,
                                                          AttributesInfoChannel& out_attr_chan,
                                                          TuplesChannel& out_tuples_chan) {
 #ifdef DEBUG
@@ -219,7 +221,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteProjection(con
 }
 
 template <typename ExpressionExecutor>
-boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteFilter(const Filter& filter,
+boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteFilter(const PhysicalFilter& filter,
                                                      AttributesInfoChannel& out_attr_chan,
                                                      TuplesChannel& out_tuples_chan) {
 #ifdef DEBUG
@@ -233,7 +235,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteFilter(const F
   std::clog << "Filter received attrs\n";
 #endif
 
-  if (GetExpressionType(filter.expr, attrs) != Type::kBool) {
+  if (GetExpressionType(filter.predicate, attrs) != Type::kBool) {
     throw std::logic_error{"filter expr should return bool"};
   }
 
@@ -246,7 +248,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteFilter(const F
   std::clog << "Filter sent attrs\n";
 #endif
 
-  auto filter_executor = co_await expression_executor_.GetExpressionExecutor(filter.expr, attrs);
+  auto filter_executor = co_await expression_executor_.GetExpressionExecutor(filter.predicate, attrs);
 
   Tuples output_buf;
   output_buf.reserve(kBufSize);
@@ -287,7 +289,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteFilter(const F
 }
 
 template <typename ExpressionExecutor>
-boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteCrossJoin(const CrossJoin& cross_join,
+boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteCrossJoin(const NestedLoopCrossJoin& cross_join,
                                                         AttributesInfoChannel& attr_chan,
                                                         TuplesChannel& tuples_chan) {
   std::clog << "Executing cross join\n";
@@ -314,6 +316,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteCrossJoin(cons
     }
     std::clog << std::format("Received {} tuples in cross join as rhs\n", buf_rhs.size());
 
+    reader.Rewind();
     for (;;) {
       auto buf_lhs = reader.Read();
       if (buf_lhs.empty()) {
@@ -340,7 +343,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteCrossJoin(cons
 }
 
 template <typename ExpressionExecutor>
-boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteJoin(const Join& join,
+boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteJoin(const NestedLoopJoin& join,
                                                    AttributesInfoChannel& attr_chan,
                                                    TuplesChannel& tuples_chan) {
 #ifdef DEBUG
@@ -384,6 +387,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteJoin(const Joi
 #endif
 
     std::vector<char> used(buf_rhs.size(), false);
+    reader.Rewind();
     for (;;) {
       auto buf_lhs = reader.Read();
       if (buf_lhs.empty()) {
@@ -443,7 +447,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteJoin(const Joi
 }
 
 template <typename ExpressionExecutor>
-boost::asio::awaitable<void> Executor<ExpressionExecutor>::SpawnExecutor(const Operator& op,
+boost::asio::awaitable<void> Executor<ExpressionExecutor>::SpawnExecutor(const PhysicalPlanNode& op,
                                                      AttributesInfoChannel& attr_chan,
                                                      TuplesChannel& tuple_chan) {
   auto executor = co_await boost::asio::this_coro::executor;

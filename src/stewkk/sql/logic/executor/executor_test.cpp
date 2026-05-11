@@ -10,10 +10,50 @@
 #include <stewkk/sql/logic/parser/parser.hpp>
 #include <stewkk/sql/logic/executor/executor.hpp>
 #include <stewkk/sql/logic/executor/sequential_scan.hpp>
+#include <stewkk/sql/models/parser/relational_algebra_ast.hpp>
+#include <stewkk/sql/utils/overloaded.hpp>
 
 using ::testing::Eq;
 
 namespace stewkk::sql {
+
+namespace {
+
+PhysicalPlanNode ToPhysicalPlan(const Operator& op) {
+  return std::visit(utils::Overloaded{
+    [](const Table& t) -> PhysicalPlanNode {
+      return SeqScan{.table = t.name};
+    },
+    [](const Projection& p) -> PhysicalPlanNode {
+      return PhysicalProjection{
+        .source = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*p.source)),
+        .expressions = p.expressions,
+      };
+    },
+    [](const Filter& f) -> PhysicalPlanNode {
+      return PhysicalFilter{
+        .source = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*f.source)),
+        .predicate = f.expr,
+      };
+    },
+    [](const CrossJoin& j) -> PhysicalPlanNode {
+      return NestedLoopCrossJoin{
+        .lhs = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*j.lhs)),
+        .rhs = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*j.rhs)),
+      };
+    },
+    [](const Join& j) -> PhysicalPlanNode {
+      return NestedLoopJoin{
+        .lhs = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*j.lhs)),
+        .rhs = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*j.rhs)),
+        .type = j.type,
+        .qual = j.qual,
+      };
+    },
+  }, op);
+}
+
+} // namespace
 
 const static std::string kProjectDir = std::getenv("PWD");
 
@@ -39,7 +79,7 @@ TEST(ExecutorTest, SimpleSelect) {
       ctx,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT * FROM users;"};
-        Operator op = GetAST(s).value();
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -65,7 +105,7 @@ TEST(ExecutorTest, SimpleSelectWithParallelism) {
       pool,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT * FROM users;"};
-        Operator op = GetAST(s).value();
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -91,7 +131,7 @@ TYPED_TEST_P(ExecutorTest, Projection) {
       pool,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT users.id FROM users;"};
-        Operator op = GetAST(s).value();
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -117,7 +157,7 @@ TYPED_TEST_P(ExecutorTest, Filter) {
       pool,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT users.id FROM users WHERE users.age < 10;"};
-        Operator op = GetAST(s).value();
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -143,7 +183,7 @@ TYPED_TEST_P(ExecutorTest, FilterMany) {
       pool,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT users.id FROM users WHERE users.age > 10;"};
-        Operator op = GetAST(s).value();
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -169,7 +209,7 @@ TYPED_TEST_P(ExecutorTest, CrossJoin) {
       pool,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT * FROM users, books WHERE users.age < 10;"};
-        Operator op = GetAST(s).value();
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -199,7 +239,7 @@ TYPED_TEST_P(ExecutorTest, InnerJoin) {
       pool,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT * FROM employees JOIN departments ON employees.department_id = departments.id;"};
-        Operator op = GetAST(s).value();
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -228,7 +268,7 @@ TYPED_TEST_P(ExecutorTest, LeftJoin) {
       pool,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT * FROM employees LEFT OUTER JOIN departments ON employees.department_id = departments.id;"};
-        Operator op = GetAST(s).value();
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -257,7 +297,7 @@ TYPED_TEST_P(ExecutorTest, RightJoin) {
       pool,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT * FROM employees RIGHT JOIN departments ON employees.department_id = departments.id;"};
-        Operator op = GetAST(s).value();
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -286,7 +326,7 @@ TYPED_TEST_P(ExecutorTest, ComplexJoin) {
       pool,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT departments.id*2, employees.id+1 FROM employees RIGHT JOIN departments ON employees.department_id = departments.id AND departments.id > 3 AND departments.id*2*2/2 < 30;"};
-        Operator op = GetAST(s).value();
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -305,6 +345,36 @@ TYPED_TEST_P(ExecutorTest, ComplexJoin) {
         ASSERT_THAT(ToString(got.value()), Eq(ReadFromFile(kProjectDir+"/test/static/executor/expected_complex_join.txt")));
       });
 
+  pool.join();
+}
+
+TEST(ExecutorTest, InnerJoinLargeRhsBug) {
+  boost::asio::thread_pool pool{4};
+  boost::asio::co_spawn(
+      pool,
+      []() -> boost::asio::awaitable<Result<Relation>> {
+        Expression qual{BinaryExpression{
+            .lhs = std::make_shared<Expression>(Attribute{"employees", "id"}),
+            .binop = BinaryOp::kGt,
+            .rhs = std::make_shared<Expression>(IntConst{0}),
+        }};
+        PhysicalPlanNode op = NestedLoopJoin{
+            .lhs = std::make_shared<PhysicalPlanNode>(SeqScan{.table = "employees"}),
+            .rhs = std::make_shared<PhysicalPlanNode>(SeqScan{.table = "departments_4000"}),
+            .type = JoinType::kInner,
+            .qual = std::move(qual),
+        };
+        CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
+        Executor<InterpretedExpressionExecutor> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
+
+        auto got = co_await executor.Execute(op);
+
+        co_return got;
+      }(),
+      [](std::exception_ptr p, Result<Relation> got) {
+        if (p) std::rethrow_exception(p);
+        ASSERT_THAT(got.value().tuples.size(), Eq(44000u));
+      });
   pool.join();
 }
 

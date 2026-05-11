@@ -11,8 +11,48 @@
 #include <stewkk/sql/logic/parser/parser.hpp>
 #include <stewkk/sql/logic/executor/executor.hpp>
 #include <stewkk/sql/logic/executor/sequential_scan.hpp>
+#include <stewkk/sql/models/parser/relational_algebra_ast.hpp>
+#include <stewkk/sql/utils/overloaded.hpp>
 
 namespace stewkk::sql {
+
+namespace {
+
+PhysicalPlanNode ToPhysicalPlan(const Operator& op) {
+  return std::visit(utils::Overloaded{
+    [](const Table& t) -> PhysicalPlanNode {
+      return SeqScan{.table = t.name};
+    },
+    [](const Projection& p) -> PhysicalPlanNode {
+      return PhysicalProjection{
+        .source = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*p.source)),
+        .expressions = p.expressions,
+      };
+    },
+    [](const Filter& f) -> PhysicalPlanNode {
+      return PhysicalFilter{
+        .source = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*f.source)),
+        .predicate = f.expr,
+      };
+    },
+    [](const CrossJoin& j) -> PhysicalPlanNode {
+      return NestedLoopCrossJoin{
+        .lhs = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*j.lhs)),
+        .rhs = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*j.rhs)),
+      };
+    },
+    [](const Join& j) -> PhysicalPlanNode {
+      return NestedLoopJoin{
+        .lhs = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*j.lhs)),
+        .rhs = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*j.rhs)),
+        .type = j.type,
+        .qual = j.qual,
+      };
+    },
+  }, op);
+}
+
+} // namespace
 
 const static std::string kProjectDir = std::getenv("PWD");
 
@@ -35,7 +75,7 @@ void BM_SQL(benchmark::State& state) {
       ctx,
       [&state]() -> boost::asio::awaitable<void> {
         std::stringstream s{Query};
-        Operator op = GetAST(s).value();
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<ExprExecutor> executor(std::move(seq_scan),
                                         co_await boost::asio::this_coro::executor);
@@ -88,7 +128,7 @@ void BM_SQL_Multithreaded(benchmark::State& state) {
       [&state]() -> boost::asio::awaitable<void> {
         boost::asio::thread_pool pool{4};
         std::stringstream s{Query};
-        Operator op = GetAST(s).value();
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<ExprExecutor> executor(std::move(seq_scan),
                                         pool.executor());

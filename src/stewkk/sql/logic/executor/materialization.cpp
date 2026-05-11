@@ -34,6 +34,11 @@ DiskFileReader::~DiskFileReader() {
     fs::remove(path_);
 }
 
+void DiskFileReader::Rewind() {
+    f_.clear();
+    f_.seekg(0, std::ios::beg);
+}
+
 Tuples DiskFileReader::Read() {
     Tuples buf;
     buf.reserve(kBufSize);
