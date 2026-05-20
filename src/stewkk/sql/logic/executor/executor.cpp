@@ -442,6 +442,10 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
       throw std::runtime_error("MergeJoin execution not implemented");
       co_return;
     }
+    boost::asio::awaitable<void> operator()(const IndexSeek&) {
+      throw std::runtime_error("IndexSeek execution not implemented");
+      co_return;
+    }
 
     AttributesInfoChannel& attr_chan;
     TuplesChannel& tuples_chan;

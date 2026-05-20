@@ -17,8 +17,9 @@ struct NestedLoopJoin;
 struct NestedLoopCrossJoin;
 struct HashJoin;
 struct MergeJoin;
+struct IndexSeek;
 
-using PhysicalPlanNode = std::variant<SeqScan, PhysicalProjection, PhysicalFilter, NestedLoopCrossJoin, NestedLoopJoin, HashJoin, MergeJoin>;
+using PhysicalPlanNode = std::variant<SeqScan, PhysicalProjection, PhysicalFilter, NestedLoopCrossJoin, NestedLoopJoin, HashJoin, MergeJoin, IndexSeek>;
 
 struct SeqScan {
   std::string table;
@@ -72,6 +73,13 @@ struct MergeJoin {
   Expression qual;
 
   bool operator==(const MergeJoin&) const;
+};
+
+struct IndexSeek {
+  std::string table;
+  Expression predicate;
+
+  bool operator==(const IndexSeek&) const;
 };
 
 } // namespace stewkk::sql

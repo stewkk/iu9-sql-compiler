@@ -157,6 +157,19 @@ TEST(PlanSerializerTest, DeepNestedPlan) {
     EXPECT_THAT(RoundTrip(plan), Eq(plan));
 }
 
+TEST(PlanSerializerTest, IndexSeek) {
+    PhysicalPlanNode plan = IndexSeek{
+        "users",
+        BinaryExpression{
+            std::make_shared<Expression>(Attribute{"users", "id"}),
+            BinaryOp::kGt,
+            std::make_shared<Expression>(IntConst{42}),
+        },
+    };
+    EXPECT_THAT(RoundTrip(plan), Eq(plan));
+    EXPECT_THAT(Serialize(plan), Eq("(IndexSeek (> (attr users id) 42) users)"));
+}
+
 TEST(PlanSerializerTest, HashJoin) {
     PhysicalPlanNode plan = HashJoin{
         std::make_shared<PhysicalPlanNode>(SeqScan{"a"}),

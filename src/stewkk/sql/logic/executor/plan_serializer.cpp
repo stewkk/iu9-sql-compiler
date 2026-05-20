@@ -105,6 +105,9 @@ std::string SerializeNode(const PhysicalPlanNode& node) {
                                SerializeJoinType(n.type), SerializeExpr(n.qual),
                                SerializeNode(*n.lhs), SerializeNode(*n.rhs));
         }
+        std::string operator()(const IndexSeek& n) const {
+            return std::format("(IndexSeek {} {})", SerializeExpr(n.predicate), n.table);
+        }
         std::string operator()(const HashJoin& n) const {
             return std::format("(HashJoin {} {} {} {})",
                                SerializeJoinType(n.type), SerializeExpr(n.qual),
@@ -310,6 +313,12 @@ PhysicalPlanNode ParseNode(ParseState& s) {
         };
     };
 
+    if (head == "IndexSeek") {
+        auto pred  = ParseExpr(s);
+        auto table = s.ExpectAtom();
+        s.ExpectRParen();
+        return IndexSeek{std::move(table), std::move(pred)};
+    }
     if (head == "NestedLoopJoin") return ParseJoinNode.template operator()<NestedLoopJoin>();
     if (head == "HashJoin")       return ParseJoinNode.template operator()<HashJoin>();
     if (head == "MergeJoin")      return ParseJoinNode.template operator()<MergeJoin>();
@@ -375,6 +384,9 @@ struct DotBuilder {
         EmitEdge(lhs, id);
         EmitEdge(rhs, id);
         return id;
+    }
+    int operator()(const IndexSeek& n) {
+        return Emit(std::format("IndexSeek\\n{}\\n{}", n.table, ToString(n.predicate)));
     }
     int operator()(const HashJoin& n) {
         int lhs = std::visit(*this, *n.lhs);

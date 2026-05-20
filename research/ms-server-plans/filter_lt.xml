@@ -1,0 +1,95 @@
+<?xml version="1.0" ?>
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.599" Build="17.0.4035.5">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementText="SELECT * FROM [Titles] WHERE [Titles].[titleId]&lt;@1" StatementId="1" StatementCompId="1" StatementType="SELECT" StatementSqlHandle="0x0900C8F0D164067B0168CC2D0BEC1E82310F0000000000000000000000000000000000000000000000000000" DatabaseContextSettingsId="4" ParentObjectId="0" StatementParameterizationType="2" RetrievedFromCache="true" StatementSubTreeCost="0.0190849" StatementEstRows="4938.65" SecurityPolicyApplied="false" StatementOptmLevel="TRIVIAL" QueryHash="0xE4093B48B50C443D" QueryPlanHash="0x472F818CF8D7AA43" CardinalityEstimationModelVersion="170">
+          <StatementSetOptions QUOTED_IDENTIFIER="true" ARITHABORT="true" CONCAT_NULL_YIELDS_NULL="true" ANSI_NULLS="true" ANSI_PADDING="true" ANSI_WARNINGS="true" NUMERIC_ROUNDABORT="false"/>
+          <QueryPlan DegreeOfParallelism="1" CachedPlanSize="24" CompileTime="0" CompileCPU="0" CompileMemory="160">
+            <MemoryGrantInfo SerialRequiredMemory="0" SerialDesiredMemory="0" GrantedMemory="0" MaxUsedMemory="0"/>
+            <OptimizerHardwareDependentProperties EstimatedAvailableMemoryGrant="79270" EstimatedPagesCached="39635" EstimatedAvailableDegreeOfParallelism="4" MaxCompileMemory="1567672"/>
+            <OptimizerStatsUsage>
+              <StatisticsInfo LastUpdate="2026-05-20T15:09:30.56" ModificationCount="0" SamplingPercent="100" Statistics="[PK_Titles]" Table="[Titles]" Schema="[dbo]" Database="[imdb]"/>
+            </OptimizerStatsUsage>
+            <QueryTimeStats ElapsedTime="4" CpuTime="4"/>
+            <RelOp NodeId="0" PhysicalOp="Clustered Index Seek" LogicalOp="Clustered Index Seek" EstimateRows="4938.65" EstimatedRowsRead="4938.65" EstimateIO="0.0134954" EstimateCPU="0.00558952" AvgRowSize="31" EstimatedTotalSubtreeCost="0.0190849" TableCardinality="10000" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+              <OutputList>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="titleId"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="titleTypeId"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="isAdult"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="startYear"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="endYear"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="runtime"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="voteCount"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="averageRating"/>
+              </OutputList>
+              <RunTimeInformation>
+                <RunTimeCountersPerThread Thread="0" ActualRows="4938" Batches="0" ActualElapsedms="3" ActualCPUms="3" ActualScans="1" ActualLogicalReads="17" ActualPhysicalReads="0" ActualReadAheads="0" ActualLobLogicalReads="0" ActualLobPhysicalReads="0" ActualLobReadAheads="0" ActualRowsRead="4938" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row"/>
+              </RunTimeInformation>
+              <IndexScan Ordered="1" ScanDirection="FORWARD" ForcedIndex="0" ForceSeek="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                <DefinedValues>
+                  <DefinedValue>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="titleId"/>
+                  </DefinedValue>
+                  <DefinedValue>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="titleTypeId"/>
+                  </DefinedValue>
+                  <DefinedValue>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="isAdult"/>
+                  </DefinedValue>
+                  <DefinedValue>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="startYear"/>
+                  </DefinedValue>
+                  <DefinedValue>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="endYear"/>
+                  </DefinedValue>
+                  <DefinedValue>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="runtime"/>
+                  </DefinedValue>
+                  <DefinedValue>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="voteCount"/>
+                  </DefinedValue>
+                  <DefinedValue>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="averageRating"/>
+                  </DefinedValue>
+                </DefinedValues>
+                <Object Database="[imdb]" Schema="[dbo]" Table="[Titles]" Index="[PK_Titles]" IndexKind="Clustered" Storage="RowStore"/>
+                <SeekPredicates>
+                  <SeekPredicateNew>
+                    <SeekKeys>
+                      <EndRange ScanType="LT">
+                        <RangeColumns>
+                          <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="titleId"/>
+                        </RangeColumns>
+                        <RangeExpressions>
+                          <ScalarOperator ScalarString="CONVERT_IMPLICIT(int,[@1],0)">
+                            <Identifier>
+                              <ColumnReference Column="ConstExpr1002">
+                                <ScalarOperator>
+                                  <Convert DataType="int" Style="0" Implicit="1">
+                                    <ScalarOperator>
+                                      <Identifier>
+                                        <ColumnReference Column="@1"/>
+                                      </Identifier>
+                                    </ScalarOperator>
+                                  </Convert>
+                                </ScalarOperator>
+                              </ColumnReference>
+                            </Identifier>
+                          </ScalarOperator>
+                        </RangeExpressions>
+                      </EndRange>
+                    </SeekKeys>
+                  </SeekPredicateNew>
+                </SeekPredicates>
+              </IndexScan>
+            </RelOp>
+            <ParameterList>
+              <ColumnReference Column="@1" ParameterDataType="smallint" ParameterCompiledValue="(5000)" ParameterRuntimeValue="(5000)"/>
+            </ParameterList>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>

@@ -26,4 +26,8 @@ bool MergeJoin::operator==(const MergeJoin& other) const {
   return *lhs == *other.lhs && *rhs == *other.rhs && type == other.type && qual == other.qual;
 }
 
+bool IndexSeek::operator==(const IndexSeek& other) const {
+  return table == other.table && predicate == other.predicate;
+}
+
 } // namespace stewkk::sql

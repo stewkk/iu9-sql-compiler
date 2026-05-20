@@ -1,0 +1,81 @@
+<?xml version="1.0" ?>
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.599" Build="17.0.4035.5">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementText="SELECT * FROM [Titles] WHERE NOT [Titles].[isAdult]=@1" StatementId="1" StatementCompId="1" StatementType="SELECT" StatementSqlHandle="0x09004AD4A1579E73294ECE86C6BE50F94B810000000000000000000000000000000000000000000000000000" DatabaseContextSettingsId="4" ParentObjectId="0" StatementParameterizationType="0" RetrievedFromCache="false" StatementSubTreeCost="0.0350227" StatementEstRows="10000" SecurityPolicyApplied="false" StatementOptmLevel="FULL" QueryHash="0x689D51E921CD19FE" QueryPlanHash="0xB4ADACDD7EECB9D3" StatementOptmEarlyAbortReason="GoodEnoughPlanFound" CardinalityEstimationModelVersion="170">
+          <StatementSetOptions QUOTED_IDENTIFIER="true" ARITHABORT="true" CONCAT_NULL_YIELDS_NULL="true" ANSI_NULLS="true" ANSI_PADDING="true" ANSI_WARNINGS="true" NUMERIC_ROUNDABORT="false"/>
+          <QueryPlan DegreeOfParallelism="1" CachedPlanSize="24" CompileTime="7" CompileCPU="7" CompileMemory="184">
+            <MemoryGrantInfo SerialRequiredMemory="0" SerialDesiredMemory="0" GrantedMemory="0" MaxUsedMemory="0"/>
+            <OptimizerHardwareDependentProperties EstimatedAvailableMemoryGrant="79270" EstimatedPagesCached="39635" EstimatedAvailableDegreeOfParallelism="4" MaxCompileMemory="1350584"/>
+            <OptimizerStatsUsage>
+              <StatisticsInfo LastUpdate="2026-05-20T15:37:25.40" ModificationCount="0" SamplingPercent="100" Statistics="[_WA_Sys_00000003_5CD6CB2B]" Table="[Titles]" Schema="[dbo]" Database="[imdb]"/>
+            </OptimizerStatsUsage>
+            <QueryTimeStats ElapsedTime="6" CpuTime="6"/>
+            <RelOp NodeId="0" PhysicalOp="Clustered Index Scan" LogicalOp="Clustered Index Scan" EstimateRows="10000" EstimatedRowsRead="10000" EstimateIO="0.0238657" EstimateCPU="0.011157" AvgRowSize="31" EstimatedTotalSubtreeCost="0.0350227" TableCardinality="10000" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+              <OutputList>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="titleId"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="titleTypeId"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="isAdult"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="startYear"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="endYear"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="runtime"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="voteCount"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="averageRating"/>
+              </OutputList>
+              <RunTimeInformation>
+                <RunTimeCountersPerThread Thread="0" ActualRows="10000" Batches="0" ActualElapsedms="5" ActualCPUms="5" ActualScans="1" ActualLogicalReads="31" ActualPhysicalReads="0" ActualReadAheads="0" ActualLobLogicalReads="0" ActualLobPhysicalReads="0" ActualLobReadAheads="0" ActualRowsRead="10000" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row"/>
+              </RunTimeInformation>
+              <IndexScan Ordered="0" ForcedIndex="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                <DefinedValues>
+                  <DefinedValue>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="titleId"/>
+                  </DefinedValue>
+                  <DefinedValue>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="titleTypeId"/>
+                  </DefinedValue>
+                  <DefinedValue>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="isAdult"/>
+                  </DefinedValue>
+                  <DefinedValue>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="startYear"/>
+                  </DefinedValue>
+                  <DefinedValue>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="endYear"/>
+                  </DefinedValue>
+                  <DefinedValue>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="runtime"/>
+                  </DefinedValue>
+                  <DefinedValue>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="voteCount"/>
+                  </DefinedValue>
+                  <DefinedValue>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="averageRating"/>
+                  </DefinedValue>
+                </DefinedValues>
+                <Object Database="[imdb]" Schema="[dbo]" Table="[Titles]" Index="[PK_Titles]" IndexKind="Clustered" Storage="RowStore"/>
+                <Predicate>
+                  <ScalarOperator ScalarString="[imdb].[dbo].[Titles].[isAdult]&lt;&gt;(1)">
+                    <Compare CompareOp="NE">
+                      <ScalarOperator>
+                        <Identifier>
+                          <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="isAdult"/>
+                        </Identifier>
+                      </ScalarOperator>
+                      <ScalarOperator>
+                        <Const ConstValue="(1)"/>
+                      </ScalarOperator>
+                    </Compare>
+                  </ScalarOperator>
+                </Predicate>
+              </IndexScan>
+            </RelOp>
+            <ParameterList>
+              <ColumnReference Column="@1" ParameterDataType="tinyint" ParameterCompiledValue="(1)" ParameterRuntimeValue="(1)"/>
+            </ParameterList>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>
