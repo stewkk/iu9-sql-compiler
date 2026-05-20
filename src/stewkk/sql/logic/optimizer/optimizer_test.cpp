@@ -32,9 +32,10 @@ TEST(OptimizerTest, JoinCommutativity) {
       {"orders", 100},
   }));
 
+
   auto got = optimizer.Optimize();
 
-  ASSERT_THAT(Serialize(got), ::testing::HasSubstr("(SeqScan orders) (SeqScan users)"));
+  ASSERT_THAT(Serialize(got), Eq("(NestedLoopJoin Inner (= (attr users id) (attr orders user_id)) (SeqScan orders) (SeqScan users))"));
 }
 
 }  // namespace stewkk::sql

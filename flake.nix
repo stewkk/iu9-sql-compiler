@@ -26,6 +26,7 @@
           ps.ipykernel
           ps.notebook
           ps.pymssql
+          ps.pytest
         ]);
         tex = (pkgs.texlive.combine {
             inherit (pkgs.texlive) scheme-full

@@ -118,7 +118,26 @@ class MsSqlServerExtractor(PlanExtractor):
         )
         return c
 
+    def _is_dataset_loaded(self) -> bool:
+        with self._conn("master") as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM sys.databases WHERE name=N'imdb'")
+            if not cur.fetchone()[0]:
+                return False
+        with self._conn("imdb") as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT COUNT(*) FROM sys.tables t
+                JOIN sys.schemas s ON s.schema_id = t.schema_id
+                WHERE s.name = 'dbo'
+            """)
+            return cur.fetchone()[0] > 0
+
     def load_dataset(self) -> None:
+        if self._is_dataset_loaded():
+            print("Dataset already loaded, skipping.")
+            return
+
         dataset_dir = Path(self.dataset)
 
         print("Recreating database...")
