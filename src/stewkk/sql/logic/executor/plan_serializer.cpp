@@ -105,6 +105,16 @@ std::string SerializeNode(const PhysicalPlanNode& node) {
                                SerializeJoinType(n.type), SerializeExpr(n.qual),
                                SerializeNode(*n.lhs), SerializeNode(*n.rhs));
         }
+        std::string operator()(const HashJoin& n) const {
+            return std::format("(HashJoin {} {} {} {})",
+                               SerializeJoinType(n.type), SerializeExpr(n.qual),
+                               SerializeNode(*n.lhs), SerializeNode(*n.rhs));
+        }
+        std::string operator()(const MergeJoin& n) const {
+            return std::format("(MergeJoin {} {} {} {})",
+                               SerializeJoinType(n.type), SerializeExpr(n.qual),
+                               SerializeNode(*n.lhs), SerializeNode(*n.rhs));
+        }
     };
     return std::visit(Visitor{}, node);
 }
@@ -283,7 +293,7 @@ PhysicalPlanNode ParseNode(ParseState& s) {
             std::make_shared<PhysicalPlanNode>(std::move(rhs)),
         };
     }
-    if (head == "NestedLoopJoin") {
+    auto ParseJoinNode = [&]<typename JoinT>() -> JoinT {
         auto type_str = s.ExpectAtom();
         auto it = kJoinTypes.find(type_str);
         if (it == kJoinTypes.end())
@@ -292,13 +302,17 @@ PhysicalPlanNode ParseNode(ParseState& s) {
         auto lhs  = ParseNode(s);
         auto rhs  = ParseNode(s);
         s.ExpectRParen();
-        return NestedLoopJoin{
+        return JoinT{
             std::make_shared<PhysicalPlanNode>(std::move(lhs)),
             std::make_shared<PhysicalPlanNode>(std::move(rhs)),
             it->second,
             std::move(qual),
         };
-    }
+    };
+
+    if (head == "NestedLoopJoin") return ParseJoinNode.template operator()<NestedLoopJoin>();
+    if (head == "HashJoin")       return ParseJoinNode.template operator()<HashJoin>();
+    if (head == "MergeJoin")      return ParseJoinNode.template operator()<MergeJoin>();
 
     throw std::runtime_error(std::format("unknown plan node: '{}'", head));
 }
@@ -357,7 +371,23 @@ struct DotBuilder {
     int operator()(const NestedLoopJoin& n) {
         int lhs = std::visit(*this, *n.lhs);
         int rhs = std::visit(*this, *n.rhs);
-        int id = Emit(std::format("{}\\nON {}", ToString(n.type), ToString(n.qual)));
+        int id = Emit(std::format("NL {}\\nON {}", ToString(n.type), ToString(n.qual)));
+        EmitEdge(lhs, id);
+        EmitEdge(rhs, id);
+        return id;
+    }
+    int operator()(const HashJoin& n) {
+        int lhs = std::visit(*this, *n.lhs);
+        int rhs = std::visit(*this, *n.rhs);
+        int id = Emit(std::format("Hash {}\\nON {}", ToString(n.type), ToString(n.qual)));
+        EmitEdge(lhs, id);
+        EmitEdge(rhs, id);
+        return id;
+    }
+    int operator()(const MergeJoin& n) {
+        int lhs = std::visit(*this, *n.lhs);
+        int rhs = std::visit(*this, *n.rhs);
+        int id = Emit(std::format("Merge {}\\nON {}", ToString(n.type), ToString(n.qual)));
         EmitEdge(lhs, id);
         EmitEdge(rhs, id);
         return id;

@@ -157,6 +157,34 @@ TEST(PlanSerializerTest, DeepNestedPlan) {
     EXPECT_THAT(RoundTrip(plan), Eq(plan));
 }
 
+TEST(PlanSerializerTest, HashJoin) {
+    PhysicalPlanNode plan = HashJoin{
+        std::make_shared<PhysicalPlanNode>(SeqScan{"a"}),
+        std::make_shared<PhysicalPlanNode>(SeqScan{"b"}),
+        JoinType::kInner,
+        BinaryExpression{
+            std::make_shared<Expression>(Attribute{"a", "id"}),
+            BinaryOp::kEq,
+            std::make_shared<Expression>(Attribute{"b", "id"}),
+        },
+    };
+    EXPECT_THAT(RoundTrip(plan), Eq(plan));
+}
+
+TEST(PlanSerializerTest, MergeJoin) {
+    PhysicalPlanNode plan = MergeJoin{
+        std::make_shared<PhysicalPlanNode>(SeqScan{"a"}),
+        std::make_shared<PhysicalPlanNode>(SeqScan{"b"}),
+        JoinType::kLeft,
+        BinaryExpression{
+            std::make_shared<Expression>(Attribute{"a", "id"}),
+            BinaryOp::kEq,
+            std::make_shared<Expression>(Attribute{"b", "id"}),
+        },
+    };
+    EXPECT_THAT(RoundTrip(plan), Eq(plan));
+}
+
 TEST(PlanSerializerDotTest, SmokeTest) {
     PhysicalPlanNode plan = NestedLoopJoin{
         std::make_shared<PhysicalPlanNode>(SeqScan{"a"}),

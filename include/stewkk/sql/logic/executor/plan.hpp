@@ -15,8 +15,10 @@ struct PhysicalProjection;
 struct PhysicalFilter;
 struct NestedLoopJoin;
 struct NestedLoopCrossJoin;
+struct HashJoin;
+struct MergeJoin;
 
-using PhysicalPlanNode = std::variant<SeqScan, PhysicalProjection, PhysicalFilter, NestedLoopCrossJoin, NestedLoopJoin>;
+using PhysicalPlanNode = std::variant<SeqScan, PhysicalProjection, PhysicalFilter, NestedLoopCrossJoin, NestedLoopJoin, HashJoin, MergeJoin>;
 
 struct SeqScan {
   std::string table;
@@ -52,6 +54,24 @@ struct NestedLoopCrossJoin {
   std::shared_ptr<PhysicalPlanNode> rhs;
 
   bool operator==(const NestedLoopCrossJoin&) const;
+};
+
+struct HashJoin {
+  std::shared_ptr<PhysicalPlanNode> lhs;
+  std::shared_ptr<PhysicalPlanNode> rhs;
+  JoinType type;
+  Expression qual;
+
+  bool operator==(const HashJoin&) const;
+};
+
+struct MergeJoin {
+  std::shared_ptr<PhysicalPlanNode> lhs;
+  std::shared_ptr<PhysicalPlanNode> rhs;
+  JoinType type;
+  Expression qual;
+
+  bool operator==(const MergeJoin&) const;
 };
 
 } // namespace stewkk::sql

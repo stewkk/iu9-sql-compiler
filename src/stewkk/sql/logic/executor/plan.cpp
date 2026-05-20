@@ -18,4 +18,12 @@ bool NestedLoopCrossJoin::operator==(const NestedLoopCrossJoin& other) const {
   return *lhs == *other.lhs && *rhs == *other.rhs;
 }
 
+bool HashJoin::operator==(const HashJoin& other) const {
+  return *lhs == *other.lhs && *rhs == *other.rhs && type == other.type && qual == other.qual;
+}
+
+bool MergeJoin::operator==(const MergeJoin& other) const {
+  return *lhs == *other.lhs && *rhs == *other.rhs && type == other.type && qual == other.qual;
+}
+
 } // namespace stewkk::sql

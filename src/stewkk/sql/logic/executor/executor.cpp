@@ -434,6 +434,14 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
       co_await executor.ExecuteCrossJoin(cross_join, attr_chan, tuples_chan);
       co_return;
     }
+    boost::asio::awaitable<void> operator()(const HashJoin&) {
+      throw std::runtime_error("HashJoin execution not implemented");
+      co_return;
+    }
+    boost::asio::awaitable<void> operator()(const MergeJoin&) {
+      throw std::runtime_error("MergeJoin execution not implemented");
+      co_return;
+    }
 
     AttributesInfoChannel& attr_chan;
     TuplesChannel& tuples_chan;
