@@ -14,6 +14,10 @@ Group::LogicalExprs Group::GetLogicalExprs() {
     return std::views::transform(logical_exprs_, ToNotNull{});
 }
 
+Group::PhysicalExprs Group::GetPhysicalExprs() {
+    return std::views::transform(physical_exprs_, ToNotNullPhysical{});
+}
+
 size_t Group::GetId() const {
     return id_;
 }

@@ -264,7 +264,7 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
 }
 
 template<size_t NTransformation, size_t NImplementation>
-PhysicalPlanNode Optimizer<NTransformation, NImplementation>::Optimize() {
+void Optimizer<NTransformation, NImplementation>::RunSearch() {
   Log("Starting optimization");
   tasks_.emplace([this]() { OptimizeGroup(root_->group); });
   while (!tasks_.empty()) {
@@ -272,8 +272,23 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::Optimize() {
     tasks_.pop();
     next_task();
   }
+}
+
+template<size_t NTransformation, size_t NImplementation>
+PhysicalPlanNode Optimizer<NTransformation, NImplementation>::Optimize() {
+  RunSearch();
   Log("Optimization complete, building plan");
   return BuildOptimalPlan(root_->group.get());
+}
+
+template<size_t NTransformation, size_t NImplementation>
+void Optimizer<NTransformation, NImplementation>::OptimizeExhaustive() {
+  RunSearch();
+}
+
+template<size_t NTransformation, size_t NImplementation>
+utils::NotNull<Group*> Optimizer<NTransformation, NImplementation>::GetRootGroup() const {
+  return root_->group;
 }
 
 template class Optimizer<2, 5>;

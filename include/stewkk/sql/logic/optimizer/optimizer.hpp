@@ -27,7 +27,15 @@ public:
 
   PhysicalPlanNode Optimize();
 
+  // Runs exhaustive search (no cost limit), populating all physical_exprs_ in
+  // every reachable group. Invariant: must not be called with a top-level limit.
+  // Use GetRootGroup() afterward to drive IsReachable().
+  void OptimizeExhaustive();
+
+  utils::NotNull<Group*> GetRootGroup() const;
+
 private:
+  void RunSearch();
   using Limit = std::optional<std::int64_t>;
 
   bool IsExplored(utils::NotNull<Group*> group) const;

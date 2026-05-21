@@ -16,15 +16,22 @@ class Group {
     struct ToNotNull {
         utils::NotNull<LogicalExpr*> operator()(LogicalExpr& e) const { return &e; }
     };
+    struct ToNotNullPhysical {
+        utils::NotNull<PhysicalExpr*> operator()(PhysicalExpr& e) const { return &e; }
+    };
 
   public:
     using LogicalExprs = std::ranges::transform_view<
         std::ranges::ref_view<std::deque<LogicalExpr>>,
         ToNotNull>;
+    using PhysicalExprs = std::ranges::transform_view<
+        std::ranges::ref_view<std::deque<PhysicalExpr>>,
+        ToNotNullPhysical>;
 
     utils::NotNull<LogicalExpr*> AddLogicalExpr(LogicalOperator root_operator);
     utils::NotNull<PhysicalExpr*> AddPhysicalExpr(PhysicalOperator root_operator);
     LogicalExprs GetLogicalExprs();
+    PhysicalExprs GetPhysicalExprs();
 
     size_t GetId() const;
 
