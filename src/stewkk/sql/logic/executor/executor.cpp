@@ -465,9 +465,11 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
       std::vector<std::pair<size_t, Direction>> key_indices;
       for (const auto& key : sort.keys.keys) {
         auto it = std::find_if(attrs.begin(), attrs.end(),
-            [&](const AttributeInfo& a) { return a.name == key.column; });
+            [&](const AttributeInfo& a) {
+              return a.table == key.table && a.name == key.column;
+            });
         if (it == attrs.end())
-          throw std::runtime_error{"sort key column not found: " + key.column};
+          throw std::runtime_error{"sort key column not found: " + key.table + "." + key.column};
         key_indices.push_back({static_cast<size_t>(it - attrs.begin()), key.dir});
       }
 

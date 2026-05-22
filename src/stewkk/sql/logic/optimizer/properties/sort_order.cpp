@@ -21,7 +21,8 @@ bool SortOrder::Satisfies(const SortOrder& required) const {
 namespace std {
 
 size_t hash<stewkk::sql::SortKey>::operator()(const stewkk::sql::SortKey& k) const noexcept {
-  size_t h = hash<string>{}(k.column);
+  size_t h = hash<string>{}(k.table);
+  boost::hash_combine(h, hash<string>{}(k.column));
   boost::hash_combine(h, static_cast<int>(k.dir));
   return h;
 }

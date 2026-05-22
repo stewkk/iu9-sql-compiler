@@ -31,6 +31,7 @@ class RulesApplier {
   private:
     Rules<NTransformation, NImplementation> rules_;
     std::unordered_map<LogicalExpr*, std::array<char, NTransformation>> applied_transformation_rules_;
+    std::unordered_map<LogicalExpr*, std::array<char, NImplementation>> applied_implementation_rules_;
 };
 
 } // namespace stewkk::sql

@@ -30,6 +30,8 @@ add_library(libsql
   logic/optimizer/optimizer.cpp
   logic/optimizer/reachability.cpp
   logic/optimizer/cardinality.cpp
+  logic/optimizer/schema_catalog.cpp
+  logic/optimizer/winner_key.cpp
   logic/optimizer/group.cpp
   logic/optimizer/memo.cpp
   logic/optimizer/rules.cpp

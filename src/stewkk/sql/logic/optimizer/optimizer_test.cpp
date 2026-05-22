@@ -42,6 +42,10 @@ TEST(OptimizerTest, JoinCommutativity) {
   ASSERT_THAT(Serialize(got), Eq("(NestedLoopJoin Inner (= (attr users id) (attr orders user_id)) (SeqScan orders) (SeqScan users))"));
 }
 
+TEST(OptimizerTest, OrderBy) {
+   // TODO: SELECT a FROM T ORDER BY b
+}
+
 TEST(ReachabilityTest, SeqScanReachable) {
   std::stringstream s{"SELECT * FROM users;"};
   auto result = IsPlanReachable(s, SeqScan{"users"});

@@ -122,6 +122,8 @@ std::string SerializeNode(const PhysicalPlanNode& node) {
             std::string keys;
             for (const auto& k : n.keys.keys) {
                 if (!keys.empty()) keys += ' ';
+                keys += k.table;
+                keys += '.';
                 keys += k.column;
                 keys += k.dir == Direction::kAsc ? " Asc" : " Desc";
             }
@@ -338,10 +340,15 @@ PhysicalPlanNode ParseNode(ParseState& s) {
             throw std::runtime_error(std::format("expected 'keys' but got '{}'", kw));
         std::vector<SortKey> keys;
         while (s.Peek().kind != TokenKind::RParen) {
-            auto col = s.ExpectAtom();
+            auto qualified = s.ExpectAtom();
+            auto dot = qualified.find('.');
+            if (dot == std::string::npos)
+                throw std::runtime_error("sort key must be table.column, got: " + qualified);
+            std::string table = qualified.substr(0, dot);
+            std::string col = qualified.substr(dot + 1);
             auto dir_str = s.ExpectAtom();
             Direction dir = dir_str == "Asc" ? Direction::kAsc : Direction::kDesc;
-            keys.push_back({std::move(col), dir});
+            keys.push_back({std::move(table), std::move(col), dir});
         }
         s.ExpectRParen();
         auto source = ParseNode(s);
@@ -438,6 +445,8 @@ struct DotBuilder {
         std::string keys;
         for (const auto& k : n.keys.keys) {
             if (!keys.empty()) keys += ", ";
+            keys += k.table;
+            keys += '.';
             keys += k.column;
             keys += k.dir == Direction::kAsc ? " asc" : " desc";
         }

@@ -9,6 +9,7 @@ namespace stewkk::sql {
 enum class Direction { kAsc, kDesc };
 
 struct SortKey {
+  std::string table;
   std::string column;
   Direction dir;
 

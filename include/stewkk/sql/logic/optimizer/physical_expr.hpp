@@ -64,7 +64,7 @@ struct PhysicalExpr {
                  physical::NestedLoopJoin, physical::NestedLoopCrossJoin,
                  physical::Sort> root_operator;
     utils::NotNull<Group*> group;
-    PropertySet delivered = PropertySet::Any();
+    bool is_enforcer = false;
 };
 
 }  // namespace stewkk::sql
