@@ -118,6 +118,15 @@ std::string SerializeNode(const PhysicalPlanNode& node) {
                                SerializeJoinType(n.type), SerializeExpr(n.qual),
                                SerializeNode(*n.lhs), SerializeNode(*n.rhs));
         }
+        std::string operator()(const PhysicalSort& n) const {
+            std::string keys;
+            for (const auto& k : n.keys.keys) {
+                if (!keys.empty()) keys += ' ';
+                keys += k.column;
+                keys += k.dir == Direction::kAsc ? " Asc" : " Desc";
+            }
+            return std::format("(Sort (keys {}) {})", keys, SerializeNode(*n.source));
+        }
     };
     return std::visit(Visitor{}, node);
 }
@@ -322,6 +331,26 @@ PhysicalPlanNode ParseNode(ParseState& s) {
     if (head == "NestedLoopJoin") return ParseJoinNode.template operator()<NestedLoopJoin>();
     if (head == "HashJoin")       return ParseJoinNode.template operator()<HashJoin>();
     if (head == "MergeJoin")      return ParseJoinNode.template operator()<MergeJoin>();
+    if (head == "Sort") {
+        s.ExpectLParen();
+        auto kw = s.ExpectAtom();
+        if (kw != "keys")
+            throw std::runtime_error(std::format("expected 'keys' but got '{}'", kw));
+        std::vector<SortKey> keys;
+        while (s.Peek().kind != TokenKind::RParen) {
+            auto col = s.ExpectAtom();
+            auto dir_str = s.ExpectAtom();
+            Direction dir = dir_str == "Asc" ? Direction::kAsc : Direction::kDesc;
+            keys.push_back({std::move(col), dir});
+        }
+        s.ExpectRParen();
+        auto source = ParseNode(s);
+        s.ExpectRParen();
+        return PhysicalSort{
+            std::make_shared<PhysicalPlanNode>(std::move(source)),
+            SortOrder{std::move(keys)},
+        };
+    }
 
     throw std::runtime_error(std::format("unknown plan node: '{}'", head));
 }
@@ -402,6 +431,18 @@ struct DotBuilder {
         int id = Emit(std::format("Merge {}\\nON {}", ToString(n.type), ToString(n.qual)));
         EmitEdge(lhs, id);
         EmitEdge(rhs, id);
+        return id;
+    }
+    int operator()(const PhysicalSort& n) {
+        int src = std::visit(*this, *n.source);
+        std::string keys;
+        for (const auto& k : n.keys.keys) {
+            if (!keys.empty()) keys += ", ";
+            keys += k.column;
+            keys += k.dir == Direction::kAsc ? " asc" : " desc";
+        }
+        int id = Emit(std::format("Sort\\n{}", keys));
+        EmitEdge(src, id);
         return id;
     }
 };

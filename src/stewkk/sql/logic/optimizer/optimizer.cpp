@@ -2,6 +2,8 @@
 
 #include <stdexcept>
 
+#include <bit>
+
 #include <stewkk/sql/utils/overloaded.hpp>
 #include <stewkk/sql/utils/log.hpp>
 #include <stewkk/sql/logic/executor/buffer_size.hpp>
@@ -45,6 +47,9 @@ std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<PhysicalExpr*> ex
       [](const physical::NestedLoopCrossJoin& j) -> std::vector<utils::NotNull<Group*>> {
           return {j.lhs, j.rhs};
       },
+      [](const physical::Sort& s) -> std::vector<utils::NotNull<Group*>> {
+          return {s.input};
+      },
   }, expr->root_operator);
 }
 
@@ -68,6 +73,10 @@ static int64_t CalcCost(utils::NotNull<PhysicalExpr*> expr, CardinalityEstimates
           auto p_l = (cardinality.GetCardinality(j.lhs) + kBufSize - 1) / kBufSize;
           auto p_r = (cardinality.GetCardinality(j.rhs) + kBufSize - 1) / kBufSize;
           return p_l * (1 + p_r);
+      },
+      [&](const physical::Sort& s) -> int64_t {
+          auto n = cardinality.GetCardinality(s.input);
+          return n > 1 ? n * static_cast<int64_t>(std::bit_width(static_cast<uint64_t>(n))) : n;
       },
   }, expr->root_operator);
 }
@@ -257,6 +266,12 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
             return NestedLoopCrossJoin{
                 .lhs = std::make_shared<PhysicalPlanNode>(BuildOptimalPlan(op.lhs.get())),
                 .rhs = std::make_shared<PhysicalPlanNode>(BuildOptimalPlan(op.rhs.get())),
+            };
+          },
+          [this](const physical::Sort& op) -> PhysicalPlanNode {
+            return PhysicalSort{
+                .source = std::make_shared<PhysicalPlanNode>(BuildOptimalPlan(op.input.get())),
+                .keys = op.keys,
             };
           },
       },

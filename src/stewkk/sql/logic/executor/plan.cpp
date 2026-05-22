@@ -30,4 +30,8 @@ bool IndexSeek::operator==(const IndexSeek& other) const {
   return table == other.table && predicate == other.predicate;
 }
 
+bool PhysicalSort::operator==(const PhysicalSort& other) const {
+  return *source == *other.source && keys == other.keys;
+}
+
 } // namespace stewkk::sql

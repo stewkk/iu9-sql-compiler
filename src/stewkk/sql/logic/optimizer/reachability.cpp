@@ -74,6 +74,15 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             if (!rhs.ok) { rhs.reason = "NestedLoopCrossJoin.rhs: " + rhs.reason; return rhs; }
             return {true, std::max(lhs.depth, rhs.depth), {}};
         },
+        [&](const physical::Sort& op) -> InternalMatch {
+            const auto* t = std::get_if<PhysicalSort>(&target);
+            if (!t) return {false, depth, "type mismatch: expected Sort"};
+            if (op.keys != t->keys)
+                return {false, depth, "Sort keys mismatch"};
+            auto child = MatchGroup(op.input.get(), *t->source, depth + 1);
+            if (!child.ok) child.reason = "Sort.input: " + child.reason;
+            return child;
+        },
     }, pe->root_operator);
 }
 

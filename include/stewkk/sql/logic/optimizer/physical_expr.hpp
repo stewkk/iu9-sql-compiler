@@ -6,6 +6,7 @@
 #include <stewkk/sql/utils/not_null.hpp>
 #include <stewkk/sql/models/parser/relational_algebra_ast.hpp>
 #include <stewkk/sql/logic/optimizer/properties/property_set.hpp>
+#include <stewkk/sql/logic/optimizer/properties/sort_order.hpp>
 
 namespace stewkk::sql {
 
@@ -49,11 +50,19 @@ struct NestedLoopCrossJoin {
   bool operator==(const NestedLoopCrossJoin&) const = default;
 };
 
+struct Sort {
+  utils::NotNull<Group*> input;
+  SortOrder keys;
+
+  bool operator==(const Sort&) const = default;
+};
+
 } // namespace physical
 
 struct PhysicalExpr {
     std::variant<physical::SeqScan, physical::Projection, physical::Filter,
-                 physical::NestedLoopJoin, physical::NestedLoopCrossJoin> root_operator;
+                 physical::NestedLoopJoin, physical::NestedLoopCrossJoin,
+                 physical::Sort> root_operator;
     utils::NotNull<Group*> group;
     PropertySet delivered = PropertySet::Any();
 };

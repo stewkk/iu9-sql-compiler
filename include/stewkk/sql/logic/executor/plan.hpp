@@ -7,6 +7,7 @@
 #include <stewkk/sql/utils/not_null.hpp>
 #include <stewkk/sql/models/parser/expression.hpp>
 #include <stewkk/sql/models/parser/join_type.hpp>
+#include <stewkk/sql/logic/optimizer/properties/sort_order.hpp>
 
 namespace stewkk::sql {
 
@@ -18,8 +19,9 @@ struct NestedLoopCrossJoin;
 struct HashJoin;
 struct MergeJoin;
 struct IndexSeek;
+struct PhysicalSort;
 
-using PhysicalPlanNode = std::variant<SeqScan, PhysicalProjection, PhysicalFilter, NestedLoopCrossJoin, NestedLoopJoin, HashJoin, MergeJoin, IndexSeek>;
+using PhysicalPlanNode = std::variant<SeqScan, PhysicalProjection, PhysicalFilter, NestedLoopCrossJoin, NestedLoopJoin, HashJoin, MergeJoin, IndexSeek, PhysicalSort>;
 
 struct SeqScan {
   std::string table;
@@ -80,6 +82,13 @@ struct IndexSeek {
   Expression predicate;
 
   bool operator==(const IndexSeek&) const;
+};
+
+struct PhysicalSort {
+  std::shared_ptr<PhysicalPlanNode> source;
+  SortOrder keys;
+
+  bool operator==(const PhysicalSort&) const;
 };
 
 } // namespace stewkk::sql

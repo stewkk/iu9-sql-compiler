@@ -446,6 +446,53 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
       throw std::runtime_error("IndexSeek execution not implemented");
       co_return;
     }
+    // FIXME: that's in-memory sort
+    boost::asio::awaitable<void> operator()(const PhysicalSort& sort) {
+      auto [in_attrs_chan, in_tuples_chan] = co_await GetChannels();
+      co_await executor.SpawnExecutor(*sort.source, in_attrs_chan, in_tuples_chan);
+
+      auto attrs = co_await in_attrs_chan.async_receive(boost::asio::use_awaitable);
+      co_await attr_chan.async_send(boost::system::error_code{}, attrs, boost::asio::use_awaitable);
+      attr_chan.close();
+
+      Tuples all_tuples;
+      for (;;) {
+        auto buf = co_await ReceiveTuples(in_tuples_chan);
+        if (buf.empty()) break;
+        std::move(buf.begin(), buf.end(), std::back_inserter(all_tuples));
+      }
+
+      std::vector<std::pair<size_t, Direction>> key_indices;
+      for (const auto& key : sort.keys.keys) {
+        auto it = std::find_if(attrs.begin(), attrs.end(),
+            [&](const AttributeInfo& a) { return a.name == key.column; });
+        if (it == attrs.end())
+          throw std::runtime_error{"sort key column not found: " + key.column};
+        key_indices.push_back({static_cast<size_t>(it - attrs.begin()), key.dir});
+      }
+
+      std::sort(all_tuples.begin(), all_tuples.end(),
+          [&](const Tuple& a, const Tuple& b) {
+            for (const auto& [idx, dir] : key_indices) {
+              const auto& va = a[idx];
+              const auto& vb = b[idx];
+              if (va.is_null && vb.is_null) continue;
+              if (va.is_null) return false;
+              if (vb.is_null) return true;
+              if (va.value.int_value != vb.value.int_value)
+                return dir == Direction::kAsc
+                    ? va.value.int_value < vb.value.int_value
+                    : va.value.int_value > vb.value.int_value;
+            }
+            return false;
+          });
+
+      if (!all_tuples.empty())
+        co_await tuples_chan.async_send(boost::system::error_code{},
+            std::move(all_tuples), boost::asio::use_awaitable);
+      tuples_chan.close();
+      co_return;
+    }
 
     AttributesInfoChannel& attr_chan;
     TuplesChannel& tuples_chan;
