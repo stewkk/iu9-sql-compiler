@@ -6,8 +6,8 @@ utils::NotNull<LogicalExpr*> Group::AddLogicalExpr(LogicalOperator root_operator
     return &logical_exprs_.emplace_back(std::move(root_operator), this);
 }
 
-utils::NotNull<PhysicalExpr*> Group::AddPhysicalExpr(PhysicalOperator root_operator) {
-    return &physical_exprs_.emplace_back(std::move(root_operator), this);
+utils::NotNull<PhysicalExpr*> Group::AddPhysicalExpr(PhysicalOperator root_operator, PropertySet delivered) {
+    return &physical_exprs_.emplace_back(std::move(root_operator), this, std::move(delivered));
 }
 
 Group::LogicalExprs Group::GetLogicalExprs() {

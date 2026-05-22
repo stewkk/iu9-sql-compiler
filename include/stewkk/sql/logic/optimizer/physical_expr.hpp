@@ -5,6 +5,7 @@
 
 #include <stewkk/sql/utils/not_null.hpp>
 #include <stewkk/sql/models/parser/relational_algebra_ast.hpp>
+#include <stewkk/sql/logic/optimizer/properties/property_set.hpp>
 
 namespace stewkk::sql {
 
@@ -54,6 +55,7 @@ struct PhysicalExpr {
     std::variant<physical::SeqScan, physical::Projection, physical::Filter,
                  physical::NestedLoopJoin, physical::NestedLoopCrossJoin> root_operator;
     utils::NotNull<Group*> group;
+    PropertySet delivered = PropertySet::Any();
 };
 
 }  // namespace stewkk::sql

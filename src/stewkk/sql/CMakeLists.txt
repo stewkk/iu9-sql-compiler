@@ -42,6 +42,8 @@ add_library(libsql
   logic/implementation_rules/implement_projection.cpp
   logic/implementation_rules/implement_join.cpp
   logic/implementation_rules/implement_cross_join.cpp
+  logic/optimizer/properties/sort_order.cpp
+  logic/optimizer/properties/property_set.cpp
 )
 add_library(stewkk::libsql ALIAS libsql)
 target_compile_features(libsql PUBLIC cxx_std_23)

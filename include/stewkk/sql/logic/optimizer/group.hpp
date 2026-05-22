@@ -29,7 +29,7 @@ class Group {
         ToNotNullPhysical>;
 
     utils::NotNull<LogicalExpr*> AddLogicalExpr(LogicalOperator root_operator);
-    utils::NotNull<PhysicalExpr*> AddPhysicalExpr(PhysicalOperator root_operator);
+    utils::NotNull<PhysicalExpr*> AddPhysicalExpr(PhysicalOperator root_operator, PropertySet delivered = PropertySet::Any());
     LogicalExprs GetLogicalExprs();
     PhysicalExprs GetPhysicalExprs();
 
