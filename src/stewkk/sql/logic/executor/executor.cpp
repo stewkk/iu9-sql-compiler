@@ -389,8 +389,9 @@ Executor<ExpressionExecutor>::Executor(SequentialScan seq_scan, boost::asio::any
 
 template <typename ExpressionExecutor>
 boost::asio::awaitable<Result<Relation>> Executor<ExpressionExecutor>::Execute(const PhysicalPlanNode& op) {
+  auto exec = co_await boost::asio::this_coro::executor;
   auto [attr_chan, tuples_chan] = co_await GetChannels();
-  co_await SpawnExecutor(op, attr_chan, tuples_chan);
+  auto task = SpawnExecutor(exec, op, attr_chan, tuples_chan);
 
   auto attrs = co_await attr_chan.async_receive(boost::asio::use_awaitable);
   Log("Received attrs in root");
@@ -405,6 +406,7 @@ boost::asio::awaitable<Result<Relation>> Executor<ExpressionExecutor>::Execute(c
     std::move(buf.begin(), buf.end(), std::back_inserter(result));
   }
 
+  co_await task(boost::asio::use_awaitable);
   Log("Total {} tuples in root", result.size());
   co_return Ok(Relation{std::move(attrs), std::move(result)});
 }
@@ -448,8 +450,9 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
     }
     // FIXME: that's in-memory sort
     boost::asio::awaitable<void> operator()(const PhysicalSort& sort) {
+      auto exec = co_await boost::asio::this_coro::executor;
       auto [in_attrs_chan, in_tuples_chan] = co_await GetChannels();
-      co_await executor.SpawnExecutor(*sort.source, in_attrs_chan, in_tuples_chan);
+      auto task = executor.SpawnExecutor(exec, *sort.source, in_attrs_chan, in_tuples_chan);
 
       auto attrs = co_await in_attrs_chan.async_receive(boost::asio::use_awaitable);
       co_await attr_chan.async_send(boost::system::error_code{}, attrs, boost::asio::use_awaitable);
@@ -492,6 +495,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
       if (!all_tuples.empty())
         co_await tuples_chan.async_send(boost::system::error_code{},
             std::move(all_tuples), boost::asio::use_awaitable);
+      co_await task(boost::asio::use_awaitable);
       tuples_chan.close();
       co_return;
     }
@@ -509,8 +513,9 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteProjection(con
                                                          AttributesInfoChannel& out_attr_chan,
                                                          TuplesChannel& out_tuples_chan) {
   Log("Executing projection");
+  auto exec = co_await boost::asio::this_coro::executor;
   auto [in_attrs_chan, in_tuples_chan] = co_await GetChannels();
-  co_await SpawnExecutor(*proj.source, in_attrs_chan, in_tuples_chan);
+  auto task = SpawnExecutor(exec, *proj.source, in_attrs_chan, in_tuples_chan);
 
   auto attrs = co_await in_attrs_chan.async_receive(boost::asio::use_awaitable);
   auto attrs_after = GetAttributesAfterProjection(attrs, proj);
@@ -536,6 +541,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteProjection(con
     co_await out_tuples_chan.async_send(boost::system::error_code{}, std::move(buf),
                                         boost::asio::use_awaitable);
   }
+  co_await task(boost::asio::use_awaitable);
   out_tuples_chan.close();
 }
 
@@ -544,8 +550,9 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteFilter(const P
                                                      AttributesInfoChannel& out_attr_chan,
                                                      TuplesChannel& out_tuples_chan) {
   Log("Executing filter");
+  auto exec = co_await boost::asio::this_coro::executor;
   auto [in_attrs_chan, in_tuples_chan] = co_await GetChannels();
-  co_await SpawnExecutor(*filter.source, in_attrs_chan, in_tuples_chan);
+  auto task = SpawnExecutor(exec, *filter.source, in_attrs_chan, in_tuples_chan);
 
   auto attrs = co_await in_attrs_chan.async_receive(boost::asio::use_awaitable);
   Log("Filter received attrs");
@@ -588,6 +595,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteFilter(const P
     co_await out_tuples_chan.async_send(boost::system::error_code{}, std::move(output_buf),
                                         boost::asio::use_awaitable);
   }
+  co_await task(boost::asio::use_awaitable);
   out_tuples_chan.close();
 }
 
@@ -596,10 +604,11 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteCrossJoin(cons
                                                         AttributesInfoChannel& attr_chan,
                                                         TuplesChannel& tuples_chan) {
   Log("Executing cross join");
+  auto exec = co_await boost::asio::this_coro::executor;
   auto [lhs_attrs_chan, lhs_tuples_chan] = co_await GetChannels();
-  co_await SpawnExecutor(*cross_join.lhs, lhs_attrs_chan, lhs_tuples_chan);
+  auto lhs_task = SpawnExecutor(exec, *cross_join.lhs, lhs_attrs_chan, lhs_tuples_chan);
   auto [rhs_attrs_chan, rhs_tuples_chan] = co_await GetChannels();
-  co_await SpawnExecutor(*cross_join.rhs, rhs_attrs_chan, rhs_tuples_chan);
+  auto rhs_task = SpawnExecutor(exec, *cross_join.rhs, rhs_attrs_chan, rhs_tuples_chan);
 
   auto attrs = co_await ConcatAttrs(lhs_attrs_chan, rhs_attrs_chan);
   Log("Cross join received attrs");
@@ -639,6 +648,8 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteCrossJoin(cons
       }
     }
   }
+  co_await lhs_task(boost::asio::use_awaitable);
+  co_await rhs_task(boost::asio::use_awaitable);
   tuples_chan.close();
 }
 
@@ -653,10 +664,11 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteJoin(const Nes
   if (join.type == JoinType::kLeft) {
     std::swap(*join.lhs, *join.rhs);
   }
+  auto exec = co_await boost::asio::this_coro::executor;
   auto [lhs_attrs_chan, lhs_tuples_chan] = co_await GetChannels();
-  co_await SpawnExecutor(*join.lhs, lhs_attrs_chan, lhs_tuples_chan);
+  auto lhs_task = SpawnExecutor(exec, *join.lhs, lhs_attrs_chan, lhs_tuples_chan);
   auto [rhs_attrs_chan, rhs_tuples_chan] = co_await GetChannels();
-  co_await SpawnExecutor(*join.rhs, rhs_attrs_chan, rhs_tuples_chan);
+  auto rhs_task = SpawnExecutor(exec, *join.rhs, rhs_attrs_chan, rhs_tuples_chan);
 
   auto attrs = co_await ConcatAttrs(lhs_attrs_chan, rhs_attrs_chan);
   Log("Join received attrs");
@@ -726,15 +738,19 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteJoin(const Nes
       }
     }
   }
+  co_await lhs_task(boost::asio::use_awaitable);
+  co_await rhs_task(boost::asio::use_awaitable);
   tuples_chan.close();
 }
 
 template <typename ExpressionExecutor>
-boost::asio::awaitable<void> Executor<ExpressionExecutor>::SpawnExecutor(const PhysicalPlanNode& op,
-                                                     AttributesInfoChannel& attr_chan,
-                                                     TuplesChannel& tuple_chan) {
-  auto executor = co_await boost::asio::this_coro::executor;
-  boost::asio::co_spawn(executor, Execute(op, attr_chan, tuple_chan), boost::asio::detached);
+boost::asio::experimental::promise<void(std::exception_ptr)>
+Executor<ExpressionExecutor>::SpawnExecutor(boost::asio::any_io_executor exec,
+                                             const PhysicalPlanNode& op,
+                                             AttributesInfoChannel& attr_chan,
+                                             TuplesChannel& tuple_chan) {
+  return boost::asio::co_spawn(exec, Execute(op, attr_chan, tuple_chan),
+                               boost::asio::experimental::use_promise);
 }
 
 template class Executor<InterpretedExpressionExecutor>;

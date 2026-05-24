@@ -6,6 +6,8 @@
 
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/awaitable.hpp>
+#include <boost/asio/experimental/promise.hpp>
+#include <boost/asio/experimental/use_promise.hpp>
 
 #include <stewkk/sql/logic/executor/materialization.hpp>
 #include <stewkk/sql/logic/result/result.hpp>
@@ -61,7 +63,9 @@ private:
                                                 TuplesChannel& tuples_chan);
   boost::asio::awaitable<void> ExecuteJoin(const NestedLoopJoin& join, AttributesInfoChannel& attr_chan,
                                            TuplesChannel& tuples_chan);
-  boost::asio::awaitable<void> SpawnExecutor(const PhysicalPlanNode& op, AttributesInfoChannel& attr_chan, TuplesChannel& tuple_chan);
+  boost::asio::experimental::promise<void(std::exception_ptr)> SpawnExecutor(
+      boost::asio::any_io_executor exec,
+      const PhysicalPlanNode& op, AttributesInfoChannel& attr_chan, TuplesChannel& tuple_chan);
 
 private:
   SequentialScan sequential_scan_;
