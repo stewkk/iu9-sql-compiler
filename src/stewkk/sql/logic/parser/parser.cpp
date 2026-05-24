@@ -11,7 +11,7 @@
 
 namespace stewkk::sql {
 
-Result<Operator> GetAST(std::istream& in) {
+Result<ParsedQuery> GetAST(std::istream& in) {
   antlr4::ANTLRInputStream antlr_input(in);
   codegen::PostgreSQLLexer lexer(&antlr_input);
 
@@ -44,11 +44,12 @@ Result<Operator> GetAST(std::istream& in) {
     return std::unexpected(ex);
   }
 
-  if (Operator* op = std::any_cast<Operator>(&res)) {
-    return std::move(*op);
+  Operator op = Table{kEmptyTableName};
+  if (Operator* p = std::any_cast<Operator>(&res)) {
+    op = std::move(*p);
   }
 
-  return Table{kEmptyTableName};
+  return ParsedQuery{std::move(op), visitor.GetRequiredOrder()};
 }
 
 std::string GetDotRepresentation(const Expression& expr) {

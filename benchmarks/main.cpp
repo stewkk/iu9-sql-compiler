@@ -76,7 +76,7 @@ void BM_SQL(benchmark::State& state) {
       ctx,
       [&state]() -> boost::asio::awaitable<void> {
         std::stringstream s{Query};
-        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<ExprExecutor> executor(std::move(seq_scan),
                                         co_await boost::asio::this_coro::executor);
@@ -129,7 +129,7 @@ void BM_SQL_Multithreaded(benchmark::State& state) {
       [&state]() -> boost::asio::awaitable<void> {
         boost::asio::thread_pool pool{4};
         std::stringstream s{Query};
-        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<ExprExecutor> executor(std::move(seq_scan),
                                         pool.executor());

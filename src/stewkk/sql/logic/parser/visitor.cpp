@@ -4,6 +4,7 @@
 
 #include <stewkk/sql/models/parser/relational_algebra_ast.hpp>
 #include <stewkk/sql/logic/result/error.hpp>
+#include <stewkk/sql/logic/optimizer/properties/sort_order.hpp>
 
 namespace stewkk::sql {
 
@@ -368,9 +369,48 @@ std::any Visitor::visitSelect_no_parens(codegen::PostgreSQLParser::Select_no_par
 
   auto select_clause = std::any_cast<Operator>(visit(ctx->select_clause()));
 
-  // TODO: remaining clauses
+  if (ctx->sort_clause_()) {
+    auto* sortby_list = ctx->sort_clause_()->sort_clause()->sortby_list();
+    std::vector<SortKey> keys;
+    for (auto* sortby : sortby_list->sortby()) {
+      keys.push_back(std::any_cast<SortKey>(visit(sortby)));
+    }
+    required_order_ = SortOrder{std::move(keys)};
+  }
 
   return select_clause;
+}
+
+std::any Visitor::visitSortby(codegen::PostgreSQLParser::SortbyContext *ctx) {
+  if (ctx->USING()) {
+    throw Error{ErrorType::kQueryNotSupported, "USING in ORDER BY is not supported"};
+  }
+  if (ctx->nulls_order_()) {
+    throw Error{ErrorType::kQueryNotSupported, "NULLS FIRST/LAST in ORDER BY is not supported"};
+  }
+
+  auto expr = std::any_cast<Expression>(visit(ctx->a_expr()));
+  auto* attr = std::get_if<Attribute>(&expr);
+  if (!attr) {
+    throw Error{ErrorType::kQueryNotSupported, "ORDER BY expression must be a qualified column reference"};
+  }
+  if (attr->table.empty()) {
+    throw Error{ErrorType::kQueryNotSupported, "ORDER BY requires a qualified column reference (table.column)"};
+  }
+
+  Direction dir = Direction::kAsc;
+  if (ctx->asc_desc_()) {
+    dir = std::any_cast<Direction>(visit(ctx->asc_desc_()));
+  }
+
+  return SortKey{attr->table, attr->name, dir};
+}
+
+std::any Visitor::visitAsc_desc_(codegen::PostgreSQLParser::Asc_desc_Context *ctx) {
+  if (ctx->DESC()) {
+    return Direction::kDesc;
+  }
+  return Direction::kAsc;
 }
 
 std::any Visitor::visitA_expr_qual(codegen::PostgreSQLParser::A_expr_qualContext *ctx) {

@@ -1,6 +1,9 @@
 #pragma once
 
+#include <optional>
+
 #include <stewkk/sql/logic/parser/codegen/PostgreSQLParserBaseVisitor.h>
+#include <stewkk/sql/logic/optimizer/properties/sort_order.hpp>
 
 namespace stewkk::sql {
 
@@ -8,6 +11,8 @@ class Visitor : public codegen::PostgreSQLParserBaseVisitor {
   public:
     explicit Visitor(codegen::PostgreSQLParser* parser);
     virtual std::any visit(antlr4::tree::ParseTree *tree) override;
+
+    std::optional<SortOrder> GetRequiredOrder() const { return required_order_; }
     virtual std::any visitRoot(codegen::PostgreSQLParser::RootContext* ctx) override;
     virtual std::any visitStmt(codegen::PostgreSQLParser::StmtContext *ctx) override;
     virtual std::any visitStmtmulti(codegen::PostgreSQLParser::StmtmultiContext* ctx) override;
@@ -62,9 +67,12 @@ class Visitor : public codegen::PostgreSQLParserBaseVisitor {
     virtual std::any visitQualified_name(codegen::PostgreSQLParser::Qualified_nameContext *ctx) override;
     virtual std::any visitJoin_type(codegen::PostgreSQLParser::Join_typeContext *ctx) override;
     virtual std::any visitJoin_qual(codegen::PostgreSQLParser::Join_qualContext *ctx) override;
+    virtual std::any visitSortby(codegen::PostgreSQLParser::SortbyContext *ctx) override;
+    virtual std::any visitAsc_desc_(codegen::PostgreSQLParser::Asc_desc_Context *ctx) override;
 
   private:
     codegen::PostgreSQLParser* parser_;
+    std::optional<SortOrder> required_order_;
 };
 
 

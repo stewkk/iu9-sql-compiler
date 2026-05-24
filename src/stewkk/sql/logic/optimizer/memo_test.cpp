@@ -31,7 +31,7 @@ TEST(MemoTest, AddSameGroupSecondReturnsIt) {
 
 TEST(MemoTest, PopulateWithWholeQuery) {
   std::stringstream s{"SELECT * FROM users, orders;"};
-  Operator op = GetAST(s).value();
+  Operator op = GetAST(s).value().op;
   Memo memo;
 
   auto root = memo.Populate(op);

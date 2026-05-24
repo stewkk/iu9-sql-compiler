@@ -160,9 +160,10 @@ std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<PhysicalExpr*> ex
 template<size_t NTransformation, size_t NImplementation>
 Optimizer<NTransformation, NImplementation>::Optimizer(
     const Operator& expr, Rules<NTransformation, NImplementation>&& rules,
-    CardinalityEstimates cardinality, SchemaCatalog schema)
+    CardinalityEstimates cardinality, SchemaCatalog schema, PropertySet required)
     : memo_(), rules_applier_(std::move(rules)), root_(memo_.Populate(expr)),
-      cardinality_(std::move(cardinality)), schema_(std::move(schema)) {
+      cardinality_(std::move(cardinality)), schema_(std::move(schema)),
+      required_(std::move(required)) {
 }
 
 template<size_t NTransformation, size_t NImplementation>
@@ -427,9 +428,9 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
 }
 
 template<size_t NTransformation, size_t NImplementation>
-void Optimizer<NTransformation, NImplementation>::RunSearch(PropertySet required, Limit limit) {
+void Optimizer<NTransformation, NImplementation>::RunSearch(Limit limit) {
   Log("Starting optimization");
-  tasks_.emplace([this, required, limit]() { OptimizeGroup(root_->group, required, limit); });
+  tasks_.emplace([this, limit]() { OptimizeGroup(root_->group, required_, limit); });
   while (!tasks_.empty()) {
     auto next_task = std::move(tasks_.top());
     tasks_.pop();
@@ -438,15 +439,15 @@ void Optimizer<NTransformation, NImplementation>::RunSearch(PropertySet required
 }
 
 template<size_t NTransformation, size_t NImplementation>
-PhysicalPlanNode Optimizer<NTransformation, NImplementation>::Optimize(PropertySet required) {
-  RunSearch(required, std::numeric_limits<int64_t>::max());
+PhysicalPlanNode Optimizer<NTransformation, NImplementation>::Optimize() {
+  RunSearch(std::numeric_limits<int64_t>::max());
   Log("Optimization complete, building plan");
-  return BuildOptimalPlan(root_->group.get(), required);
+  return BuildOptimalPlan(root_->group.get(), required_);
 }
 
 template<size_t NTransformation, size_t NImplementation>
 void Optimizer<NTransformation, NImplementation>::OptimizeExhaustive() {
-  RunSearch(PropertySet::Any(), std::nullopt);
+  RunSearch(std::nullopt);
 }
 
 template<size_t NTransformation, size_t NImplementation>

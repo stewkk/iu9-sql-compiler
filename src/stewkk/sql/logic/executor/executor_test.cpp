@@ -79,7 +79,7 @@ TEST(ExecutorTest, SimpleSelect) {
       ctx,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT * FROM users;"};
-        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -105,7 +105,7 @@ TEST(ExecutorTest, SimpleSelectWithParallelism) {
       pool,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT * FROM users;"};
-        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -131,7 +131,7 @@ TYPED_TEST_P(ExecutorTest, Projection) {
       pool,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT users.id FROM users;"};
-        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -157,7 +157,7 @@ TYPED_TEST_P(ExecutorTest, Filter) {
       pool,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT users.id FROM users WHERE users.age < 10;"};
-        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -183,7 +183,7 @@ TYPED_TEST_P(ExecutorTest, FilterMany) {
       pool,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT users.id FROM users WHERE users.age > 10;"};
-        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -209,7 +209,7 @@ TYPED_TEST_P(ExecutorTest, CrossJoin) {
       pool,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT * FROM users, books WHERE users.age < 10;"};
-        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -239,7 +239,7 @@ TYPED_TEST_P(ExecutorTest, InnerJoin) {
       pool,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT * FROM employees JOIN departments ON employees.department_id = departments.id;"};
-        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -268,7 +268,7 @@ TYPED_TEST_P(ExecutorTest, LeftJoin) {
       pool,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT * FROM employees LEFT OUTER JOIN departments ON employees.department_id = departments.id;"};
-        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -297,7 +297,7 @@ TYPED_TEST_P(ExecutorTest, RightJoin) {
       pool,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT * FROM employees RIGHT JOIN departments ON employees.department_id = departments.id;"};
-        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 
@@ -326,7 +326,7 @@ TYPED_TEST_P(ExecutorTest, ComplexJoin) {
       pool,
       []() -> boost::asio::awaitable<Result<Relation>> {
         std::stringstream s{"SELECT departments.id*2, employees.id+1 FROM employees RIGHT JOIN departments ON employees.department_id = departments.id AND departments.id > 3 AND departments.id*2*2/2 < 30;"};
-        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value());
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<TypeParam> executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
 

@@ -107,8 +107,8 @@ MatchResult IsReachable(utils::NotNull<Group*> root, const PhysicalPlanNode& tar
 
 MatchResult IsPlanReachable(std::istream& sql, const PhysicalPlanNode& target,
                              CardinalityEstimates cardinality) {
-    auto ast = GetAST(sql).value();
-    Optimizer optimizer(ast, MakeMainRules(), std::move(cardinality));
+    auto parsed = GetAST(sql).value();
+    Optimizer optimizer(parsed.op, MakeMainRules(), std::move(cardinality));
     optimizer.OptimizeExhaustive();
     return IsReachable(optimizer.GetRootGroup(), target);
 }

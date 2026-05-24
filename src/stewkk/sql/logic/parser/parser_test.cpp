@@ -2,12 +2,16 @@
 
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <sstream>
 
 #include <stewkk/sql/logic/parser/parser.hpp>
+#include <stewkk/sql/logic/optimizer/properties/sort_order.hpp>
 
 using ::testing::Eq;
 using ::testing::IsTrue;
+using ::testing::IsFalse;
+using ::testing::Optional;
 using ::testing::VariantWith;
 
 namespace stewkk::sql {
@@ -29,7 +33,7 @@ std::string ReadFromFile(std::filesystem::path path) {
 TEST(ParserTest, SelectAllFromSingleTable) {
   std::stringstream s{"SELECT * FROM users;"};
 
-  Operator got = GetAST(s).value();
+  Operator got = GetAST(s).value().op;
 
   ASSERT_THAT(got, VariantWith<Table>(Table{"users"}));
 }
@@ -37,7 +41,7 @@ TEST(ParserTest, SelectAllFromSingleTable) {
 TEST(ParserTest, SelectSingleColumnFromSingleTable) {
   std::stringstream s{"SELECT users.id FROM users;"};
 
-  Operator got = GetAST(s).value();
+  Operator got = GetAST(s).value().op;
 
   ASSERT_THAT(got, VariantWith<Projection>(Projection{std::vector<Expression>{{Attribute{"users", "id"}}},
                                                       std::make_shared<Operator>(Table{"users"})}));
@@ -46,7 +50,7 @@ TEST(ParserTest, SelectSingleColumnFromSingleTable) {
 TEST(ParserTest, SelectMultipleColumnsFromSingleTable) {
   std::stringstream s{"SELECT users.id, users.email, users.phone FROM users;"};
 
-  Operator got = GetAST(s).value();
+  Operator got = GetAST(s).value().op;
 
   ASSERT_THAT(got,
               VariantWith<Projection>(Projection{
@@ -57,7 +61,7 @@ TEST(ParserTest, SelectMultipleColumnsFromSingleTable) {
 TEST(ParserTest, SelectWithWhereClause) {
   std::stringstream s{"SELECT users.id FROM users WHERE users.age > 18;"};
 
-  Operator got = GetAST(s).value();
+  Operator got = GetAST(s).value().op;
 
   ASSERT_THAT(got, VariantWith<Projection>(Projection{
                        std::vector<Expression>{Attribute{"users", "id"}},
@@ -70,7 +74,7 @@ TEST(ParserTest, SelectWithWhereClause) {
 
 TEST(ParserTest, GetDotRepresentation) {
   std::stringstream s{"SELECT users.id FROM users WHERE users.age > 18;"};
-  Operator op = GetAST(s).value();
+  Operator op = GetAST(s).value().op;
   auto expected = ReadFromFile(kProjectDir + "/test/static/parser/expected.dot");
 
   auto got = GetDotRepresentation(op);
@@ -81,7 +85,7 @@ TEST(ParserTest, GetDotRepresentation) {
 TEST(ParserTest, SelectWithBooleanExpression) {
   std::stringstream s{"SELECT TRUE AND NULL OR FALSE AND NOT NULL;"};
 
-  Operator got = GetAST(s).value();
+  Operator got = GetAST(s).value().op;
 
   ASSERT_THAT(got, VariantWith<Projection>(Projection{
                        {BinaryExpression{
@@ -104,7 +108,7 @@ TEST(ParserTest, SelectWithBooleanExpression) {
 TEST(ParserTest, SelectWithArithmeticalOperations) {
   std::stringstream s{"SELECT 1+2-3;"};
 
-  Operator got = GetAST(s).value();
+  Operator got = GetAST(s).value().op;
 
   ASSERT_THAT(
       got, VariantWith<Projection>(Projection{{BinaryExpression{
@@ -122,7 +126,7 @@ TEST(ParserTest, SelectWithArithmeticalOperations) {
 TEST(ParserTest, GetDotRepresentationOfArithmeticalExpression) {
   std::stringstream s{"SELECT 1+2-3+4+5-6;"};
 
-  Operator op = GetAST(s).value();
+  Operator op = GetAST(s).value().op;
   auto expected = ReadFromFile(kProjectDir + "/test/static/parser/expected_arithmetical.dot");
 
   auto got = GetDotRepresentation(op);
@@ -151,7 +155,7 @@ TEST(ParserTest, NotSupportedError) {
 TEST(ParserTest, EmptyQuery) {
   std::stringstream s{""};
 
-  Operator got = GetAST(s).value();
+  Operator got = GetAST(s).value().op;
 
   ASSERT_THAT(got, VariantWith<Table>(Table{"_EMPTY_TABLE_"}));
 }
@@ -159,7 +163,7 @@ TEST(ParserTest, EmptyQuery) {
 TEST(ParserTest, SelectWithParens) {
   std::stringstream s{"((SELECT * FROM users));"};
 
-  Operator got = GetAST(s).value();
+  Operator got = GetAST(s).value().op;
 
   ASSERT_THAT(got, VariantWith<Table>(Table{"users"}));
 }
@@ -167,7 +171,7 @@ TEST(ParserTest, SelectWithParens) {
 TEST(ParserTest, EmptySelect) {
   std::stringstream s{"SELECT;"};
 
-  Operator got = GetAST(s).value();
+  Operator got = GetAST(s).value().op;
 
   ASSERT_THAT(got, VariantWith<Table>(Table{"_EMPTY_TABLE_"}));
 }
@@ -175,7 +179,7 @@ TEST(ParserTest, EmptySelect) {
 TEST(ParserTest, SelectWithJoinDot) {
   std::stringstream s{"SELECT * FROM users, books;"};
   auto expected = ReadFromFile(kProjectDir + "/test/static/parser/expected_join.dot");
-  Operator op = GetAST(s).value();
+  Operator op = GetAST(s).value().op;
 
   auto got = GetDotRepresentation(op);
 
@@ -185,15 +189,74 @@ TEST(ParserTest, SelectWithJoinDot) {
 TEST(ParserTest, SelectWithOuterJoinDot) {
   std::stringstream s{"SELECT * FROM users LEFT OUTER JOIN books ON users.book = books.id;"};
   auto expected = ReadFromFile(kProjectDir + "/test/static/parser/expected_outer_join.dot");
-  Operator op = GetAST(s).value();
+  Operator op = GetAST(s).value().op;
 
   auto got = GetDotRepresentation(op);
 
   ASSERT_THAT(got, Eq(expected));
 }
 
+TEST(ParserTest, OrderByAscDefault) {
+  std::stringstream s{"SELECT * FROM users ORDER BY users.id;"};
+
+  auto parsed = GetAST(s).value();
+
+  ASSERT_THAT(parsed.op, VariantWith<Table>(Table{"users"}));
+  ASSERT_THAT(parsed.required_order, Optional(SortOrder{{SortKey{"users", "id", Direction::kAsc}}}));
+}
+
+TEST(ParserTest, OrderByDesc) {
+  std::stringstream s{"SELECT * FROM users ORDER BY users.id DESC;"};
+
+  auto parsed = GetAST(s).value();
+
+  ASSERT_THAT(parsed.required_order, Optional(SortOrder{{SortKey{"users", "id", Direction::kDesc}}}));
+}
+
+TEST(ParserTest, OrderByMultiKey) {
+  std::stringstream s{"SELECT * FROM users ORDER BY users.id ASC, users.age DESC;"};
+
+  auto parsed = GetAST(s).value();
+
+  ASSERT_THAT(parsed.required_order, Optional(SortOrder{{
+      SortKey{"users", "id", Direction::kAsc},
+      SortKey{"users", "age", Direction::kDesc},
+  }}));
+}
+
+TEST(ParserTest, OrderByNoOrderByClause) {
+  std::stringstream s{"SELECT * FROM users;"};
+
+  auto parsed = GetAST(s).value();
+
+  ASSERT_THAT(parsed.required_order.has_value(), IsFalse());
+}
+
+TEST(ParserTest, OrderByIntOrdinalRejected) {
+  std::stringstream s{"SELECT * FROM users ORDER BY 1;"};
+
+  auto got = GetAST(s).error();
+
+  ASSERT_THAT(got.Wraps(ErrorType::kQueryNotSupported), IsTrue());
+}
+
+TEST(ParserTest, OrderByUnqualifiedColumnRejected) {
+  std::stringstream s{"SELECT * FROM users ORDER BY id;"};
+
+  auto got = GetAST(s).error();
+
+  ASSERT_THAT(got.Wraps(ErrorType::kQueryNotSupported), IsTrue());
+}
+
+TEST(ParserTest, OrderByNullsFirstRejected) {
+  std::stringstream s{"SELECT * FROM users ORDER BY users.id NULLS FIRST;"};
+
+  auto got = GetAST(s).error();
+
+  ASSERT_THAT(got.Wraps(ErrorType::kQueryNotSupported), IsTrue());
+}
+
 /*
-** ORDER BY
 ** aggregations: SELECT kind, sum(len) AS total FROM films GROUP BY kind;
  */
 

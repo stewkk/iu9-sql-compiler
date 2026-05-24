@@ -26,9 +26,10 @@ template<size_t NTransformation, size_t NImplementation>
 class Optimizer {
 public:
   Optimizer(const Operator& expr, Rules<NTransformation, NImplementation>&& rules,
-            CardinalityEstimates cardinality = {}, SchemaCatalog schema = {});
+            CardinalityEstimates cardinality = {}, SchemaCatalog schema = {},
+            PropertySet required = PropertySet::Any());
 
-  PhysicalPlanNode Optimize(PropertySet required = PropertySet::Any());
+  PhysicalPlanNode Optimize();
 
   // Runs exhaustive search, populating all physical_exprs_ in every reachable
   // group.
@@ -38,7 +39,7 @@ public:
 
 private:
   using Limit = std::optional<std::int64_t>;
-  void RunSearch(PropertySet required, Limit limit);
+  void RunSearch(Limit limit);
 
   bool IsExplored(utils::NotNull<Group*> group) const;
   void SetExplored(utils::NotNull<Group*> group);
@@ -74,6 +75,7 @@ private:
   utils::NotNull<LogicalExpr*> root_;
   CardinalityEstimates cardinality_;
   SchemaCatalog schema_;
+  PropertySet required_;
   std::unordered_map<PhysicalExpr*, int64_t> local_cost_;
   std::unordered_map<WinnerKey, WinnerEntry> winner_;
   std::unordered_set<WinnerKey> enforcers_added_;

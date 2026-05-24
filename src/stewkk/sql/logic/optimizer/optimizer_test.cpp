@@ -5,6 +5,8 @@
 #include <stewkk/sql/logic/optimizer/cardinality.hpp>
 #include <stewkk/sql/logic/optimizer/rules.hpp>
 #include <stewkk/sql/logic/optimizer/reachability.hpp>
+#include <stewkk/sql/logic/optimizer/schema_catalog.hpp>
+#include <stewkk/sql/logic/optimizer/properties/sort_property.hpp>
 #include <stewkk/sql/logic/executor/plan_serializer.hpp>
 
 using ::testing::Eq;
@@ -20,17 +22,17 @@ namespace stewkk::sql {
 
 TEST(OptimizerTest, Simple) {
   std::stringstream s{"SELECT * FROM users;"};
-  Operator op = GetAST(s).value();
+  Operator op = GetAST(s).value().op;
   Optimizer optimizer(op, MakeMainRules());
 
   auto got = optimizer.Optimize();
-  
+
   ASSERT_THAT(SerializeDot(got), Eq("digraph G { rankdir=BT;\n  n0 [label=\"SeqScan\\\\nusers\"]\n}\n"));
 }
 
 TEST(OptimizerTest, JoinCommutativity) {
   std::stringstream s{"SELECT * FROM users JOIN orders ON users.id = orders.user_id;"};
-  Operator op = GetAST(s).value();
+  Operator op = GetAST(s).value().op;
   Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({
       {"users", 10000},
       {"orders", 100},
@@ -43,7 +45,17 @@ TEST(OptimizerTest, JoinCommutativity) {
 }
 
 TEST(OptimizerTest, OrderBy) {
-   // TODO: SELECT a FROM T ORDER BY b
+  std::stringstream s{"SELECT * FROM users ORDER BY users.id;"};
+  auto parsed = GetAST(s).value();
+  SchemaCatalog schema({{"users", {Attribute{"users", "id"}, Attribute{"users", "age"}}}});
+  PropertySet required = parsed.required_order
+      ? PropertySet{SortProperty{*parsed.required_order}}
+      : PropertySet::Any();
+  Optimizer optimizer(parsed.op, MakeMainRules(), {}, std::move(schema), std::move(required));
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(Serialize(got), Eq("(Sort (keys users.id Asc) (SeqScan users))"));
 }
 
 TEST(ReachabilityTest, SeqScanReachable) {
