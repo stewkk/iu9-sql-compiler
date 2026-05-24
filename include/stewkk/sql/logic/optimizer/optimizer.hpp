@@ -59,6 +59,12 @@ private:
 
   PhysicalPlanNode BuildOptimalPlan(Group* group, PropertySet required = PropertySet::Any());
 
+  struct WinnerEntry {
+    int64_t cost;
+    PhysicalExpr* plan;
+    PropertySet delivered;
+  };
+
   Memo memo_;
   RulesApplier<NTransformation, NImplementation> rules_applier_;
   std::stack<std::function<void()>> tasks_;
@@ -68,9 +74,7 @@ private:
   CardinalityEstimates cardinality_;
   SchemaCatalog schema_;
   std::unordered_map<PhysicalExpr*, int64_t> local_cost_;
-  std::unordered_map<WinnerKey, int64_t> best_cost_;
-  std::unordered_map<WinnerKey, PhysicalExpr*> best_plan_;
-  std::unordered_map<WinnerKey, PropertySet> best_delivered_;
+  std::unordered_map<WinnerKey, WinnerEntry> winner_;
   std::unordered_set<WinnerKey> enforcers_added_;
   std::unordered_map<Group*, std::vector<LogicalExpr*>> group_parents_;
   std::unordered_map<Group*, std::int64_t> lower_bounds_;

@@ -197,8 +197,8 @@ void Optimizer<NTransformation, NImplementation>::OptimizeInputs(
   // accum = local_cost(expr) + cost of children processed so far.
   // child_delivered[i] = what child i actually delivered (filled as we go).
   WinnerKey self_key{expr->group.get(), required};
-  if (auto it = best_cost_.find(self_key); it != best_cost_.end()) {
-    limit = limit ? Limit{std::min(*limit, it->second)} : Limit{it->second};
+  if (auto it = winner_.find(self_key); it != winner_.end()) {
+    limit = limit ? Limit{std::min(*limit, it->second.cost)} : Limit{it->second.cost};
   }
   if (limit && accum >= *limit) return;
   auto children = GetChildren(expr);
@@ -206,11 +206,9 @@ void Optimizer<NTransformation, NImplementation>::OptimizeInputs(
     auto delivered = DeriveOutputProps(expr, child_delivered);
     if (!delivered.Satisfies(required)) return;
     WinnerKey key{expr->group.get(), required};
-    if (!best_cost_.contains(key) || accum < best_cost_.at(key)) {
+    if (!winner_.contains(key) || accum < winner_.at(key).cost) {
       Log("New best plan for group {} with cost {}", expr->group->GetId(), accum);
-      best_cost_[key] = accum;
-      best_plan_[key] = expr.get();
-      best_delivered_[key] = delivered;
+      winner_[key] = WinnerEntry{accum, expr.get(), delivered};
     }
     return;
   }
@@ -220,10 +218,11 @@ void Optimizer<NTransformation, NImplementation>::OptimizeInputs(
 
   tasks_.emplace([this, expr, child, child_index, required, child_delivered, accum, limit, child_required]() mutable {
     WinnerKey child_key{child.get(), child_required};
-    if (!best_cost_.contains(child_key)) return;
-    auto new_accum = accum + best_cost_.at(child_key);
+    auto child_it = winner_.find(child_key);
+    if (child_it == winner_.end()) return;
+    auto new_accum = accum + child_it->second.cost;
     if (limit && new_accum >= *limit) return;
-    child_delivered.push_back(best_delivered_.at(child_key));
+    child_delivered.push_back(child_it->second.delivered);
     OptimizeInputs(expr, required, std::move(child_delivered), new_accum, limit, child_index + 1);
   });
 
@@ -318,7 +317,7 @@ void Optimizer<NTransformation, NImplementation>::OptimizeGroup(
     utils::NotNull<Group*> group, PropertySet required, Limit limit) {
   Log("Optimizing group {}", group->GetId());
   WinnerKey key{group.get(), required};
-  if (best_cost_.contains(key)) return;
+  if (winner_.contains(key)) return;
 
   if (IsExplored(group) && limit && LowerBoundCost(group) >= *limit) return;
 
@@ -380,11 +379,11 @@ template<size_t NTransformation, size_t NImplementation>
 PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(Group* group, PropertySet required) {
   Log("Building optimal plan for group {}", group->GetId());
   WinnerKey key{group, required};
-  auto it = best_plan_.find(key);
-  if (it == best_plan_.end() || !it->second) {
+  auto it = winner_.find(key);
+  if (it == winner_.end() || !it->second.plan) {
     throw std::runtime_error{"no optimal plan for group"};
   }
-  auto* best_expr = it->second;
+  auto* best_expr = it->second.plan;
   utils::NotNull<PhysicalExpr*> best_expr_nn{best_expr};
   return std::visit(
       utils::Overloaded{

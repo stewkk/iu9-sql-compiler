@@ -12,3 +12,4 @@ FlameGraph/
 **/build/
 /.odbc/
 **/__pycache__
+/build-tsan/
