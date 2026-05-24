@@ -27,6 +27,4 @@ class ImplementationRule {
     virtual ~ImplementationRule() = default;
 };
 
-// FIXME: enforcer rules?
-
 }  // namespace stewkk::sql

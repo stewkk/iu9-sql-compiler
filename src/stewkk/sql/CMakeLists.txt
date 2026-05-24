@@ -32,6 +32,7 @@ add_library(libsql
   logic/optimizer/cardinality.cpp
   logic/optimizer/schema_catalog.cpp
   logic/optimizer/winner_key.cpp
+  logic/optimizer/sort_enforcer.cpp
   logic/optimizer/group.cpp
   logic/optimizer/memo.cpp
   logic/optimizer/rules.cpp
@@ -45,6 +46,7 @@ add_library(libsql
   logic/implementation_rules/implement_join.cpp
   logic/implementation_rules/implement_cross_join.cpp
   logic/optimizer/properties/sort_order.cpp
+  logic/optimizer/properties/sort_property.cpp
   logic/optimizer/properties/property_set.cpp
 )
 add_library(stewkk::libsql ALIAS libsql)

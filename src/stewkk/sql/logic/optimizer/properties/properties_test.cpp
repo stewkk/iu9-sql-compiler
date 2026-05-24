@@ -2,6 +2,7 @@
 
 #include <stewkk/sql/logic/optimizer/properties/property_set.hpp>
 #include <stewkk/sql/logic/optimizer/properties/sort_order.hpp>
+#include <stewkk/sql/logic/optimizer/properties/sort_property.hpp>
 
 using ::testing::IsTrue;
 using ::testing::IsFalse;
@@ -45,7 +46,7 @@ TEST(SortOrderTest, WrongColumnDoesNotSatisfy) {
 }
 
 TEST(PropertySetTest, AnyAlwaysSatisfied) {
-  PropertySet delivered{SortOrder{{{"t", "a", Direction::kAsc}}}};
+  PropertySet delivered{SortProperty{SortOrder{{{"t", "a", Direction::kAsc}}}}};
   ASSERT_THAT(delivered.Satisfies(PropertySet::Any()), IsTrue());
 }
 
@@ -54,13 +55,13 @@ TEST(PropertySetTest, AnySatisfiesAny) {
 }
 
 TEST(PropertySetTest, AnyDoesNotSatisfySortRequirement) {
-  PropertySet required{SortOrder{{{"t", "a", Direction::kAsc}}}};
+  PropertySet required{SortProperty{SortOrder{{{"t", "a", Direction::kAsc}}}}};
   ASSERT_THAT(PropertySet::Any().Satisfies(required), IsFalse());
 }
 
 TEST(PropertySetTest, SortSatisfiesSortPrefix) {
-  PropertySet delivered{SortOrder{{{"t", "a", Direction::kAsc}, {"t", "b", Direction::kAsc}}}};
-  PropertySet required{SortOrder{{{"t", "a", Direction::kAsc}}}};
+  PropertySet delivered{SortProperty{SortOrder{{{"t", "a", Direction::kAsc}, {"t", "b", Direction::kAsc}}}}};
+  PropertySet required{SortProperty{SortOrder{{{"t", "a", Direction::kAsc}}}}};
   ASSERT_THAT(delivered.Satisfies(required), IsTrue());
 }
 

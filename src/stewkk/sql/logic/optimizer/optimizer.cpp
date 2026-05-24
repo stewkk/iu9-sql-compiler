@@ -11,10 +11,18 @@
 #include <stewkk/sql/utils/overloaded.hpp>
 #include <stewkk/sql/utils/log.hpp>
 #include <stewkk/sql/logic/executor/buffer_size.hpp>
+#include <stewkk/sql/logic/optimizer/properties/sort_property.hpp>
+#include <stewkk/sql/logic/optimizer/sort_enforcer.hpp>
 
 namespace stewkk::sql {
 
 namespace {
+
+static const std::vector<std::unique_ptr<Enforcer>> kEnforcers = [] {
+  std::vector<std::unique_ptr<Enforcer>> v;
+  v.push_back(std::make_unique<SortEnforcer>());
+  return v;
+}();
 
 // Top-down: given `required` of this expr, what must child `child_index` deliver?
 PropertySet RequiredInputProps(utils::NotNull<PhysicalExpr*> expr,
@@ -44,7 +52,7 @@ PropertySet DeriveOutputProps(utils::NotNull<PhysicalExpr*> expr,
       [&](const physical::Projection&) { return child_delivered[0]; },
       [&](const physical::NestedLoopJoin&) { return child_delivered[0]; },
       [&](const physical::NestedLoopCrossJoin&) { return child_delivered[0]; },
-      [&](const physical::Sort& s) { return PropertySet{s.keys}; },
+      [&](const physical::Sort& s) { return PropertySet{SortProperty{s.keys}}; },
   }, expr->root_operator);
 }
 
@@ -154,7 +162,8 @@ Optimizer<NTransformation, NImplementation>::Optimizer(
     const Operator& expr, Rules<NTransformation, NImplementation>&& rules,
     CardinalityEstimates cardinality, SchemaCatalog schema)
     : memo_(), rules_applier_(std::move(rules)), root_(memo_.Populate(expr)),
-      cardinality_(std::move(cardinality)), schema_(std::move(schema)) {}
+      cardinality_(std::move(cardinality)), schema_(std::move(schema)) {
+}
 
 template<size_t NTransformation, size_t NImplementation>
 int64_t Optimizer<NTransformation, NImplementation>::LowerBoundCost(utils::NotNull<Group*> group) {
@@ -341,34 +350,18 @@ void Optimizer<NTransformation, NImplementation>::OptimizeGroup(
     });
   }
 
-  // Add Sort enforcer once per (group, required) if required asks for a sort,
-  // and schedule its OptimizeInputs. Enforcers are scheduled here only — the
-  // general scan skips them so the enforcer doesn't get picked up under
-  // required=Any (which would recurse into its own group infinitely).
-  // A Sort enforcer references the keys' columns by (table, name), so it is
-  // only placeable when those columns are still in this group's output schema.
-  // Unknown schema (catalog has no info) is treated permissively.
-  if (required.sort && !enforcers_added_.contains(key)) {
-    bool can_enforce = true;
-    if (auto schema = schema_.GetSchema(group)) {
-      for (const auto& sk : required.sort->keys) {
-        bool found = false;
-        for (const auto& a : *schema) {
-          if (a.table == sk.table && a.name == sk.column) { found = true; break; }
-        }
-        if (!found) { can_enforce = false; break; }
-      }
-    }
-    if (can_enforce) {
-      enforcers_added_.insert(key);
-      auto sort_expr = group->AddPhysicalExpr(
-          physical::Sort{group, *required.sort}, /*is_enforcer=*/true);
-      auto lc = CalcCost(sort_expr, cardinality_);
-      Log("Sort enforcer local cost for group {}: {}", group->GetId(), lc);
-      local_cost_[sort_expr.get()] = lc;
+  if (!enforcers_added_.contains(key)) {
+    enforcers_added_.insert(key);
+    for (const auto& enforcer : kEnforcers) {
+      auto op = enforcer->TryBuild(group, required, schema_);
+      if (!op) continue;
+      auto enf_expr = group->AddPhysicalExpr(*op, /*is_enforcer=*/true);
+      auto lc = CalcCost(enf_expr, cardinality_);
+      Log("Enforcer local cost for group {}: {}", group->GetId(), lc);
+      local_cost_[enf_expr.get()] = lc;
       if (!limit || lc < *limit) {
-        tasks_.emplace([this, sort_expr, required, lc, limit]() {
-          OptimizeInputs(sort_expr, required, {}, lc, limit);
+        tasks_.emplace([this, enf_expr, required, lc, limit]() {
+          OptimizeInputs(enf_expr, required, {}, lc, limit);
         });
       }
     }

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <stewkk/sql/logic/optimizer/cardinality.hpp>
+#include <stewkk/sql/logic/optimizer/enforcer.hpp>
 #include <stewkk/sql/logic/optimizer/memo.hpp>
 #include <stewkk/sql/logic/optimizer/rules_applier.hpp>
 #include <stewkk/sql/logic/optimizer/schema_catalog.hpp>
