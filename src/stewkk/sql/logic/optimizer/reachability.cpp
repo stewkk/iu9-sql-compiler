@@ -52,11 +52,14 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
         },
         [&](const physical::NestedLoopJoin& op) -> InternalMatch {
             const auto* t = std::get_if<NestedLoopJoin>(&target);
+            // depth+1 once the operator type matches: a same-type partial
+            // mismatch is more informative than a foreign-type rejection, so
+            // it should outrank type-mismatch reports for the same group.
             if (!t) return {false, depth, "type mismatch: expected NestedLoopJoin"};
             if (op.type != t->type)
-                return {false, depth, "NestedLoopJoin join type mismatch"};
+                return {false, depth + 1, "NestedLoopJoin join type mismatch"};
             if (op.qual != t->qual)
-                return {false, depth,
+                return {false, depth + 1,
                         std::format("NestedLoopJoin qual '{}' != '{}'",
                                     ToString(op.qual), ToString(t->qual))};
             auto lhs = MatchGroup(op.lhs.get(), *t->lhs, depth + 1);
@@ -72,6 +75,21 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             if (!lhs.ok) { lhs.reason = "NestedLoopCrossJoin.lhs: " + lhs.reason; return lhs; }
             auto rhs = MatchGroup(op.rhs.get(), *t->rhs, depth + 1);
             if (!rhs.ok) { rhs.reason = "NestedLoopCrossJoin.rhs: " + rhs.reason; return rhs; }
+            return {true, std::max(lhs.depth, rhs.depth), {}};
+        },
+        [&](const physical::HashJoin& op) -> InternalMatch {
+            const auto* t = std::get_if<HashJoin>(&target);
+            if (!t) return {false, depth, "type mismatch: expected HashJoin"};
+            if (op.type != t->type)
+                return {false, depth + 1, "HashJoin join type mismatch"};
+            if (op.qual != t->qual)
+                return {false, depth + 1,
+                        std::format("HashJoin qual '{}' != '{}'",
+                                    ToString(op.qual), ToString(t->qual))};
+            auto lhs = MatchGroup(op.lhs.get(), *t->lhs, depth + 1);
+            if (!lhs.ok) { lhs.reason = "HashJoin.lhs: " + lhs.reason; return lhs; }
+            auto rhs = MatchGroup(op.rhs.get(), *t->rhs, depth + 1);
+            if (!rhs.ok) { rhs.reason = "HashJoin.rhs: " + rhs.reason; return rhs; }
             return {true, std::max(lhs.depth, rhs.depth), {}};
         },
         [&](const physical::Sort& op) -> InternalMatch {

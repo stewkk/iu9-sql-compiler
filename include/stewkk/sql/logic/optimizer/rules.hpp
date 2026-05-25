@@ -11,6 +11,7 @@
 #include <stewkk/sql/logic/implementation_rules/implement_projection.hpp>
 #include <stewkk/sql/logic/implementation_rules/implement_join.hpp>
 #include <stewkk/sql/logic/implementation_rules/implement_cross_join.hpp>
+#include <stewkk/sql/logic/implementation_rules/implement_hash_join.hpp>
 
 namespace stewkk::sql {
 
@@ -20,6 +21,6 @@ struct Rules {
     std::array<std::unique_ptr<ImplementationRule>, NImplementation> implementation_rules;
 };
 
-Rules<2, 5> MakeMainRules();
+Rules<2, 6> MakeMainRules();
 
 }  // namespace stewkk::sql

@@ -158,10 +158,8 @@ REGISTER_BM_SQL(kComplex2000)
 REGISTER_BM_SQL(kComplex4000)
 REGISTER_BM_SQL(kComplex8000)
 REGISTER_BM_SQL(kComplex16000)
-// FIXME: Optimizer search does not terminate within minutes on 3-way joins.
-// Re-enable once that perf bug is fixed; see kMultiwayOCR/kMultiwayROC.
-// REGISTER_BM_SQL(kMultiwayOCR)
-// REGISTER_BM_SQL(kMultiwayROC)
+REGISTER_BM_SQL(kMultiwayOCR)
+REGISTER_BM_SQL(kMultiwayROC)
 
 template <typename ExprExecutor, const char* Query, PlannerMode Mode>
 void BM_SQL_Multithreaded(benchmark::State& state) {

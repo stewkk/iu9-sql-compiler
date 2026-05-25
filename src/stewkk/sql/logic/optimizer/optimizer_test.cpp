@@ -41,7 +41,7 @@ TEST(OptimizerTest, JoinCommutativity) {
 
   auto got = optimizer.Optimize();
 
-  ASSERT_THAT(Serialize(got), Eq("(NestedLoopJoin Inner (= (attr users id) (attr orders user_id)) (SeqScan orders) (SeqScan users))"));
+  ASSERT_THAT(Serialize(got), Eq("(HashJoin Inner (= (attr users id) (attr orders user_id)) (SeqScan orders) (SeqScan users))"));
 }
 
 TEST(OptimizerTest, MultiwayJoinOCR) {
@@ -61,9 +61,9 @@ TEST(OptimizerTest, MultiwayJoinOCR) {
   ASSERT_THAT(
       Serialize(got),
       Eq("(PhysicalProjection (exprs (attr orders id) (attr customers id) (attr regions id))"
-         " (NestedLoopJoin Inner (= (attr customers region_id) (attr regions id))"
-         " (NestedLoopJoin Inner (= (attr orders customer_id) (attr customers id))"
-         " (SeqScan customers) (SeqScan orders)) (SeqScan regions)))"));
+         " (HashJoin Inner (= (attr orders customer_id) (attr customers id))"
+         " (SeqScan orders) (HashJoin Inner (= (attr customers region_id) (attr regions id))"
+         " (SeqScan regions) (SeqScan customers))))"));
 }
 
 TEST(OptimizerTest, MultiwayJoinROC) {
@@ -83,8 +83,8 @@ TEST(OptimizerTest, MultiwayJoinROC) {
   ASSERT_THAT(
       Serialize(got),
       Eq("(PhysicalProjection (exprs (attr orders id) (attr customers id) (attr regions id))"
-         " (NestedLoopJoin Inner (= (attr orders customer_id) (attr customers id))"
-         " (NestedLoopJoin Inner (= (attr customers region_id) (attr regions id))"
+         " (HashJoin Inner (= (attr orders customer_id) (attr customers id))"
+         " (HashJoin Inner (= (attr customers region_id) (attr regions id))"
          " (SeqScan customers) (SeqScan regions)) (SeqScan orders)))"));
 }
 
@@ -151,7 +151,7 @@ TEST(ReachabilityTest, BothJoinOrdersReachable) {
   ASSERT_THAT(suboptimal.reachable, IsTrue());
 }
 
-TEST(ReachabilityTest, HashJoinNotReachable) {
+TEST(ReachabilityTest, HashJoinReachable) {
   std::stringstream s{"SELECT * FROM users JOIN orders ON users.id = orders.user_id;"};
   Expression qual = BinaryExpression{
       std::make_shared<Expression>(Attribute{"users", "id"}),
@@ -161,7 +161,7 @@ TEST(ReachabilityTest, HashJoinNotReachable) {
       std::make_shared<PhysicalPlanNode>(SeqScan{"orders"}),
       std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
       JoinType::kInner, qual});
-  ASSERT_THAT(result.reachable, IsFalse());
+  ASSERT_THAT(result.reachable, IsTrue());
 }
 
 TEST(ReachabilityTest, WrongJoinQual) {

@@ -37,6 +37,12 @@ PropertySet RequiredInputProps(utils::NotNull<PhysicalExpr*> expr,
       [&](const physical::NestedLoopCrossJoin&) -> PropertySet {
           return child_index == 0 ? required : PropertySet::Any();
       },
+      [&](const physical::HashJoin&) -> PropertySet {
+          // HashJoin reorders output (hash-partitioned scan of build side, then
+          // probe-driven emit). It does not preserve any input sort order, so
+          // never ask children to satisfy `required`.
+          return PropertySet::Any();
+      },
       [&](const physical::Sort&) { return PropertySet::Any(); },
   }, expr->root_operator);
 }
@@ -52,6 +58,7 @@ PropertySet DeriveOutputProps(utils::NotNull<PhysicalExpr*> expr,
       [&](const physical::Projection&) { return child_delivered[0]; },
       [&](const physical::NestedLoopJoin&) { return child_delivered[0]; },
       [&](const physical::NestedLoopCrossJoin&) { return child_delivered[0]; },
+      [&](const physical::HashJoin&) { return PropertySet::Any(); },
       [&](const physical::Sort& s) { return PropertySet{SortProperty{s.keys}}; },
   }, expr->root_operator);
 }
@@ -77,9 +84,12 @@ int64_t LowerBoundLocalCost(utils::NotNull<LogicalExpr*> expr, CardinalityEstima
           return p_l * (1 + p_r);
       },
       [&](const logical::Join& j) -> int64_t {
-          auto p_l = (cardinality.GetCardinality(j.lhs) + kBufSize - 1) / kBufSize;
-          auto p_r = (cardinality.GetCardinality(j.rhs) + kBufSize - 1) / kBufSize;
-          return p_l * (1 + p_r);
+          // Must stay ≤ every physical impl. NLJ ~ n_l*n_r, HJ ~ n_l+n_r
+          // (equi only). When either side has 1 tuple, NLJ can beat HJ, so
+          // take the min so the bound is safe for both alternatives.
+          auto n_l = cardinality.GetCardinality(j.lhs);
+          auto n_r = cardinality.GetCardinality(j.rhs);
+          return std::min(n_l + n_r, n_l * n_r);
       },
   }, expr->root_operator);
 }
@@ -96,14 +106,19 @@ int64_t CalcCost(utils::NotNull<PhysicalExpr*> expr, CardinalityEstimates& cardi
           return cardinality.GetCardinality(expr->group);
       },
       [&](const physical::NestedLoopJoin& j) -> int64_t {
-          auto p_l = (cardinality.GetCardinality(j.lhs) + kBufSize - 1) / kBufSize;
-          auto p_r = (cardinality.GetCardinality(j.rhs) + kBufSize - 1) / kBufSize;
-          return p_l * (1 + p_r);
+          // Per-tuple work: each rhs tuple compared against every lhs tuple.
+          auto n_l = cardinality.GetCardinality(j.lhs);
+          auto n_r = cardinality.GetCardinality(j.rhs);
+          return n_l * n_r;
       },
       [&](const physical::NestedLoopCrossJoin& j) -> int64_t {
           auto p_l = (cardinality.GetCardinality(j.lhs) + kBufSize - 1) / kBufSize;
           auto p_r = (cardinality.GetCardinality(j.rhs) + kBufSize - 1) / kBufSize;
           return p_l * (1 + p_r);
+      },
+      [&](const physical::HashJoin& j) -> int64_t {
+          // Build hash on lhs (n_l inserts), probe with rhs (n_r O(1) lookups).
+          return cardinality.GetCardinality(j.lhs) + cardinality.GetCardinality(j.rhs);
       },
       [&](const physical::Sort& s) -> int64_t {
           auto n = cardinality.GetCardinality(s.input);
@@ -149,6 +164,9 @@ std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<PhysicalExpr*> ex
           return {j.lhs, j.rhs};
       },
       [](const physical::NestedLoopCrossJoin& j) -> std::vector<utils::NotNull<Group*>> {
+          return {j.lhs, j.rhs};
+      },
+      [](const physical::HashJoin& j) -> std::vector<utils::NotNull<Group*>> {
           return {j.lhs, j.rhs};
       },
       [](const physical::Sort& s) -> std::vector<utils::NotNull<Group*>> {
@@ -416,6 +434,16 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
                     BuildOptimalPlan(op.rhs.get(), RequiredInputProps(best_expr_nn, required, 1))),
             };
           },
+          [this, best_expr_nn, required](const physical::HashJoin& op) -> PhysicalPlanNode {
+            return HashJoin{
+                .lhs = std::make_shared<PhysicalPlanNode>(
+                    BuildOptimalPlan(op.lhs.get(), RequiredInputProps(best_expr_nn, required, 0))),
+                .rhs = std::make_shared<PhysicalPlanNode>(
+                    BuildOptimalPlan(op.rhs.get(), RequiredInputProps(best_expr_nn, required, 1))),
+                .type = op.type,
+                .qual = op.qual,
+            };
+          },
           [this, best_expr_nn, required](const physical::Sort& op) -> PhysicalPlanNode {
             return PhysicalSort{
                 .source = std::make_shared<PhysicalPlanNode>(
@@ -455,6 +483,6 @@ utils::NotNull<Group*> Optimizer<NTransformation, NImplementation>::GetRootGroup
   return root_->group;
 }
 
-template class Optimizer<2, 5>;
+template class Optimizer<2, 6>;
 
 }  // namespace stewkk::sql

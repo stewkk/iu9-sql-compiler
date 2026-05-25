@@ -50,6 +50,15 @@ struct NestedLoopCrossJoin {
   bool operator==(const NestedLoopCrossJoin&) const = default;
 };
 
+struct HashJoin {
+  utils::NotNull<Group*> lhs;
+  utils::NotNull<Group*> rhs;
+  JoinType type;
+  Expression qual;
+
+  bool operator==(const HashJoin&) const = default;
+};
+
 struct Sort {
   utils::NotNull<Group*> input;
   SortOrder keys;
@@ -62,7 +71,7 @@ struct Sort {
 struct PhysicalExpr {
     std::variant<physical::SeqScan, physical::Projection, physical::Filter,
                  physical::NestedLoopJoin, physical::NestedLoopCrossJoin,
-                 physical::Sort> root_operator;
+                 physical::HashJoin, physical::Sort> root_operator;
     utils::NotNull<Group*> group;
     bool is_enforcer = false;
 };

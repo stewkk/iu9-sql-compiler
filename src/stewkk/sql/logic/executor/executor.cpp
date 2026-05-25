@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <ranges>
 #include <cmath>
+#include <unordered_map>
 
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
@@ -436,8 +437,8 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
       co_await executor.ExecuteCrossJoin(cross_join, attr_chan, tuples_chan);
       co_return;
     }
-    boost::asio::awaitable<void> operator()(const HashJoin&) {
-      throw std::runtime_error("HashJoin execution not implemented");
+    boost::asio::awaitable<void> operator()(const HashJoin& join) {
+      co_await executor.ExecuteHashJoin(join, attr_chan, tuples_chan);
       co_return;
     }
     boost::asio::awaitable<void> operator()(const MergeJoin&) {
@@ -737,6 +738,120 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteJoin(const Nes
                                         boost::asio::use_awaitable);
       }
     }
+  }
+  co_await lhs_task(boost::asio::use_awaitable);
+  co_await rhs_task(boost::asio::use_awaitable);
+  tuples_chan.close();
+}
+
+namespace {
+
+size_t FindAttrIndex(const AttributesInfo& attrs, const Attribute& a) {
+  auto it = std::find_if(attrs.begin(), attrs.end(), [&](const AttributeInfo& ai) {
+    return ai.table == a.table && ai.name == a.name;
+  });
+  if (it == attrs.end()) {
+    throw std::runtime_error{"hash join key attribute not found: " + a.table + "." + a.name};
+  }
+  return static_cast<size_t>(it - attrs.begin());
+}
+
+} // namespace
+
+// Inner equi-join: build a hash table on lhs.key, then probe with rhs.
+// ImplementHashJoin gates applicability to `attr = attr` quals on Inner joins,
+// so the only shapes that reach here are: lhs_attr == rhs_attr or rhs_attr ==
+// lhs_attr. We resolve which side owns each attribute via the lhs attribute
+// stream; the remaining one must belong to rhs.
+template <typename ExpressionExecutor>
+boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashJoin(
+    const HashJoin& join, AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan) {
+  Log("Executing hash join");
+  if (join.type != JoinType::kInner) {
+    throw std::logic_error{"HashJoin executor supports only Inner joins"};
+  }
+  const auto* bin = std::get_if<BinaryExpression>(&join.qual);
+  if (!bin || bin->binop != BinaryOp::kEq) {
+    throw std::logic_error{"HashJoin qual must be an equality"};
+  }
+  const auto* a = std::get_if<Attribute>(bin->lhs.get());
+  const auto* b = std::get_if<Attribute>(bin->rhs.get());
+  if (!a || !b) {
+    throw std::logic_error{"HashJoin qual must be `attr = attr`"};
+  }
+
+  auto exec = co_await boost::asio::this_coro::executor;
+  auto [lhs_attrs_chan, lhs_tuples_chan] = co_await GetChannels();
+  auto lhs_task = SpawnExecutor(exec, *join.lhs, lhs_attrs_chan, lhs_tuples_chan);
+  auto [rhs_attrs_chan, rhs_tuples_chan] = co_await GetChannels();
+  auto rhs_task = SpawnExecutor(exec, *join.rhs, rhs_attrs_chan, rhs_tuples_chan);
+
+  auto lhs_attrs = co_await lhs_attrs_chan.async_receive(boost::asio::use_awaitable);
+  auto rhs_attrs = co_await rhs_attrs_chan.async_receive(boost::asio::use_awaitable);
+
+  // Pick the (lhs_key, rhs_key) pair regardless of which side the qual wrote first.
+  auto lhs_has = [&](const Attribute& attr) {
+    return std::any_of(lhs_attrs.begin(), lhs_attrs.end(), [&](const AttributeInfo& ai) {
+      return ai.table == attr.table && ai.name == attr.name;
+    });
+  };
+  const Attribute* lhs_attr = nullptr;
+  const Attribute* rhs_attr = nullptr;
+  if (lhs_has(*a)) { lhs_attr = a; rhs_attr = b; }
+  else if (lhs_has(*b)) { lhs_attr = b; rhs_attr = a; }
+  else {
+    throw std::runtime_error{"HashJoin qual: neither side of equality found in lhs attrs"};
+  }
+
+  size_t lhs_key_idx = FindAttrIndex(lhs_attrs, *lhs_attr);
+  size_t rhs_key_idx = FindAttrIndex(rhs_attrs, *rhs_attr);
+
+  AttributesInfo out_attrs = lhs_attrs;
+  std::ranges::copy(rhs_attrs, std::back_inserter(out_attrs));
+  co_await attr_chan.async_send(boost::system::error_code{}, out_attrs,
+                                boost::asio::use_awaitable);
+  attr_chan.close();
+
+  // Build phase: collect all lhs tuples into a hash multimap keyed by lhs.key.
+  // NULL keys never match (SQL = on NULL is unknown), so drop them.
+  std::unordered_multimap<int64_t, Tuple> build;
+  for (;;) {
+    auto buf = co_await ReceiveTuples(lhs_tuples_chan);
+    if (buf.empty()) break;
+    Log("HashJoin build received {} tuples", buf.size());
+    for (auto& t : buf) {
+      const Value& k = t[lhs_key_idx];
+      if (k.is_null) continue;
+      build.emplace(k.value.int_value, std::move(t));
+    }
+  }
+  Log("HashJoin build phase done; {} entries", build.size());
+
+  // Probe phase: stream rhs, lookup matches, emit joined tuples in kBufSize chunks.
+  Tuples out_buf;
+  out_buf.reserve(kBufSize);
+  for (;;) {
+    auto buf = co_await ReceiveTuples(rhs_tuples_chan);
+    if (buf.empty()) break;
+    Log("HashJoin probe received {} tuples", buf.size());
+    for (const auto& rt : buf) {
+      const Value& k = rt[rhs_key_idx];
+      if (k.is_null) continue;
+      auto range = build.equal_range(k.value.int_value);
+      for (auto it = range.first; it != range.second; ++it) {
+        out_buf.push_back(ConcatTuples(it->second, rt));
+        if (out_buf.size() == kBufSize) {
+          co_await tuples_chan.async_send(boost::system::error_code{}, std::move(out_buf),
+                                          boost::asio::use_awaitable);
+          out_buf.clear();
+          out_buf.reserve(kBufSize);
+        }
+      }
+    }
+  }
+  if (!out_buf.empty()) {
+    co_await tuples_chan.async_send(boost::system::error_code{}, std::move(out_buf),
+                                    boost::asio::use_awaitable);
   }
   co_await lhs_task(boost::asio::use_awaitable);
   co_await rhs_task(boost::asio::use_awaitable);
