@@ -13,6 +13,8 @@ class Memo {
     size_t GroupCount() const;
     utils::NotNull<LogicalExpr*> AddGroup(LogicalOperator root_operator);
     LogicalExpr* GetGroup(LogicalOperator root_operator) const;
+    utils::NotNull<LogicalExpr*> AddLogicalExprToGroup(utils::NotNull<Group*> group,
+                                                       LogicalOperator root_operator);
     utils::NotNull<LogicalExpr*> Populate(const Operator& op);
 
   private:

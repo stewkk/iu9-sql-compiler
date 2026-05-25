@@ -12,6 +12,9 @@
 #include <stewkk/sql/logic/parser/parser.hpp>
 #include <stewkk/sql/logic/executor/executor.hpp>
 #include <stewkk/sql/logic/executor/sequential_scan.hpp>
+#include <stewkk/sql/logic/optimizer/cardinality.hpp>
+#include <stewkk/sql/logic/optimizer/optimizer.hpp>
+#include <stewkk/sql/logic/optimizer/rules.hpp>
 #include <stewkk/sql/models/parser/relational_algebra_ast.hpp>
 #include <stewkk/sql/utils/overloaded.hpp>
 
@@ -19,6 +22,7 @@ namespace stewkk::sql {
 
 namespace {
 
+// FIXME: ORDER BY support missing
 PhysicalPlanNode ToPhysicalPlan(const Operator& op) {
   return std::visit(utils::Overloaded{
     [](const Table& t) -> PhysicalPlanNode {
@@ -53,6 +57,37 @@ PhysicalPlanNode ToPhysicalPlan(const Operator& op) {
   }, op);
 }
 
+CardinalityEstimates MakeBenchCardinality() {
+  return CardinalityEstimates({
+      {"users", 17},
+      {"employees", 11},
+      {"employees_200", 200},
+      {"departments", 5},
+      {"departments_500", 1000},
+      {"departments_1000", 1000},
+      {"departments_2000", 2000},
+      {"departments_4000", 4000},
+      {"departments_8000", 8000},
+      {"departments_16000", 16000},
+      {"books", 3},
+      {"regions", 10},
+      {"customers", 500},
+      {"orders", 5000},
+  });
+}
+
+enum class PlannerMode { kNaive, kOptimized };
+
+template <PlannerMode Mode>
+PhysicalPlanNode MakePlan(const Operator& op) {
+  if constexpr (Mode == PlannerMode::kNaive) {
+    return ToPhysicalPlan(op);
+  } else {
+    Optimizer optimizer(op, MakeMainRules(), MakeBenchCardinality());
+    return optimizer.Optimize();
+  }
+}
+
 } // namespace
 
 const static std::string kProjectDir = std::getenv("PWD");
@@ -67,7 +102,20 @@ static constexpr char kComplex4000[]{"SELECT departments_4000.id*2, employees_20
 static constexpr char kComplex8000[]{"SELECT departments_8000.id*2, employees_200.id+1 FROM employees_200 RIGHT JOIN departments_8000 ON employees_200.department_id = departments_8000.id AND departments_8000.id > 3 AND departments_8000.id*2*2/2/2*2 < 30;"};
 static constexpr char kComplex16000[]{"SELECT departments_16000.id*2, employees_200.id+1 FROM employees_200 RIGHT JOIN departments_16000 ON employees_200.department_id = departments_16000.id AND departments_16000.id > 3 AND departments_16000.id*2*2/2/2*2 < 30;"};
 
-template <typename ExprExecutor, const char* Query>
+// 3-way joins on skewed tables (regions=10, customers=500, orders=5000).
+// Naive textual order (orders ⋈ customers) ⋈ regions builds a ~2.5M-tuple
+// intermediate. JoinAssociativity + JoinCommutativity let the optimizer pick a
+// shape with much smaller intermediates.
+static constexpr char kMultiwayOCR[]{
+    "SELECT orders.id, customers.id, regions.id FROM orders "
+    "JOIN customers ON orders.customer_id = customers.id "
+    "JOIN regions ON customers.region_id = regions.id;"};
+static constexpr char kMultiwayROC[]{
+    "SELECT orders.id, customers.id, regions.id FROM regions "
+    "JOIN customers ON customers.region_id = regions.id "
+    "JOIN orders ON orders.customer_id = customers.id;"};
+
+template <typename ExprExecutor, const char* Query, PlannerMode Mode>
 void BM_SQL(benchmark::State& state) {
   std::ofstream nullstream("/dev/null");
   std::clog.rdbuf(nullstream.rdbuf());
@@ -76,7 +124,7 @@ void BM_SQL(benchmark::State& state) {
       ctx,
       [&state]() -> boost::asio::awaitable<void> {
         std::stringstream s{Query};
-        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
+        PhysicalPlanNode op = MakePlan<Mode>(GetAST(s).value().op);
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<ExprExecutor> executor(std::move(seq_scan),
                                         co_await boost::asio::this_coro::executor);
@@ -92,34 +140,30 @@ void BM_SQL(benchmark::State& state) {
   ctx.run();
 }
 
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kSimpleSelectSmall>)->UseRealTime();
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kSimpleSelectSmall>)->UseRealTime();
+#define REGISTER_BM_SQL(Query)                                                                  \
+  BENCHMARK(BM_SQL<InterpretedExpressionExecutor, Query, PlannerMode::kNaive>)->UseRealTime();  \
+  BENCHMARK(BM_SQL<InterpretedExpressionExecutor, Query, PlannerMode::kOptimized>)              \
+      ->UseRealTime();                                                                          \
+  BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, Query, PlannerMode::kNaive>)            \
+      ->UseRealTime();                                                                          \
+  BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, Query, PlannerMode::kOptimized>)        \
+      ->UseRealTime();
 
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kJoinSmall>)->UseRealTime();
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kJoinSmall>)->UseRealTime();
+REGISTER_BM_SQL(kSimpleSelectSmall)
+REGISTER_BM_SQL(kJoinSmall)
+REGISTER_BM_SQL(kComplex5)
+REGISTER_BM_SQL(kComplex500)
+REGISTER_BM_SQL(kComplex1000)
+REGISTER_BM_SQL(kComplex2000)
+REGISTER_BM_SQL(kComplex4000)
+REGISTER_BM_SQL(kComplex8000)
+REGISTER_BM_SQL(kComplex16000)
+// FIXME: Optimizer search does not terminate within minutes on 3-way joins.
+// Re-enable once that perf bug is fixed; see kMultiwayOCR/kMultiwayROC.
+// REGISTER_BM_SQL(kMultiwayOCR)
+// REGISTER_BM_SQL(kMultiwayROC)
 
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex5>)->UseRealTime();
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex5>)->UseRealTime();
-
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex500>)->UseRealTime();
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex500>)->UseRealTime();
-
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex1000>)->UseRealTime();
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex1000>)->UseRealTime();
-
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex2000>)->UseRealTime();
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex2000>)->UseRealTime();
-
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex4000>)->UseRealTime();
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex4000>)->UseRealTime();
-
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex8000>)->UseRealTime();
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex8000>)->UseRealTime();
-
-BENCHMARK(BM_SQL<InterpretedExpressionExecutor, kComplex16000>)->UseRealTime();
-BENCHMARK(BM_SQL<CachedJitCompiledExpressionExecutor, kComplex16000>)->UseRealTime();
-
-template <typename ExprExecutor, const char* Query>
+template <typename ExprExecutor, const char* Query, PlannerMode Mode>
 void BM_SQL_Multithreaded(benchmark::State& state) {
   std::ofstream nullstream("/dev/null");
   std::clog.rdbuf(nullstream.rdbuf());
@@ -129,7 +173,7 @@ void BM_SQL_Multithreaded(benchmark::State& state) {
       [&state]() -> boost::asio::awaitable<void> {
         boost::asio::thread_pool pool{4};
         std::stringstream s{Query};
-        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
+        PhysicalPlanNode op = MakePlan<Mode>(GetAST(s).value().op);
         CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
         Executor<ExprExecutor> executor(std::move(seq_scan),
                                         pool.executor());
@@ -148,26 +192,24 @@ void BM_SQL_Multithreaded(benchmark::State& state) {
   ctx.run();
 }
 
-BENCHMARK(BM_SQL_Multithreaded<InterpretedExpressionExecutor, kComplex5>)->UseRealTime();
-BENCHMARK(BM_SQL_Multithreaded<CachedJitCompiledExpressionExecutor, kComplex5>)->UseRealTime();
+#define REGISTER_BM_SQL_MT(Query)                                                                  \
+  BENCHMARK(BM_SQL_Multithreaded<InterpretedExpressionExecutor, Query, PlannerMode::kNaive>)       \
+      ->UseRealTime();                                                                             \
+  BENCHMARK(BM_SQL_Multithreaded<InterpretedExpressionExecutor, Query, PlannerMode::kOptimized>)   \
+      ->UseRealTime();                                                                             \
+  BENCHMARK(BM_SQL_Multithreaded<CachedJitCompiledExpressionExecutor, Query, PlannerMode::kNaive>) \
+      ->UseRealTime();                                                                             \
+  BENCHMARK(                                                                                       \
+      BM_SQL_Multithreaded<CachedJitCompiledExpressionExecutor, Query, PlannerMode::kOptimized>)   \
+      ->UseRealTime();
 
-BENCHMARK(BM_SQL_Multithreaded<InterpretedExpressionExecutor, kComplex500>)->UseRealTime();
-BENCHMARK(BM_SQL_Multithreaded<CachedJitCompiledExpressionExecutor, kComplex500>)->UseRealTime();
-
-BENCHMARK(BM_SQL_Multithreaded<InterpretedExpressionExecutor, kComplex1000>)->UseRealTime();
-BENCHMARK(BM_SQL_Multithreaded<CachedJitCompiledExpressionExecutor, kComplex1000>)->UseRealTime();
-
-BENCHMARK(BM_SQL_Multithreaded<InterpretedExpressionExecutor, kComplex2000>)->UseRealTime();
-BENCHMARK(BM_SQL_Multithreaded<CachedJitCompiledExpressionExecutor, kComplex2000>)->UseRealTime();
-
-BENCHMARK(BM_SQL_Multithreaded<InterpretedExpressionExecutor, kComplex4000>)->UseRealTime();
-BENCHMARK(BM_SQL_Multithreaded<CachedJitCompiledExpressionExecutor, kComplex4000>)->UseRealTime();
-
-BENCHMARK(BM_SQL_Multithreaded<InterpretedExpressionExecutor, kComplex8000>)->UseRealTime();
-BENCHMARK(BM_SQL_Multithreaded<CachedJitCompiledExpressionExecutor, kComplex8000>)->UseRealTime();
-
-BENCHMARK(BM_SQL_Multithreaded<InterpretedExpressionExecutor, kComplex16000>)->UseRealTime();
-BENCHMARK(BM_SQL_Multithreaded<CachedJitCompiledExpressionExecutor, kComplex16000>)->UseRealTime();
+REGISTER_BM_SQL_MT(kComplex5)
+REGISTER_BM_SQL_MT(kComplex500)
+REGISTER_BM_SQL_MT(kComplex1000)
+REGISTER_BM_SQL_MT(kComplex2000)
+REGISTER_BM_SQL_MT(kComplex4000)
+REGISTER_BM_SQL_MT(kComplex8000)
+REGISTER_BM_SQL_MT(kComplex16000)
 
 }  // namespace stewkk::sql
 

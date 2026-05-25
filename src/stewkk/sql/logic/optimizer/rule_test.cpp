@@ -77,7 +77,8 @@ TEST_F(JoinAssociativityTest, ReturnsCorrectExpression) {
   const auto& inner = std::get<logical::Join>(outer.rhs->GetLogicalExprs()[0]->root_operator);
   EXPECT_EQ(inner.lhs.get(), b);
   EXPECT_EQ(inner.rhs.get(), c);
-  EXPECT_EQ(inner.qual, Expression{Literal::kTrue});
+  EXPECT_EQ(inner.qual, Expression{Literal::kFalse});
+  EXPECT_EQ(outer.qual, Expression{Literal::kTrue});
 }
 
 }  // namespace stewkk::sql

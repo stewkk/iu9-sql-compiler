@@ -1,8 +1,32 @@
 #include <stewkk/sql/logic/optimizer/cardinality.hpp>
 
+#include <algorithm>
+
 #include <stewkk/sql/utils/overloaded.hpp>
 
 namespace stewkk::sql {
+
+namespace {
+
+// System R: each `attr = attr` conjunct contributes 1/max(lhs_card, rhs_card);
+// AND multiplies; anything else (including TRUE) contributes 1.0.
+double JoinSelectivity(const Expression& qual, int64_t lhs_card, int64_t rhs_card) {
+  const auto* b = std::get_if<BinaryExpression>(&qual);
+  if (!b) return 1.0;
+  if (b->binop == BinaryOp::kAnd) {
+    return JoinSelectivity(*b->lhs, lhs_card, rhs_card)
+         * JoinSelectivity(*b->rhs, lhs_card, rhs_card);
+  }
+  if (b->binop == BinaryOp::kEq
+      && std::holds_alternative<Attribute>(*b->lhs)
+      && std::holds_alternative<Attribute>(*b->rhs)) {
+    auto m = std::max<int64_t>(1, std::max(lhs_card, rhs_card));
+    return 1.0 / static_cast<double>(m);
+  }
+  return 1.0;
+}
+
+}  // namespace
 
 CardinalityEstimates::CardinalityEstimates(std::unordered_map<std::string, int64_t> table_sizes)
     : table_sizes_(std::move(table_sizes)) {}
@@ -34,7 +58,11 @@ int64_t CardinalityEstimates::GetCardinality(const LogicalOperator& op) {
           return GetCardinality(j.lhs) * GetCardinality(j.rhs);
       },
       [this](const logical::Join& j) -> int64_t {
-          return GetCardinality(j.lhs) * GetCardinality(j.rhs);
+          auto lhs_c = GetCardinality(j.lhs);
+          auto rhs_c = GetCardinality(j.rhs);
+          auto out = static_cast<double>(lhs_c) * static_cast<double>(rhs_c)
+                   * JoinSelectivity(j.qual, lhs_c, rhs_c);
+          return std::max<int64_t>(1, static_cast<int64_t>(out));
       },
   }, op);
 }

@@ -44,6 +44,50 @@ TEST(OptimizerTest, JoinCommutativity) {
   ASSERT_THAT(Serialize(got), Eq("(NestedLoopJoin Inner (= (attr users id) (attr orders user_id)) (SeqScan orders) (SeqScan users))"));
 }
 
+TEST(OptimizerTest, MultiwayJoinOCR) {
+  std::stringstream s{
+      "SELECT orders.id, customers.id, regions.id FROM orders "
+      "JOIN customers ON orders.customer_id = customers.id "
+      "JOIN regions ON customers.region_id = regions.id;"};
+  Operator op = GetAST(s).value().op;
+  Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({
+      {"regions", 10},
+      {"customers", 500},
+      {"orders", 5000},
+  }));
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(
+      Serialize(got),
+      Eq("(PhysicalProjection (exprs (attr orders id) (attr customers id) (attr regions id))"
+         " (NestedLoopJoin Inner (= (attr customers region_id) (attr regions id))"
+         " (NestedLoopJoin Inner (= (attr orders customer_id) (attr customers id))"
+         " (SeqScan customers) (SeqScan orders)) (SeqScan regions)))"));
+}
+
+TEST(OptimizerTest, MultiwayJoinROC) {
+  std::stringstream s{
+      "SELECT orders.id, customers.id, regions.id FROM regions "
+      "JOIN customers ON customers.region_id = regions.id "
+      "JOIN orders ON orders.customer_id = customers.id;"};
+  Operator op = GetAST(s).value().op;
+  Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({
+      {"regions", 10},
+      {"customers", 500},
+      {"orders", 5000},
+  }));
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(
+      Serialize(got),
+      Eq("(PhysicalProjection (exprs (attr orders id) (attr customers id) (attr regions id))"
+         " (NestedLoopJoin Inner (= (attr orders customer_id) (attr customers id))"
+         " (NestedLoopJoin Inner (= (attr customers region_id) (attr regions id))"
+         " (SeqScan customers) (SeqScan regions)) (SeqScan orders)))"));
+}
+
 TEST(OptimizerTest, OrderBy) {
   std::stringstream s{"SELECT * FROM users ORDER BY users.id;"};
   auto parsed = GetAST(s).value();

@@ -60,6 +60,17 @@ utils::NotNull<LogicalExpr*> Memo::AddGroup(LogicalOperator root_operator) {
     return expr;
 }
 
+utils::NotNull<LogicalExpr*> Memo::AddLogicalExprToGroup(utils::NotNull<Group*> group,
+                                                         LogicalOperator root_operator) {
+    auto key = ToKey(root_operator);
+    if (auto g = GetGroup(key); g) {
+        return g;
+    }
+    auto expr = group->AddLogicalExpr(std::move(root_operator));
+    expr_index_[key] = expr;
+    return expr;
+}
+
 utils::NotNull<LogicalExpr*> Memo::Populate(const Operator& op) {
     return std::visit(utils::Overloaded{
         [this](const Table& t) {
