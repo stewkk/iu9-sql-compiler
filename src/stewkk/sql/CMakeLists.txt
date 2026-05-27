@@ -38,8 +38,13 @@ add_library(libsql
   logic/optimizer/rules.cpp
   logic/optimizer/rules_applier.cpp
   logic/optimizer/rule.cpp
+  logic/transformation_rules/predicate_utils.cpp
   logic/transformation_rules/join_commutativity.cpp
   logic/transformation_rules/join_associativity.cpp
+  logic/transformation_rules/filter_split.cpp
+  logic/transformation_rules/filter_merge.cpp
+  logic/transformation_rules/filter_pushdown_through_projection.cpp
+  logic/transformation_rules/filter_pushdown_through_join.cpp
   logic/implementation_rules/implement_table.cpp
   logic/implementation_rules/implement_filter.cpp
   logic/implementation_rules/implement_projection.cpp

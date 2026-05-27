@@ -483,6 +483,6 @@ utils::NotNull<Group*> Optimizer<NTransformation, NImplementation>::GetRootGroup
   return root_->group;
 }
 
-template class Optimizer<2, 6>;
+template class Optimizer<6, 6>;
 
 }  // namespace stewkk::sql
