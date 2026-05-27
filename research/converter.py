@@ -15,9 +15,7 @@ Expressions:
   (OP LHS RHS)   OP: = != > < >= <= and or + - * / % ^
   (not EXPR)
   (uminus EXPR)
-
-Known missing operators in the target format (raise NotImplementedError):
-  - IS NULL / IS NOT NULL  (MS SQL CompareOp "IS" / "IS NOT")
+  (isnull EXPR)
 """
 
 import xml.etree.ElementTree as ET
@@ -236,18 +234,26 @@ def _convert_scalar(scalar: ET.Element) -> str:
 
 def _convert_compare(compare: ET.Element) -> str:
     op_str = compare.get("CompareOp", "")
+    scalars = compare.findall(f"{NS}ScalarOperator")
 
     if op_str in ("IS", "IS NOT"):
-        raise NotImplementedError(
-            f"CompareOp={op_str!r} (IS NULL / IS NOT NULL) is not supported by the target plan format: "
-            "BinaryOp in the project has no kIsNull / kIsNotNull"
-        )
+        # MS SQL emits "lhs IS NULL" / "lhs IS NOT NULL" as a Compare where the
+        # rhs is a NULL constant. Map to the project's (isnull lhs) / (not (isnull lhs)).
+        if len(scalars) != 2:
+            raise ValueError(f"IS/IS NOT Compare has {len(scalars)} ScalarOperators, expected 2")
+        lhs = _convert_scalar(scalars[0])
+        rhs_const = scalars[1].find(f"{NS}Const")
+        if rhs_const is None or rhs_const.get("ConstValue", "").upper() not in ("NULL", "(NULL)"):
+            raise NotImplementedError(
+                f"CompareOp={op_str!r} with non-NULL rhs (IS DISTINCT FROM-like) is not supported"
+            )
+        isnull = f"(isnull {lhs})"
+        return f"(not {isnull})" if op_str == "IS NOT" else isnull
 
     op = _COMPARE_OPS.get(op_str)
     if op is None:
         raise NotImplementedError(f"unhandled CompareOp: {op_str!r}")
 
-    scalars = compare.findall(f"{NS}ScalarOperator")
     if len(scalars) != 2:
         raise ValueError(f"Compare has {len(scalars)} ScalarOperator children, expected 2")
     return f"({op} {_convert_scalar(scalars[0])} {_convert_scalar(scalars[1])})"

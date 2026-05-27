@@ -25,6 +25,7 @@
 #include <stewkk/sql/logic/optimizer/optimizer.hpp>
 #include <stewkk/sql/logic/optimizer/properties/property_set.hpp>
 #include <stewkk/sql/logic/optimizer/properties/sort_property.hpp>
+#include <stewkk/sql/logic/optimizer/reachability.hpp>
 #include <stewkk/sql/logic/optimizer/rules.hpp>
 #include <stewkk/sql/logic/optimizer/schema_catalog.hpp>
 #include <stewkk/sql/logic/parser/parser.hpp>
@@ -41,12 +42,14 @@ constexpr int kUsage = 64;
 constexpr int kParseError = 1;
 constexpr int kOptimizerError = 2;
 constexpr int kRuntimeError = 3;
+constexpr int kNotReachable = 4;
 
 struct Args {
   std::string data_dir;
   bool print_plan = false;
   bool print_ast = false;
   bool jit = false;
+  std::string check_reachable_path;
 };
 
 Args ParseArgs(int argc, char** argv) {
@@ -65,13 +68,20 @@ Args ParseArgs(int argc, char** argv) {
       args.print_ast = true;
     } else if (a == "--jit") {
       args.jit = true;
+    } else if (a == "--check-reachable") {
+      if (i + 1 >= argc) {
+        std::cerr << "--check-reachable requires a plan file path\n";
+        std::exit(kUsage);
+      }
+      args.check_reachable_path = argv[++i];
     } else {
       std::cerr << "unknown argument: " << a << "\n";
       std::exit(kUsage);
     }
   }
-  if (args.data_dir.empty()) {
-    std::cerr << "usage: sql --data-dir <csv_dir> [--print-plan] [--jit] < query.sql\n";
+  if (args.data_dir.empty() && args.check_reachable_path.empty()) {
+    std::cerr << "usage: sql --data-dir <csv_dir> [--print-plan] [--jit] < query.sql\n"
+              << "       sql --check-reachable <plan_file> < query.sql\n";
     std::exit(kUsage);
   }
   return args;
@@ -211,6 +221,36 @@ int main(int argc, char** argv) {
   std::ostringstream sql_buf;
   sql_buf << std::cin.rdbuf();
   std::stringstream sql_stream{sql_buf.str()};
+
+  if (!args.check_reachable_path.empty()) {
+    std::ifstream plan_in{args.check_reachable_path};
+    if (!plan_in) {
+      std::cerr << "cannot open plan file: " << args.check_reachable_path << "\n";
+      return kUsage;
+    }
+    std::ostringstream plan_buf;
+    plan_buf << plan_in.rdbuf();
+    PhysicalPlanNode target;
+    try {
+      target = Deserialize(plan_buf.str());
+    } catch (const std::exception& e) {
+      std::cerr << "plan parse error: " << e.what() << "\n";
+      return kParseError;
+    }
+    MatchResult mr;
+    try {
+      mr = IsPlanReachable(sql_stream, target);
+    } catch (const std::exception& e) {
+      std::cerr << "reachability error: " << e.what() << "\n";
+      return kOptimizerError;
+    }
+    if (mr.reachable) {
+      std::cout << "REACHABLE\n";
+      return kOk;
+    }
+    std::cout << "NOT REACHABLE: " << mr.mismatch << "\n";
+    return kNotReachable;
+  }
 
   auto parsed_result = GetAST(sql_stream);
   if (!parsed_result.has_value()) {

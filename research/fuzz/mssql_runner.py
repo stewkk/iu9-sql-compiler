@@ -124,6 +124,22 @@ class MsSqlRunner:
         except pymssql.Error as e:
             return RunResult(columns=[], rows=[], error=str(e))
 
+    def get_plan(self, query: str) -> str:
+        """Return the ShowPlanXML for `query`. Use OPTION (RECOMPILE) to inline literals."""
+        if self._conn is None:
+            self._conn = self._connect(self._database)
+        cur = self._conn.cursor()
+        cur.execute("SET STATISTICS XML ON")
+        try:
+            cur.execute(query)
+            while cur.nextset():
+                row = cur.fetchone()
+                if row and isinstance(row[0], str) and row[0].startswith("<ShowPlanXML"):
+                    return row[0]
+            raise RuntimeError("No execution plan returned by SQL Server")
+        finally:
+            cur.execute("SET STATISTICS XML OFF")
+
     def close(self) -> None:
         if self._conn is not None:
             self._conn.close()
