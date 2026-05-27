@@ -68,6 +68,8 @@ std::string ToString(UnaryOp op) {
         return "not";
       case UnaryOp::kMinus:
         return "-";
+      case UnaryOp::kIsNull:
+        return "isnull";
     }
 }
 

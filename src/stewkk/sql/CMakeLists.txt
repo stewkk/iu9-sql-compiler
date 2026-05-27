@@ -81,6 +81,7 @@ target_link_libraries(libsql PRIVATE
   Boost::asio
   Boost::thread
   Boost::filesystem
+  Boost::scope
 )
 
 add_executable(sql
@@ -95,4 +96,7 @@ set_target_properties(sql PROPERTIES
 target_compile_options(sql PRIVATE ${BASE_COMPILE_FLAGS})
 target_link_libraries(sql PRIVATE
   libsql
+  Boost::asio
+  Boost::thread
+  Boost::filesystem
 )

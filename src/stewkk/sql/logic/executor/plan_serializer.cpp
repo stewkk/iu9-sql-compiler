@@ -48,6 +48,7 @@ std::string SerializeUnaryOp(UnaryOp op) {
     switch (op) {
         case UnaryOp::kNot:   return "not";
         case UnaryOp::kMinus: return "uminus";
+        case UnaryOp::kIsNull: return "isnull";
     }
 }
 
@@ -203,7 +204,7 @@ const std::unordered_map<std::string, BinaryOp> kBinaryOps = {
 };
 
 const std::unordered_map<std::string, UnaryOp> kUnaryOps = {
-    {"not", UnaryOp::kNot}, {"uminus", UnaryOp::kMinus},
+    {"not", UnaryOp::kNot}, {"uminus", UnaryOp::kMinus}, {"isnull", UnaryOp::kIsNull},
 };
 
 const std::unordered_map<std::string, JoinType> kJoinTypes = {

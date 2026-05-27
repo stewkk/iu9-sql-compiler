@@ -49,6 +49,7 @@ std::string ToString(BinaryOp binop);
 enum class UnaryOp {
     kNot,
     kMinus,
+    kIsNull,
 };
 
 std::string ToString(UnaryOp op);

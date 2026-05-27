@@ -9,6 +9,11 @@ bool JoinCommutativity::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
 LogicalOperator JoinCommutativity::ApplyImpl(utils::NotNull<LogicalExpr*> expr, Memo&) {
   auto join = std::get<logical::Join>(expr->root_operator);
   std::swap(join.lhs, join.rhs);
+  if (join.type == JoinType::kLeft) {
+    join.type = JoinType::kRight;
+  } else if (join.type == JoinType::kRight) {
+    join.type = JoinType::kLeft;
+  }
   return join;
 }
 

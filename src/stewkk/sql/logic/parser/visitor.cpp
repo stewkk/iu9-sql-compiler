@@ -188,40 +188,27 @@ std::any Visitor::visitFrom_list(codegen::PostgreSQLParser::From_listContext *ct
   return result;
 }
 
-std::any Visitor::visitTable_ref(codegen::PostgreSQLParser::Table_refContext *ctx) {
+namespace {
+
+using TableRefCtx = codegen::PostgreSQLParser::Table_refContext;
+using ChildIt = std::vector<antlr4::tree::ParseTree*>::const_iterator;
+
+Operator BuildTableRef(Visitor* v, TableRefCtx* ctx);
+
+// Returns the table_ref's atom (no joins) and an iterator pointing to its first
+// post-atom child. The grammar's `(... join ...)*` tail is greedy on the rhs
+// table_ref, so the caller is responsible for flattening that chain instead of
+// visiting it whole.
+std::pair<Operator, ChildIt> ExtractAtom(Visitor* v, TableRefCtx* ctx) {
   if (ctx->xmltable()) {
     throw Error{ErrorType::kQueryNotSupported, "xmltable is not supported"};
   }
   if (ctx->func_table()) {
-    // NOTE: may want to support
     throw Error{ErrorType::kQueryNotSupported, "func_table is not supported"};
   }
   if (ctx->LATERAL_P()) {
     throw Error{ErrorType::kQueryNotSupported, "LATERAL clause is not supported"};
   }
-
-  auto children = ctx->children;
-  auto children_it = children.begin();
-
-  Operator res;
-  if (ctx->relation_expr()) {
-    auto table = std::any_cast<std::string>(visit(ctx->relation_expr()));
-    children_it++;
-    res = Table{std::move(table)};
-  }
-  if (ctx->select_with_parens()) {
-    res = std::any_cast<Operator>(visit(ctx->select_with_parens()));
-    children_it++;
-    children_it++;
-  }
-  auto table_refs = ctx->table_ref();
-  auto table_ref_it = table_refs.begin();
-  if (ctx->OPEN_PAREN()) {
-    res = std::any_cast<Operator>(visit(*table_ref_it));
-    children_it++;
-    table_ref_it++;
-  }
-
   if (ctx->alias_clause()) {
     throw Error{ErrorType::kQueryNotSupported, "alias_clause is not supported"};
   }
@@ -229,45 +216,74 @@ std::any Visitor::visitTable_ref(codegen::PostgreSQLParser::Table_refContext *ct
     throw Error{ErrorType::kQueryNotSupported, "tablesample_clause is not supported"};
   }
 
-  for (; children_it != children.end(); children_it++) {
-    auto text = (*children_it)->getText();
+  const auto& children = ctx->children;
+  auto it = children.cbegin();
+  Operator res;
+  if (ctx->relation_expr()) {
+    res = Table{std::any_cast<std::string>(v->visit(ctx->relation_expr()))};
+    ++it;
+  } else if (ctx->select_with_parens()) {
+    res = std::any_cast<Operator>(v->visit(ctx->select_with_parens()));
+    ++it;
+  } else if (ctx->OPEN_PAREN()) {
+    res = BuildTableRef(v, ctx->table_ref(0));
+    it += 3;
+  }
+  return {std::move(res), it};
+}
+
+// Walks the join tail of `ctx` starting at `it`, descending into each rhs
+// table_ref so that nested greedy joins become left-associative.
+Operator ContinueChain(Visitor* v, Operator lhs, TableRefCtx* ctx, ChildIt it) {
+  const auto end = ctx->children.cend();
+  while (it != end) {
+    const auto text = (*it)->getText();
     if (text == "CROSS") {
-      // CROSS JOIN table_ref
-      children_it += 2;
-      auto rhs = std::any_cast<Operator>(visit(*children_it));
-      res = CrossJoin{
-          std::make_shared<Operator>(std::move(res)),
-          std::make_shared<Operator>(std::move(rhs)),
+      it += 2;
+      auto* rhs_ctx = dynamic_cast<TableRefCtx*>(*it);
+      ++it;
+      auto [rhs_atom, rhs_post] = ExtractAtom(v, rhs_ctx);
+      lhs = CrossJoin{
+          std::make_shared<Operator>(std::move(lhs)),
+          std::make_shared<Operator>(std::move(rhs_atom)),
       };
+      lhs = ContinueChain(v, std::move(lhs), rhs_ctx, rhs_post);
     } else if (text == "NATURAL") {
       throw Error{ErrorType::kQueryNotSupported, "NATURAL clause is not supported"};
     } else {
-      Operator rhs;
-      auto join_type = JoinType::kInner;
-      Expression qual_expression;
+      JoinType jt = JoinType::kInner;
       if (text == "JOIN") {
-        // JOIN table_ref join_qual
-        children_it++;
-        rhs = std::any_cast<Operator>(visit(*children_it));
-        children_it++;
-        qual_expression = std::any_cast<Expression>(visit(*children_it));
+        ++it;
       } else {
-        // join_type JOIN table_ref join_qual
-        join_type = std::any_cast<JoinType>(visit(*children_it));
-        children_it += 2;
-        rhs = std::any_cast<Operator>(visit(*children_it));
-        children_it++;
-        qual_expression = std::any_cast<Expression>(visit(*children_it));
+        jt = std::any_cast<JoinType>(v->visit(*it));
+        it += 2;
       }
-      res = Join{
-          join_type,
-          std::move(qual_expression),
-          std::make_shared<Operator>(std::move(res)),
-          std::make_shared<Operator>(std::move(rhs)),
+      auto* rhs_ctx = dynamic_cast<TableRefCtx*>(*it);
+      ++it;
+      auto qual = std::any_cast<Expression>(v->visit(*it));
+      ++it;
+      auto [rhs_atom, rhs_post] = ExtractAtom(v, rhs_ctx);
+      lhs = Join{
+          jt,
+          std::move(qual),
+          std::make_shared<Operator>(std::move(lhs)),
+          std::make_shared<Operator>(std::move(rhs_atom)),
       };
+      lhs = ContinueChain(v, std::move(lhs), rhs_ctx, rhs_post);
     }
   }
-  return res;
+  return lhs;
+}
+
+Operator BuildTableRef(Visitor* v, TableRefCtx* ctx) {
+  auto [atom, it] = ExtractAtom(v, ctx);
+  return ContinueChain(v, std::move(atom), ctx, it);
+}
+
+}  // namespace
+
+std::any Visitor::visitTable_ref(codegen::PostgreSQLParser::Table_refContext *ctx) {
+  return Operator{BuildTableRef(this, ctx)};
 }
 
 std::any Visitor::visitJoin_type(codegen::PostgreSQLParser::Join_typeContext *ctx) {
@@ -476,10 +492,10 @@ std::any Visitor::visitA_expr_unary_not(codegen::PostgreSQLParser::A_expr_unary_
 std::any Visitor::visitA_expr_isnull(codegen::PostgreSQLParser::A_expr_isnullContext *ctx) {
   auto result = std::any_cast<Expression>(visit(ctx->a_expr_is_not()));
   if (ctx->ISNULL()) {
-    result = BinaryExpression{std::make_shared<Expression>(std::move(result)), BinaryOp::kEq, std::make_shared<Expression>(Literal::kNull)};
+    result = UnaryExpression{UnaryOp::kIsNull, std::make_shared<Expression>(std::move(result))};
   }
   if (ctx->NOTNULL()) {
-    result = BinaryExpression{std::make_shared<Expression>(std::move(result)), BinaryOp::kEq, std::make_shared<Expression>(Literal::kNull)};
+    result = UnaryExpression{UnaryOp::kIsNull, std::make_shared<Expression>(std::move(result))};
     result = UnaryExpression{UnaryOp::kNot, std::make_shared<Expression>(std::move(result))};
   }
   return result;
@@ -492,7 +508,7 @@ std::any Visitor::visitA_expr_is_not(codegen::PostgreSQLParser::A_expr_is_notCon
   }
 
   if (ctx->NULL_P()) {
-    result = BinaryExpression{std::make_shared<Expression>(std::move(result)), BinaryOp::kEq, std::make_shared<Expression>(Literal::kNull)};
+    result = UnaryExpression{UnaryOp::kIsNull, std::make_shared<Expression>(std::move(result))};
   } else if (ctx->TRUE_P()) {
     result = BinaryExpression{std::make_shared<Expression>(std::move(result)), BinaryOp::kEq, std::make_shared<Expression>(Literal::kTrue)};
   } else if (ctx->FALSE_P()) {
@@ -526,11 +542,20 @@ std::any Visitor::visitA_expr_like(codegen::PostgreSQLParser::A_expr_likeContext
 
 std::any Visitor::visitA_expr_qual_op(codegen::PostgreSQLParser::A_expr_qual_opContext *ctx) {
   const auto& exprs = ctx->a_expr_unary_qualop();
-  if (exprs.size() > 1) {
-    // NOTE: may want to implement
-    throw Error{ErrorType::kQueryNotSupported, "qual_op is not supported"};
+  if (exprs.size() == 1) {
+    return visit(exprs.front());
   }
-  return visit(exprs.front());
+  // Postgres allows != as an alias for <>, which the lexer produces as Operator (qual_op).
+  if (exprs.size() == 2 && ctx->qual_op(0)->getText() == "!=") {
+    auto lhs = std::any_cast<Expression>(visit(exprs[0]));
+    auto rhs = std::any_cast<Expression>(visit(exprs[1]));
+    return Expression{BinaryExpression{
+        std::make_shared<Expression>(std::move(lhs)),
+        BinaryOp::kNotEq,
+        std::make_shared<Expression>(std::move(rhs)),
+    }};
+  }
+  throw Error{ErrorType::kQueryNotSupported, "qual_op is not supported"};
 }
 
 std::any Visitor::visitA_expr_unary_qualop(codegen::PostgreSQLParser::A_expr_unary_qualopContext *ctx) {
@@ -661,6 +686,9 @@ std::any Visitor::visitC_expr_expr(codegen::PostgreSQLParser::C_expr_exprContext
   }
   if (ctx->aexprconst()) {
     return visit(ctx->aexprconst());
+  }
+  if (ctx->a_expr_in_parens != nullptr) {
+    return visit(ctx->a_expr_in_parens);
   }
   // NOTE: may want to support
   throw Error{ErrorType::kQueryNotSupported, "c_expr is not fully supported"};

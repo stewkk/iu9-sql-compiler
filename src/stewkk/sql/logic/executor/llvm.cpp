@@ -204,16 +204,23 @@ llvm::Function* JITCompiler::GenerateIR(
               {
                 auto* trunc_lhs = builder.CreateTrunc(value_lhs, builder.getInt1Ty(), "i64_to_i1_trunc");
                 auto* trunc_rhs = builder.CreateTrunc(value_rhs, builder.getInt1Ty(), "i64_to_i1_trunc");
-                res_value = builder.CreateLogicalOr(trunc_lhs, trunc_rhs);
-                res_value = builder.CreateZExt(res_value, builder.getInt64Ty(), "i1_to_i64_zext");
+                auto* lhs_true = builder.CreateAnd(builder.CreateNot(is_null_lhs), trunc_lhs);
+                auto* rhs_true = builder.CreateAnd(builder.CreateNot(is_null_rhs), trunc_rhs);
+                auto* has_true = builder.CreateOr(lhs_true, rhs_true);
+                is_null = builder.CreateAnd(is_null, builder.CreateNot(has_true));
+                res_value = builder.CreateZExt(has_true, builder.getInt64Ty(), "i1_to_i64_zext");
                 break;
               }
             case BinaryOp::kAnd:
               {
                 auto* trunc_lhs = builder.CreateTrunc(value_lhs, builder.getInt1Ty(), "i64_to_i1_trunc");
                 auto* trunc_rhs = builder.CreateTrunc(value_rhs, builder.getInt1Ty(), "i64_to_i1_trunc");
-                res_value = builder.CreateLogicalAnd(trunc_lhs, trunc_rhs);
-                res_value = builder.CreateZExt(res_value, builder.getInt64Ty(), "i1_to_i64_zext");
+                auto* lhs_false = builder.CreateAnd(builder.CreateNot(is_null_lhs), builder.CreateNot(trunc_lhs));
+                auto* rhs_false = builder.CreateAnd(builder.CreateNot(is_null_rhs), builder.CreateNot(trunc_rhs));
+                auto* has_false = builder.CreateOr(lhs_false, rhs_false);
+                is_null = builder.CreateAnd(is_null, builder.CreateNot(has_false));
+                auto* both_true = builder.CreateNot(has_false);
+                res_value = builder.CreateZExt(both_true, builder.getInt64Ty(), "i1_to_i64_zext");
                 break;
               }
             case BinaryOp::kPlus:
@@ -267,15 +274,24 @@ llvm::Function* JITCompiler::GenerateIR(
               case UnaryOp::kMinus: {
                 auto is_null = CheckNull(child);
                 auto value = LoadValue(child);
-                
+
                 auto* negated = builder.CreateNeg(value);
-                
+
                 auto* select = builder.CreateSelect(
                     is_null,
                     llvm::ConstantStruct::get(static_cast<llvm::StructType*>(value_type),
                                               {builder.getInt8(1), builder.getInt64(0)}),
                     negated);
                 return select;
+              }
+              case UnaryOp::kIsNull: {
+                auto* is_null = CheckNull(child);
+                auto* res_value
+                    = builder.CreateZExt(is_null, builder.getInt64Ty(), "isnull_value");
+                llvm::Value* result = llvm::UndefValue::get(value_type);
+                result = builder.CreateInsertValue(result, builder.getInt8(0), {0});
+                result = builder.CreateInsertValue(result, res_value, {1});
+                return result;
               }
           }
       }

@@ -9,6 +9,7 @@
 #include <boost/asio/detached.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/asio/this_coro.hpp>
+#include <boost/scope/scope_fail.hpp>
 
 #include <stewkk/sql/logic/executor/buffer_size.hpp>
 #include <stewkk/sql/utils/log.hpp>
@@ -66,6 +67,9 @@ Type GetExpressionType(const Expression& expr, const AttributesInfo& available_a
           throw std::logic_error{"types mismatch"};
         }
         return Type::kInt;
+      }
+      if (unop.op == UnaryOp::kIsNull) {
+        return Type::kBool;
       }
       if (child_type != Type::kBool) {
         throw std::logic_error{"types mismatch"};
@@ -203,10 +207,20 @@ Value CalcExpression(const Tuple& source, const AttributesInfo& source_attrs, co
             return ApplyBooleanOperator<std::equal_to<void>>(std::move(lhs), std::move(rhs));
           }
           return ApplyIntegersOperator<std::equal_to<void>, bool>(std::move(lhs), std::move(rhs));
-        case BinaryOp::kOr:
-          return ApplyBooleanOperator<std::logical_or<void>>(std::move(lhs), std::move(rhs));
-        case BinaryOp::kAnd:
-          return ApplyBooleanOperator<std::logical_and<void>>(std::move(lhs), std::move(rhs));
+        case BinaryOp::kOr: {
+          bool lhs_true = !lhs.is_null && lhs.value.bool_value;
+          bool rhs_true = !rhs.is_null && rhs.value.bool_value;
+          if (lhs_true || rhs_true) return Value{false, true};
+          if (lhs.is_null || rhs.is_null) return Value{true};
+          return Value{false, false};
+        }
+        case BinaryOp::kAnd: {
+          bool lhs_false = !lhs.is_null && !lhs.value.bool_value;
+          bool rhs_false = !rhs.is_null && !rhs.value.bool_value;
+          if (lhs_false || rhs_false) return Value{false, false};
+          if (lhs.is_null || rhs.is_null) return Value{true};
+          return Value{false, true};
+        }
         case BinaryOp::kPlus:
           return ApplyIntegersOperator<std::plus<int64_t>, int64_t>(std::move(lhs), std::move(rhs));
         case BinaryOp::kMinus:
@@ -238,6 +252,8 @@ Value CalcExpression(const Tuple& source, const AttributesInfo& source_attrs, co
             return Value{true};
           }
           return Value{false, -child.value.int_value};
+        case UnaryOp::kIsNull:
+          return Value{false, child.is_null};
       }
     }
     Value operator()(const Attribute& expr) {
@@ -394,20 +410,34 @@ boost::asio::awaitable<Result<Relation>> Executor<ExpressionExecutor>::Execute(c
   auto [attr_chan, tuples_chan] = co_await GetChannels();
   auto task = SpawnExecutor(exec, op, attr_chan, tuples_chan);
 
-  auto attrs = co_await attr_chan.async_receive(boost::asio::use_awaitable);
-  Log("Received attrs in root");
-
+  // If the child throws, its scope_fail closes both channels, which wakes
+  // our async_receive with channel_closed. We then await the task to surface
+  // the child's real exception instead of the channel_closed wrapper.
+  std::exception_ptr eptr;
+  AttributesInfo attrs;
   Tuples result;
-  for (;;) {
-    auto buf = co_await ReceiveTuples(tuples_chan);
-    if (buf.empty()) {
-      break;
+  try {
+    attrs = co_await attr_chan.async_receive(boost::asio::use_awaitable);
+    Log("Received attrs in root");
+    for (;;) {
+      auto buf = co_await ReceiveTuples(tuples_chan);
+      if (buf.empty()) {
+        break;
+      }
+      Log("Received {} tuples in root", buf.size());
+      std::move(buf.begin(), buf.end(), std::back_inserter(result));
     }
-    Log("Received {} tuples in root", buf.size());
-    std::move(buf.begin(), buf.end(), std::back_inserter(result));
+  } catch (...) {
+    eptr = std::current_exception();
   }
-
-  co_await task(boost::asio::use_awaitable);
+  try {
+    co_await task(boost::asio::use_awaitable);
+  } catch (...) {
+    eptr = std::current_exception();
+  }
+  if (eptr) {
+    std::rethrow_exception(eptr);
+  }
   Log("Total {} tuples in root", result.size());
   co_return Ok(Relation{std::move(attrs), std::move(result)});
 }
@@ -451,6 +481,8 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
     }
     // FIXME: that's in-memory sort
     boost::asio::awaitable<void> operator()(const PhysicalSort& sort) {
+      auto close_on_fail = boost::scope::make_scope_fail(
+          [this] { attr_chan.close(); tuples_chan.close(); });
       auto exec = co_await boost::asio::this_coro::executor;
       auto [in_attrs_chan, in_tuples_chan] = co_await GetChannels();
       auto task = executor.SpawnExecutor(exec, *sort.source, in_attrs_chan, in_tuples_chan);
@@ -514,6 +546,8 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteProjection(con
                                                          AttributesInfoChannel& out_attr_chan,
                                                          TuplesChannel& out_tuples_chan) {
   Log("Executing projection");
+  auto close_on_fail = boost::scope::make_scope_fail(
+      [&] { out_attr_chan.close(); out_tuples_chan.close(); });
   auto exec = co_await boost::asio::this_coro::executor;
   auto [in_attrs_chan, in_tuples_chan] = co_await GetChannels();
   auto task = SpawnExecutor(exec, *proj.source, in_attrs_chan, in_tuples_chan);
@@ -551,6 +585,8 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteFilter(const P
                                                      AttributesInfoChannel& out_attr_chan,
                                                      TuplesChannel& out_tuples_chan) {
   Log("Executing filter");
+  auto close_on_fail = boost::scope::make_scope_fail(
+      [&] { out_attr_chan.close(); out_tuples_chan.close(); });
   auto exec = co_await boost::asio::this_coro::executor;
   auto [in_attrs_chan, in_tuples_chan] = co_await GetChannels();
   auto task = SpawnExecutor(exec, *filter.source, in_attrs_chan, in_tuples_chan);
@@ -605,6 +641,8 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteCrossJoin(cons
                                                         AttributesInfoChannel& attr_chan,
                                                         TuplesChannel& tuples_chan) {
   Log("Executing cross join");
+  auto close_on_fail = boost::scope::make_scope_fail(
+      [&] { attr_chan.close(); tuples_chan.close(); });
   auto exec = co_await boost::asio::this_coro::executor;
   auto [lhs_attrs_chan, lhs_tuples_chan] = co_await GetChannels();
   auto lhs_task = SpawnExecutor(exec, *cross_join.lhs, lhs_attrs_chan, lhs_tuples_chan);
@@ -659,9 +697,8 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteJoin(const Nes
                                                    AttributesInfoChannel& attr_chan,
                                                    TuplesChannel& tuples_chan) {
   Log("Executing join");
-  if (join.type == JoinType::kFull) {
-    throw std::logic_error{"Full joins are not supported by executor"};
-  }
+  auto close_on_fail = boost::scope::make_scope_fail(
+      [&] { attr_chan.close(); tuples_chan.close(); });
   if (join.type == JoinType::kLeft) {
     std::swap(*join.lhs, *join.rhs);
   }
@@ -679,6 +716,81 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteJoin(const Nes
   Log("Join sent attrs");
 
   auto qual_executor = co_await expression_executor_.GetExpressionExecutor(join.qual, attrs);
+
+  if (join.type == JoinType::kFull) {
+    std::vector<Tuple> lhs_all;
+    {
+      auto full_reader = co_await MaterializeChannel(lhs_tuples_chan);
+      full_reader.Rewind();
+      for (;;) {
+        auto buf = full_reader.Read();
+        if (buf.empty()) break;
+        std::move(buf.begin(), buf.end(), std::back_inserter(lhs_all));
+      }
+    }
+    std::vector<bool> lhs_matched(lhs_all.size(), false);
+
+    for (;;) {
+      auto buf_rhs = co_await ReceiveTuples(rhs_tuples_chan);
+      if (buf_rhs.empty()) break;
+      Log("Received {} tuples in full join as rhs", buf_rhs.size());
+
+      for (const auto& tuple_rhs : buf_rhs) {
+        bool rhs_matched = false;
+        Tuples buf_res;
+        buf_res.reserve(kBufSize);
+        for (size_t i = 0; i < lhs_all.size(); ++i) {
+          auto joined = ConcatTuples(lhs_all[i], tuple_rhs);
+          auto qual_result = qual_executor(joined, attrs);
+          if (!qual_result.is_null && qual_result.value.bool_value) {
+            buf_res.push_back(std::move(joined));
+            lhs_matched[i] = true;
+            rhs_matched = true;
+            if (buf_res.size() == kBufSize) {
+              co_await tuples_chan.async_send(boost::system::error_code{}, std::move(buf_res),
+                                              boost::asio::use_awaitable);
+              buf_res.clear();
+              buf_res.reserve(kBufSize);
+            }
+          }
+        }
+        if (!rhs_matched) {
+          auto rhs_size = tuple_rhs.size();
+          auto lhs_size = attrs.size() - rhs_size;
+          buf_res.push_back(ConcatTuples(Tuple(lhs_size, Value{true}), tuple_rhs));
+        }
+        if (!buf_res.empty()) {
+          co_await tuples_chan.async_send(boost::system::error_code{}, std::move(buf_res),
+                                          boost::asio::use_awaitable);
+        }
+      }
+    }
+
+    Tuples buf_unmatched;
+    buf_unmatched.reserve(kBufSize);
+    for (size_t i = 0; i < lhs_all.size(); ++i) {
+      if (!lhs_matched[i]) {
+        auto lhs_size = lhs_all[i].size();
+        auto rhs_size = attrs.size() - lhs_size;
+        buf_unmatched.push_back(ConcatTuples(lhs_all[i], Tuple(rhs_size, Value{true})));
+        if (buf_unmatched.size() == kBufSize) {
+          co_await tuples_chan.async_send(boost::system::error_code{}, std::move(buf_unmatched),
+                                          boost::asio::use_awaitable);
+          buf_unmatched.clear();
+          buf_unmatched.reserve(kBufSize);
+        }
+      }
+    }
+    if (!buf_unmatched.empty()) {
+      co_await tuples_chan.async_send(boost::system::error_code{}, std::move(buf_unmatched),
+                                      boost::asio::use_awaitable);
+    }
+
+    co_await lhs_task(boost::asio::use_awaitable);
+    co_await rhs_task(boost::asio::use_awaitable);
+    tuples_chan.close();
+    co_return;
+  }
 
   auto reader = co_await MaterializeChannel(lhs_tuples_chan);
   for (;;) {
@@ -767,6 +879,8 @@ template <typename ExpressionExecutor>
 boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashJoin(
     const HashJoin& join, AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan) {
   Log("Executing hash join");
+  auto close_on_fail = boost::scope::make_scope_fail(
+      [&] { attr_chan.close(); tuples_chan.close(); });
   if (join.type != JoinType::kInner) {
     throw std::logic_error{"HashJoin executor supports only Inner joins"};
   }

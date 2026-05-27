@@ -9,6 +9,6 @@ FetchContent_Declare(
   OVERRIDE_FIND_PACKAGE
 )
 
-set(BOOST_INCLUDE_LIBRARIES asio thread filesystem)
+set(BOOST_INCLUDE_LIBRARIES asio thread filesystem scope)
 
 FetchContent_MakeAvailable(Boost)
