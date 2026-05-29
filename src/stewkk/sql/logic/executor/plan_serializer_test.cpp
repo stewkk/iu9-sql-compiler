@@ -20,6 +20,12 @@ TEST(PlanSerializerTest, SeqScan) {
     EXPECT_THAT(Serialize(plan), Eq("(SeqScan users)"));
 }
 
+TEST(PlanSerializerTest, SeqScanAlias) {
+    PhysicalPlanNode plan = SeqScan{"customer", "c"};
+    EXPECT_THAT(RoundTrip(plan), Eq(plan));
+    EXPECT_THAT(Serialize(plan), Eq("(SeqScan customer c)"));
+}
+
 TEST(PlanSerializerTest, PhysicalFilter) {
     PhysicalPlanNode plan = PhysicalFilter{
         std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
@@ -88,6 +94,15 @@ TEST(PlanSerializerTest, ExprIntConst) {
         IntConst{-42},
     };
     EXPECT_THAT(RoundTrip(plan), Eq(plan));
+}
+
+TEST(PlanSerializerTest, ExprStringConst) {
+    PhysicalPlanNode plan = PhysicalFilter{
+        std::make_shared<PhysicalPlanNode>(SeqScan{"t"}),
+        StringConst{"Bob's Market \"North\""},
+    };
+    EXPECT_THAT(RoundTrip(plan), Eq(plan));
+    EXPECT_THAT(Serialize(plan), Eq("(PhysicalFilter (str \"Bob's Market \\\"North\\\"\") (SeqScan t))"));
 }
 
 TEST(PlanSerializerTest, ExprLiterals) {

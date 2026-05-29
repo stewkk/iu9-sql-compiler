@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string>
+#include <optional>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -25,9 +27,12 @@ using PhysicalPlanNode = std::variant<SeqScan, PhysicalProjection, PhysicalFilte
 
 struct SeqScan {
   std::string table;
+  std::optional<std::string> alias;
 
   bool operator==(const SeqScan&) const = default;
 };
+
+std::string_view OutputTable(const SeqScan& scan);
 
 struct PhysicalProjection {
   std::shared_ptr<PhysicalPlanNode> source;

@@ -72,6 +72,53 @@ TEST(ParserTest, SelectWithWhereClause) {
                                   std::make_shared<Operator>(Table{"users"})})}));
 }
 
+TEST(ParserTest, SelectWithTableAlias) {
+  std::stringstream s{"SELECT u.id FROM users u WHERE u.age > 18;"};
+
+  Operator got = GetAST(s).value().op;
+
+  ASSERT_THAT(got, VariantWith<Projection>(Projection{
+                       std::vector<Expression>{Attribute{"u", "id"}},
+                       std::make_shared<Operator>(
+                           Filter{Expression{BinaryExpression{
+                                      std::make_shared<Expression>(Attribute{"u", "age"}),
+                                      BinaryOp::kGt, std::make_shared<Expression>(IntConst{18})}},
+                                  std::make_shared<Operator>(Table{"users", "u"})})}));
+}
+
+TEST(ParserTest, SelectWithTableAsAlias) {
+  std::stringstream s{"SELECT u.id FROM users AS u;"};
+
+  Operator got = GetAST(s).value().op;
+
+  ASSERT_THAT(got, VariantWith<Projection>(Projection{
+                       std::vector<Expression>{Attribute{"u", "id"}},
+                       std::make_shared<Operator>(Table{"users", "u"})}));
+}
+
+TEST(ParserTest, AliasColumnListRejected) {
+  std::stringstream s{"SELECT u.id FROM users AS u(id);"};
+
+  auto got = GetAST(s).error();
+
+  ASSERT_THAT(got.Wraps(ErrorType::kQueryNotSupported), IsTrue());
+}
+
+TEST(ParserTest, SelectWithStringLiteral) {
+  std::stringstream s{"SELECT users.id FROM users WHERE users.name = 'Bob''s Market';"};
+
+  Operator got = GetAST(s).value().op;
+
+  ASSERT_THAT(got, VariantWith<Projection>(Projection{
+                       std::vector<Expression>{Attribute{"users", "id"}},
+                       std::make_shared<Operator>(
+                           Filter{Expression{BinaryExpression{
+                                      std::make_shared<Expression>(Attribute{"users", "name"}),
+                                      BinaryOp::kEq,
+                                      std::make_shared<Expression>(StringConst{"Bob's Market"})}},
+                                  std::make_shared<Operator>(Table{"users"})})}));
+}
+
 TEST(ParserTest, GetDotRepresentation) {
   std::stringstream s{"SELECT users.id FROM users WHERE users.age > 18;"};
   Operator op = GetAST(s).value().op;

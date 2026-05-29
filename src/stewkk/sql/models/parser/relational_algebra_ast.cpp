@@ -2,6 +2,10 @@
 
 namespace stewkk::sql {
 
+std::string_view VisibleName(const Table& table) {
+  return table.alias ? std::string_view{*table.alias} : std::string_view{table.name};
+}
+
 bool Projection::operator==(const Projection& other) const {
   return expressions == other.expressions && *source == *other.source;
 }

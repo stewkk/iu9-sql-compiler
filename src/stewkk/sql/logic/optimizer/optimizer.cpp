@@ -400,7 +400,7 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
   return std::visit(
       utils::Overloaded{
           [](const physical::SeqScan& op) -> PhysicalPlanNode {
-            return SeqScan{.table = op.table};
+            return SeqScan{.table = op.table, .alias = op.alias};
           },
           [this, best_expr_nn, required](const physical::Projection& op) -> PhysicalPlanNode {
             return PhysicalProjection{

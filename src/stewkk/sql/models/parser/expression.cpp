@@ -84,6 +84,17 @@ std::string ToString(const Expression& expr) {
         std::string operator()(const IntConst& expr) {
           return std::to_string(expr);
         }
+        std::string operator()(const StringConst& expr) {
+          std::string escaped;
+          escaped.reserve(expr.size() + 2);
+          escaped.push_back('\'');
+          for (char c : expr) {
+            if (c == '\'') escaped += "''";
+            else escaped.push_back(c);
+          }
+          escaped.push_back('\'');
+          return escaped;
+        }
         std::string operator()(const UnaryExpression& expr) {
           return std::format("{} {}", ToString(expr.op), ToString(*expr.child));
         }

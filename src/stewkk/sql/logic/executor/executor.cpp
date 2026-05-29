@@ -58,6 +58,16 @@ Type GetExpressionType(const Expression& expr, const AttributesInfo& available_a
         }
         return Type::kInt;
       }
+      if (std::ranges::contains(std::vector{BinaryOp::kAnd, BinaryOp::kOr}, binop.binop)) {
+        if (lhs_type != Type::kBool) {
+          throw std::logic_error{"types mismatch"};
+        }
+        return Type::kBool;
+      }
+      if (lhs_type == Type::kString
+          && !std::ranges::contains(std::vector{BinaryOp::kEq, BinaryOp::kNotEq}, binop.binop)) {
+        throw std::logic_error{"strings support only = and != operators"};
+      }
       return Type::kBool;
     }
     Type operator()(const UnaryExpression& unop) const {
@@ -78,6 +88,9 @@ Type GetExpressionType(const Expression& expr, const AttributesInfo& available_a
     }
     Type operator()(const IntConst& iconst) const {
       return Type::kInt;
+    }
+    Type operator()(const StringConst& sconst) const {
+      return Type::kString;
     }
     Type operator()(const Literal& literal) const {
       // NOTE: we are using switch because compiler will remind about adding
@@ -127,6 +140,9 @@ Type GetExpressionTypeUnchecked(const Expression& expr, const AttributesInfo& av
     }
     Type operator()(const IntConst& iconst) const {
       return Type::kInt;
+    }
+    Type operator()(const StringConst& sconst) const {
+      return Type::kString;
     }
     Type operator()(const Literal& literal) const {
       switch (literal) {
@@ -268,6 +284,9 @@ Value CalcExpression(const Tuple& source, const AttributesInfo& source_attrs, co
     Value operator()(const IntConst& expr) {
       return Value{false, expr};
     }
+    Value operator()(const StringConst& expr) {
+      return Value{false, {.string_id = InternString(expr)}};
+    }
     Value operator()(const Literal& expr) {
       switch (expr) {
         case Literal::kNull:
@@ -346,6 +365,29 @@ Tuple ConcatTuples(const Tuple& lhs, const Tuple& rhs) {
   return joined_tuple;
 }
 
+bool ContainsStringExpression(const Expression& expr, const AttributesInfo& attrs) {
+  struct Visitor {
+    bool operator()(const BinaryExpression& expr) const {
+      return std::visit(*this, *expr.lhs) || std::visit(*this, *expr.rhs);
+    }
+    bool operator()(const UnaryExpression& expr) const {
+      return std::visit(*this, *expr.child);
+    }
+    bool operator()(const Attribute& attr) const {
+      auto it = std::find_if(attrs.begin(), attrs.end(), [&](const AttributeInfo& attr_info) {
+        return attr_info.name == attr.name && attr_info.table == attr.table;
+      });
+      return it != attrs.end() && it->type == Type::kString;
+    }
+    bool operator()(const StringConst&) const { return true; }
+    bool operator()(const IntConst&) const { return false; }
+    bool operator()(const Literal&) const { return false; }
+
+    const AttributesInfo& attrs;
+  };
+  return std::visit(Visitor{attrs}, expr);
+}
+
 boost::asio::awaitable<ExecExpression> InterpretedExpressionExecutor::GetExpressionExecutor(const Expression& expr, const AttributesInfo& attrs) {
   struct Executor {
     Value operator()(const Tuple& source, const AttributesInfo& source_attrs) {
@@ -358,6 +400,9 @@ boost::asio::awaitable<ExecExpression> InterpretedExpressionExecutor::GetExpress
 }
 
 boost::asio::awaitable<ExecExpression> JitCompiledExpressionExecutor::GetExpressionExecutor(const Expression& expr, const AttributesInfo& attrs) {
+  if (ContainsStringExpression(expr, attrs)) {
+    throw std::logic_error{"string expressions are not supported by JIT"};
+  }
   struct Executor {
     Value operator()(const Tuple& source, const AttributesInfo& source_attrs) {
       Value result;
@@ -377,6 +422,9 @@ JitCompiledExpressionExecutor::JitCompiledExpressionExecutor(boost::asio::any_io
 InterpretedExpressionExecutor::InterpretedExpressionExecutor(boost::asio::any_io_executor executor) {}
 
 boost::asio::awaitable<ExecExpression> CachedJitCompiledExpressionExecutor::GetExpressionExecutor(const Expression& expr, const AttributesInfo& attrs) {
+  if (ContainsStringExpression(expr, attrs)) {
+    throw std::logic_error{"string expressions are not supported by JIT"};
+  }
   auto expr_str = ToString(expr);
   if (auto it = cache_.find(expr_str); it != cache_.end()) {
     co_return it->second;
@@ -446,7 +494,8 @@ template <typename ExpressionExecutor>
 boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const PhysicalPlanNode& op, AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan) {
   struct ExecuteVisitor{
     boost::asio::awaitable<void> operator()(const SeqScan& seq_scan) {
-      co_await executor.sequential_scan_(seq_scan.table, attr_chan, tuples_chan);
+      co_await executor.sequential_scan_(seq_scan.table, std::string{OutputTable(seq_scan)},
+                                         attr_chan, tuples_chan);
       co_return;
     }
     boost::asio::awaitable<void> operator()(const PhysicalProjection& projection) {

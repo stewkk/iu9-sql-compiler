@@ -8,7 +8,7 @@ namespace {
 std::string ToKey(const LogicalOperator& op) {
     return std::visit(utils::Overloaded{
         [](const logical::Table& t) {
-            return "Table(" + t.name + ")";
+            return "Table(" + t.name + "," + std::string{VisibleName(t)} + ")";
         },
         [](const logical::Filter& f) {
             return "Filter(" + ToString(f.predicate) + "," + std::to_string(f.source->GetId()) + ")";
@@ -74,7 +74,7 @@ utils::NotNull<LogicalExpr*> Memo::AddLogicalExprToGroup(utils::NotNull<Group*> 
 utils::NotNull<LogicalExpr*> Memo::Populate(const Operator& op) {
     return std::visit(utils::Overloaded{
         [this](const Table& t) {
-            return AddGroup(logical::Table{t.name});
+            return AddGroup(logical::Table{t.name, t.alias});
         },
         [this](const Filter& f) {
             auto source = Populate(*f.source);

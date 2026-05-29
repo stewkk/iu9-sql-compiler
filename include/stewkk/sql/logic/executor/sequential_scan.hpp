@@ -11,6 +11,7 @@ struct CsvDirSequentialScanner {
     std::string dir;
 
     boost::asio::awaitable<Result<>> operator()(const std::string& table_name,
+                                                const std::string& output_table_name,
                                                 AttributesInfoChannel& attrs_chan,
                                                 TuplesChannel& tuples_chan) const;
 };

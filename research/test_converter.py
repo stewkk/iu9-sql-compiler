@@ -5,6 +5,26 @@ import pytest
 from ms_sql_server_extractor import MsSqlServerExtractor
 from converter import convert
 
+NS = "http://schemas.microsoft.com/sqlserver/2004/07/showplan"
+
+
+def showplan(relop: str) -> str:
+    return f"""
+    <ShowPlanXML xmlns="{NS}">
+      <BatchSequence>
+        <Batch>
+          <Statements>
+            <StmtSimple>
+              <QueryPlan>
+                {relop}
+              </QueryPlan>
+            </StmtSimple>
+          </Statements>
+        </Batch>
+      </BatchSequence>
+    </ShowPlanXML>
+    """
+
 
 @pytest.fixture(scope="session")
 def extractor():
@@ -28,16 +48,88 @@ def test_seq_scan(extractor):
     assert result == "(SeqScan Titles)"
 
 
+def test_aliased_seq_scan_from_xml():
+    plan = showplan("""
+      <RelOp PhysicalOp="Clustered Index Scan" LogicalOp="Clustered Index Scan">
+        <IndexScan>
+          <Object Database="[imdb]" Schema="[dbo]" Table="[Titles]" Alias="[t]" Index="[PK_Titles]"/>
+        </IndexScan>
+      </RelOp>
+    """)
+
+    result = convert(plan)
+
+    assert result == "(SeqScan Titles t)"
+
+
 def test_filter_eq(extractor):
     plan = extract_plan(extractor, "SELECT * FROM Titles WHERE Titles.isAdult = 1")
     result = convert(plan)
     assert result == "(PhysicalFilter (= (attr Titles isAdult) 1) (SeqScan Titles))"
 
 
+def test_aliased_seq_scan_filter_from_xml():
+    plan = showplan("""
+      <RelOp PhysicalOp="Clustered Index Scan" LogicalOp="Clustered Index Scan">
+        <IndexScan>
+          <Object Database="[imdb]" Schema="[dbo]" Table="[Titles]" Alias="[t]" Index="[PK_Titles]"/>
+          <Predicate>
+            <ScalarOperator>
+              <Compare CompareOp="EQ">
+                <ScalarOperator>
+                  <Identifier>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Alias="[t]" Column="isAdult"/>
+                  </Identifier>
+                </ScalarOperator>
+                <ScalarOperator>
+                  <Const ConstValue="(1)"/>
+                </ScalarOperator>
+              </Compare>
+            </ScalarOperator>
+          </Predicate>
+        </IndexScan>
+      </RelOp>
+    """)
+
+    result = convert(plan)
+
+    assert result == "(PhysicalFilter (= (attr t isAdult) 1) (SeqScan Titles t))"
+
+
 def test_filter_gt(extractor):
     plan = extract_plan(extractor, "SELECT * FROM Titles WHERE Titles.titleId > 5000")
     result = convert(plan)
     assert result == "(IndexSeek (> (attr Titles titleId) 5000) Titles)"
+
+
+def test_aliased_index_seek_from_xml():
+    plan = showplan("""
+      <RelOp PhysicalOp="Clustered Index Seek" LogicalOp="Clustered Index Seek">
+        <IndexScan>
+          <Object Database="[imdb]" Schema="[dbo]" Table="[Titles]" Alias="[t]" Index="[PK_Titles]"/>
+          <SeekPredicates>
+            <SeekPredicateNew>
+              <SeekKeys>
+                <StartRange ScanType="GT">
+                  <RangeColumns>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Alias="[t]" Column="titleId"/>
+                  </RangeColumns>
+                  <RangeExpressions>
+                    <ScalarOperator>
+                      <Const ConstValue="(5000)"/>
+                    </ScalarOperator>
+                  </RangeExpressions>
+                </StartRange>
+              </SeekKeys>
+            </SeekPredicateNew>
+          </SeekPredicates>
+        </IndexScan>
+      </RelOp>
+    """)
+
+    result = convert(plan)
+
+    assert result == "(IndexSeek (> (attr t titleId) 5000) Titles)"
 
 
 def test_filter_lt(extractor):

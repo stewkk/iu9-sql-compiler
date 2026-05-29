@@ -307,6 +307,9 @@ llvm::Function* JITCompiler::GenerateIR(
         return llvm::ConstantStruct::get(static_cast<llvm::StructType*>(value_type),
                                   {builder.getInt8(0), builder.getInt64(expr)});
       }
+      llvm::Value* operator()(const StringConst&) {
+        throw std::logic_error{"string expressions are not supported by JIT"};
+      }
       llvm::Value* operator()(const Literal& expr) {
           switch (expr) {
             case Literal::kNull:

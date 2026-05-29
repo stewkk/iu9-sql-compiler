@@ -26,7 +26,7 @@ namespace {
 PhysicalPlanNode ToPhysicalPlan(const Operator& op) {
   return std::visit(utils::Overloaded{
     [](const Table& t) -> PhysicalPlanNode {
-      return SeqScan{.table = t.name};
+      return SeqScan{.table = t.name, .alias = t.alias};
     },
     [](const Projection& p) -> PhysicalPlanNode {
       return PhysicalProjection{

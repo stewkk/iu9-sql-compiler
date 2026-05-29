@@ -20,6 +20,7 @@ void CollectAttributes(const Expression& e, std::vector<Attribute>& out) {
       },
       [&](const UnaryExpression& u) { CollectAttributes(*u.child, out); },
       [&](const IntConst&) {},
+      [&](const StringConst&) {},
       [&](const Literal&) {},
   }, e);
 }

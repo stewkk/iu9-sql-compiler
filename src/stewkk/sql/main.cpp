@@ -120,7 +120,8 @@ std::string SerializeAst(const Operator& op) {
   return std::visit([](auto&& node) -> std::string {
     using T = std::decay_t<decltype(node)>;
     if constexpr (std::is_same_v<T, Table>) {
-      return "(Table " + node.name + ")";
+      return node.alias ? "(Table " + node.name + " AS " + *node.alias + ")"
+                        : "(Table " + node.name + ")";
     } else if constexpr (std::is_same_v<T, Filter>) {
       return "(Filter " + ToString(node.expr) + " " + SerializeAst(*node.source) + ")";
     } else if constexpr (std::is_same_v<T, Projection>) {
@@ -144,6 +145,8 @@ std::string ValueToString(const Value& v, const AttributeInfo& attr) {
       return std::to_string(v.value.int_value);
     case Type::kBool:
       return v.value.bool_value ? "1" : "0";
+    case Type::kString:
+      return GetInternedString(v.value.string_id);
   }
   return "?";
 }
@@ -154,6 +157,8 @@ std::string TypeName(Type t) {
       return "int";
     case Type::kBool:
       return "bool";
+    case Type::kString:
+      return "string";
   }
   return "?";
 }

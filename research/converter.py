@@ -4,6 +4,7 @@ Converter from MS SQL Server ShowPlanXML to serialized physical plan format.
 
 Serialized format (s-expressions):
   (SeqScan table)
+  (SeqScan table alias)
   (PhysicalFilter EXPR SOURCE)
   (PhysicalProjection (exprs EXPR...) SOURCE)
   (NestedLoopCrossJoin LHS RHS)
@@ -82,6 +83,16 @@ def _convert_relop(relop: ET.Element) -> str:
 _SEEK_SCAN_TYPES = {"GT": ">", "GE": ">=", "LT": "<", "LE": "<=", "EQ": "="}
 
 
+def _strip_sql_name(value: str | None) -> str:
+    return (value or "").strip("[]")
+
+
+def _object_table_and_alias(obj: ET.Element) -> tuple[str, str | None]:
+    table = _strip_sql_name(obj.get("Table"))
+    alias = _strip_sql_name(obj.get("Alias"))
+    return table, alias or None
+
+
 def _convert_scan(relop: ET.Element) -> str:
     phys_op = relop.get("PhysicalOp", "")
     obj = relop.find(f".//{NS}IndexScan/{NS}Object")
@@ -89,15 +100,16 @@ def _convert_scan(relop: ET.Element) -> str:
         obj = relop.find(f".//{NS}TableScan/{NS}Object")
     if obj is None:
         raise ValueError("cannot find Object element in scan")
-    table = (obj.get("Alias") or obj.get("Table", "")).strip("[]")
+    table, alias = _object_table_and_alias(obj)
+    visible_table = alias or table
 
     if "Seek" in phys_op:
-        seek_pred = _convert_seek_predicates(relop, table)
+        seek_pred = _convert_seek_predicates(relop, visible_table)
         if seek_pred is None:
             raise ValueError(f"Index Seek node has no SeekPredicates: {phys_op!r}")
         base = f"(IndexSeek {seek_pred} {table})"
     else:
-        base = f"(SeqScan {table})"
+        base = f"(SeqScan {table} {alias})" if alias else f"(SeqScan {table})"
 
     # Residual predicate (pushed-down filter evaluated after the scan/seek)
     pred_elem = relop.find(f".//{NS}IndexScan/{NS}Predicate/{NS}ScalarOperator")
@@ -124,7 +136,7 @@ def _convert_seek_predicates(relop: ET.Element, table: str) -> str | None:
         expr_elems = range_elem.findall(f"{NS}RangeExpressions/{NS}ScalarOperator")
         for col_ref, expr_elem in zip(col_refs, expr_elems):
             col = col_ref.get("Column", "").strip("[]")
-            col_table = (col_ref.get("Alias") or col_ref.get("Table") or table).strip("[]")
+            col_table = _strip_sql_name(col_ref.get("Alias") or col_ref.get("Table") or table)
             conditions.append(f"({op} (attr {col_table} {col}) {_convert_scalar(expr_elem)})")
 
     if not conditions:
@@ -194,7 +206,7 @@ def _expect_two_relops(parent: ET.Element, label: str) -> tuple[ET.Element, ET.E
 
 
 def _col_ref_to_attr(cr: ET.Element) -> str:
-    table = (cr.get("Alias") or cr.get("Table", "")).strip("[]")
+    table = _strip_sql_name(cr.get("Alias") or cr.get("Table"))
     col = cr.get("Column", "").strip("[]")
     return f"(attr {table} {col})"
 
@@ -306,7 +318,7 @@ def _convert_identifier(identifier: ET.Element) -> str:
             f"parameter reference {column!r} — use OPTION (RECOMPILE) to embed literal values in the plan"
         )
 
-    table = (col_ref.get("Alias") or col_ref.get("Table", "")).strip("[]")
+    table = _strip_sql_name(col_ref.get("Alias") or col_ref.get("Table"))
     return f"(attr {table} {column})"
 
 

@@ -47,7 +47,8 @@ template <typename ExpressionExecutor = InterpretedExpressionExecutor>
 class Executor {
 public:
   using SequentialScan = std::function<boost::asio::awaitable<Result<>>(
-      const std::string& table_name, AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan)>;
+      const std::string& table_name, const std::string& output_table_name,
+      AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan)>;
   Executor(SequentialScan seq_scan, boost::asio::any_io_executor executor);
 
   boost::asio::awaitable<Result<Relation>> Execute(const PhysicalPlanNode& op);

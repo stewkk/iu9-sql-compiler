@@ -102,6 +102,23 @@ TEST(OptimizerTest, OrderBy) {
   ASSERT_THAT(Serialize(got), Eq("(Sort (keys users.id Asc) (SeqScan users))"));
 }
 
+TEST(OptimizerTest, AliasedJoinOptimizesWithAliasQualifiedAttrs) {
+  std::stringstream s{"SELECT c.id FROM customers AS c JOIN orders AS o ON c.id = o.customer_id WHERE c.region_id = 1;"};
+  Operator op = GetAST(s).value().op;
+  Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({
+      {"customers", 500},
+      {"orders", 5000},
+  }));
+
+  auto got = optimizer.Optimize();
+  auto serialized = Serialize(got);
+
+  ASSERT_THAT(serialized, HasSubstr("(SeqScan customers c)"));
+  ASSERT_THAT(serialized, HasSubstr("(SeqScan orders o)"));
+  ASSERT_THAT(serialized, HasSubstr("(attr c id)"));
+  ASSERT_THAT(serialized, HasSubstr("(attr o customer_id)"));
+}
+
 TEST(ReachabilityTest, SeqScanReachable) {
   std::stringstream s{"SELECT * FROM users;"};
   auto result = IsPlanReachable(s, SeqScan{"users"});

@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <string_view>
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/thread_pool.hpp>
@@ -22,7 +23,7 @@ namespace {
 PhysicalPlanNode ToPhysicalPlan(const Operator& op) {
   return std::visit(utils::Overloaded{
     [](const Table& t) -> PhysicalPlanNode {
-      return SeqScan{.table = t.name};
+      return SeqScan{.table = t.name, .alias = t.alias};
     },
     [](const Projection& p) -> PhysicalPlanNode {
       return PhysicalProjection{
@@ -123,6 +124,62 @@ TEST(ExecutorTest, SimpleSelectWithParallelism) {
       });
 
   pool.join();
+}
+
+TEST(ExecutorTest, StringFilterProjectionAndCsvQuotes) {
+  boost::asio::io_context ctx;
+  boost::asio::co_spawn(
+      ctx,
+      []() -> boost::asio::awaitable<Result<Relation>> {
+        std::stringstream s{"SELECT m.region, m.note FROM markets AS m WHERE m.region = 'AMERICA';"};
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
+        CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
+        Executor<InterpretedExpressionExecutor> executor(
+            std::move(seq_scan), co_await boost::asio::this_coro::executor);
+
+        auto got = co_await executor.Execute(op);
+
+        co_return got;
+      }(),
+      [](std::exception_ptr p, Result<Relation> got) {
+        if (p) std::rethrow_exception(p);
+
+        ASSERT_THAT(got.value().attributes,
+                    Eq(AttributesInfo{{"m", "region", Type::kString}, {"m", "note", Type::kString}}));
+        ASSERT_THAT(got.value().tuples.size(), Eq(2));
+        ASSERT_THAT(GetInternedString(got.value().tuples[0][0].value.string_id), Eq("AMERICA"));
+        ASSERT_THAT(GetInternedString(got.value().tuples[0][1].value.string_id), Eq("North, South"));
+        ASSERT_THAT(GetInternedString(got.value().tuples[1][1].value.string_id), Eq("Fast lane"));
+      });
+
+  ctx.run();
+}
+
+TEST(ExecutorTest, JitRejectsStringExpressions) {
+  boost::asio::io_context ctx;
+  bool rejected = false;
+  boost::asio::co_spawn(
+      ctx,
+      [&rejected]() -> boost::asio::awaitable<void> {
+        std::stringstream s{"SELECT m.id FROM markets AS m WHERE m.region = 'AMERICA';"};
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
+        CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
+        Executor<JitCompiledExpressionExecutor> executor(
+            std::move(seq_scan), co_await boost::asio::this_coro::executor);
+
+        try {
+          (void) co_await executor.Execute(op);
+        } catch (const std::logic_error& e) {
+          rejected = std::string_view{e.what()}.find("string expressions are not supported by JIT")
+              != std::string_view::npos;
+        }
+      }(),
+      [](std::exception_ptr p) {
+        if (p) std::rethrow_exception(p);
+      });
+
+  ctx.run();
+  ASSERT_THAT(rejected, Eq(true));
 }
 
 TYPED_TEST_P(ExecutorTest, Projection) {

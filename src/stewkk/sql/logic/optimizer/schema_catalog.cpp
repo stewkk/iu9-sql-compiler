@@ -23,7 +23,11 @@ std::optional<Schema> SchemaCatalog::Derive(const LogicalOperator& op) {
       [this](const logical::Table& t) -> std::optional<Schema> {
           auto it = tables_.find(t.name);
           if (it == tables_.end()) return std::nullopt;
-          return it->second;
+          auto schema = it->second;
+          for (auto& attr : schema) {
+              attr.table = std::string{VisibleName(t)};
+          }
+          return schema;
       },
       [this](const logical::Filter& f) -> std::optional<Schema> {
           return GetSchema(f.source);

@@ -1,9 +1,11 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <variant>
 #include <vector>
 #include <string>
+#include <string_view>
 
 #include <stewkk/sql/models/parser/expression.hpp>
 #include <stewkk/sql/models/parser/join_type.hpp>
@@ -22,9 +24,12 @@ using Operator = std::variant<Table, Projection, Filter, CrossJoin, Join>;
 
 struct Table {
     std::string name;
+    std::optional<std::string> alias;
 
     auto operator<=>(const Table& other) const = default;
 };
+
+std::string_view VisibleName(const Table& table);
 
 struct Projection {
     std::vector<Expression> expressions;

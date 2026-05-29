@@ -10,6 +10,24 @@ namespace stewkk::sql {
 
 namespace {
 
+std::string UnquoteStandardString(std::string_view text) {
+  if (text.size() < 2 || text.front() != '\'' || text.back() != '\'') {
+    throw Error{ErrorType::kQueryNotSupported, "only standard single-quoted strings are supported"};
+  }
+
+  std::string result;
+  result.reserve(text.size() - 2);
+  for (size_t i = 1; i + 1 < text.size(); ++i) {
+    if (text[i] == '\'' && i + 1 < text.size() - 1 && text[i + 1] == '\'') {
+      result.push_back('\'');
+      ++i;
+      continue;
+    }
+    result.push_back(text[i]);
+  }
+  return result;
+}
+
 Operator GetOperatorWithChild(Operator&& op, Operator&& child) {
   struct ChildSetter {
     Operator operator() (Table&& parent) {
@@ -209,9 +227,6 @@ std::pair<Operator, ChildIt> ExtractAtom(Visitor* v, TableRefCtx* ctx) {
   if (ctx->LATERAL_P()) {
     throw Error{ErrorType::kQueryNotSupported, "LATERAL clause is not supported"};
   }
-  if (ctx->alias_clause()) {
-    throw Error{ErrorType::kQueryNotSupported, "alias_clause is not supported"};
-  }
   if (ctx->tablesample_clause()) {
     throw Error{ErrorType::kQueryNotSupported, "tablesample_clause is not supported"};
   }
@@ -220,12 +235,28 @@ std::pair<Operator, ChildIt> ExtractAtom(Visitor* v, TableRefCtx* ctx) {
   auto it = children.cbegin();
   Operator res;
   if (ctx->relation_expr()) {
-    res = Table{std::any_cast<std::string>(v->visit(ctx->relation_expr()))};
+    auto table = Table{std::any_cast<std::string>(v->visit(ctx->relation_expr()))};
+    if (auto* alias = ctx->alias_clause()) {
+      if (alias->name_list()) {
+        throw Error{ErrorType::kQueryNotSupported, "alias column lists are not supported"};
+      }
+      table.alias = alias->colid()->getText();
+    }
+    res = std::move(table);
     ++it;
+    if (ctx->alias_clause()) {
+      ++it;
+    }
   } else if (ctx->select_with_parens()) {
+    if (ctx->alias_clause()) {
+      throw Error{ErrorType::kQueryNotSupported, "aliases on subqueries are not supported"};
+    }
     res = std::any_cast<Operator>(v->visit(ctx->select_with_parens()));
     ++it;
   } else if (ctx->OPEN_PAREN()) {
+    if (ctx->alias_clause()) {
+      throw Error{ErrorType::kQueryNotSupported, "aliases on parenthesized table refs are not supported"};
+    }
     res = BuildTableRef(v, ctx->table_ref(0));
     it += 3;
   }
@@ -704,7 +735,15 @@ std::any Visitor::visitAexprconst(codegen::PostgreSQLParser::AexprconstContext *
     throw Error{ErrorType::kQueryNotSupported, "intervals are not supported"};
   }
   if (ctx->sconst()) {
-    throw Error{ErrorType::kQueryNotSupported, "strings are not supported"};
+    auto* sconst = ctx->sconst();
+    if (sconst->uescape_()) {
+      throw Error{ErrorType::kQueryNotSupported, "UESCAPE strings are not supported"};
+    }
+    auto* any = sconst->anysconst();
+    if (!any->StringConstant()) {
+      throw Error{ErrorType::kQueryNotSupported, "only standard single-quoted strings are supported"};
+    }
+    return Expression{StringConst{UnquoteStandardString(any->StringConstant()->getText())}};
   }
   if (ctx->xconst()) {
     throw Error{ErrorType::kQueryNotSupported, "hex literals are not supported"};

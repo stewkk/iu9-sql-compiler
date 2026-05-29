@@ -28,6 +28,10 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             if (op.table != t->table)
                 return {false, depth,
                         std::format("SeqScan table '{}' != '{}'", op.table, t->table)};
+            if (op.alias != t->alias)
+                return {false, depth,
+                        std::format("SeqScan alias '{}' != '{}'",
+                                    op.alias.value_or(""), t->alias.value_or(""))};
             return {true, depth + 1, {}};
         },
         [&](const physical::Filter& op) -> InternalMatch {

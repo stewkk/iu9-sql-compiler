@@ -16,6 +16,48 @@ namespace {
 std::string SerializeExpr(const Expression& expr);
 std::string SerializeNode(const PhysicalPlanNode& node);
 
+std::string QuoteString(std::string_view value) {
+    std::string out;
+    out.reserve(value.size() + 2);
+    out.push_back('"');
+    for (char c : value) {
+        switch (c) {
+            case '\\': out += "\\\\"; break;
+            case '"': out += "\\\""; break;
+            case '\n': out += "\\n"; break;
+            case '\t': out += "\\t"; break;
+            default: out.push_back(c); break;
+        }
+    }
+    out.push_back('"');
+    return out;
+}
+
+std::string UnquoteString(std::string_view value) {
+    if (value.size() < 2 || value.front() != '"' || value.back() != '"') {
+        throw std::runtime_error("expected quoted string");
+    }
+    std::string out;
+    for (size_t i = 1; i + 1 < value.size(); ++i) {
+        if (value[i] != '\\') {
+            out.push_back(value[i]);
+            continue;
+        }
+        if (i + 1 >= value.size() - 1) {
+            throw std::runtime_error("unterminated string escape");
+        }
+        char escaped = value[++i];
+        switch (escaped) {
+            case '\\': out.push_back('\\'); break;
+            case '"': out.push_back('"'); break;
+            case 'n': out.push_back('\n'); break;
+            case 't': out.push_back('\t'); break;
+            default: throw std::runtime_error(std::format("unsupported string escape: \\{}", escaped));
+        }
+    }
+    return out;
+}
+
 std::string SerializeJoinType(JoinType t) {
     switch (t) {
         case JoinType::kInner: return "Inner";
@@ -64,6 +106,9 @@ std::string SerializeExpr(const Expression& expr) {
         std::string operator()(IntConst n) const {
             return std::to_string(n);
         }
+        std::string operator()(const StringConst& s) const {
+            return std::format("(str {})", QuoteString(s));
+        }
         std::string operator()(const UnaryExpression& e) const {
             return std::format("({} {})", SerializeUnaryOp(e.op), SerializeExpr(*e.child));
         }
@@ -82,6 +127,9 @@ std::string SerializeExpr(const Expression& expr) {
 std::string SerializeNode(const PhysicalPlanNode& node) {
     struct Visitor {
         std::string operator()(const SeqScan& n) const {
+            if (n.alias) {
+                return std::format("(SeqScan {} {})", n.table, *n.alias);
+            }
             return std::format("(SeqScan {})", n.table);
         }
         std::string operator()(const PhysicalFilter& n) const {
@@ -148,6 +196,26 @@ std::vector<Token> Tokenize(std::string_view input) {
         if (std::isspace(static_cast<unsigned char>(input[i]))) { ++i; continue; }
         if (input[i] == '(') { tokens.push_back({TokenKind::LParen, "("}); ++i; continue; }
         if (input[i] == ')') { tokens.push_back({TokenKind::RParen, ")"}); ++i; continue; }
+        if (input[i] == '"') {
+            size_t j = i + 1;
+            bool escaped = false;
+            while (j < input.size()) {
+                if (escaped) {
+                    escaped = false;
+                } else if (input[j] == '\\') {
+                    escaped = true;
+                } else if (input[j] == '"') {
+                    ++j;
+                    break;
+                }
+                ++j;
+            }
+            if (j > input.size() || input[j - 1] != '"')
+                throw std::runtime_error("unterminated quoted string");
+            tokens.push_back({TokenKind::Atom, std::string(input.substr(i, j - i))});
+            i = j;
+            continue;
+        }
         size_t j = i;
         while (j < input.size()
                && !std::isspace(static_cast<unsigned char>(input[j]))
@@ -244,6 +312,11 @@ Expression ParseExpr(ParseState& s) {
             s.ExpectRParen();
             return Attribute{std::move(table), std::move(name)};
         }
+        if (head == "str") {
+            auto value = UnquoteString(s.ExpectAtom());
+            s.ExpectRParen();
+            return StringConst{std::move(value)};
+        }
         if (auto it = kBinaryOps.find(head); it != kBinaryOps.end()) {
             auto lhs = ParseExpr(s);
             auto rhs = ParseExpr(s);
@@ -271,8 +344,12 @@ PhysicalPlanNode ParseNode(ParseState& s) {
 
     if (head == "SeqScan") {
         auto table = s.ExpectAtom();
+        std::optional<std::string> alias;
+        if (s.Peek().kind != TokenKind::RParen) {
+            alias = s.ExpectAtom();
+        }
         s.ExpectRParen();
-        return SeqScan{std::move(table)};
+        return SeqScan{std::move(table), std::move(alias)};
     }
     if (head == "PhysicalFilter") {
         auto pred   = ParseExpr(s);
@@ -388,6 +465,9 @@ struct DotBuilder {
     }
 
     int operator()(const SeqScan& n) {
+        if (n.alias) {
+            return Emit(std::format("SeqScan\\n{} AS {}", n.table, *n.alias));
+        }
         return Emit(std::format("SeqScan\\n{}", n.table));
     }
     int operator()(const PhysicalFilter& n) {

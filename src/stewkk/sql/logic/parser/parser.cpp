@@ -67,6 +67,9 @@ std::string GetDotRepresentation(const Expression& expr) {
     std::string operator()(const IntConst& expr) {
       return std::to_string(expr);
     }
+    std::string operator()(const StringConst& expr) {
+      return ToString(Expression{expr});
+    }
     std::string operator()(const Literal& expr) {
       return ToString(expr);
     }
@@ -91,7 +94,8 @@ std::string GetDotRepresentation(const Operator& op) {
           return {node, std::format("\"{}\"\n\"{}\" -> \"{}\"\n{}", node, source_node, node, rest)};
         }
         std::pair<std::string, std::string> operator()(const Table& op) {
-          auto node = std::format("{}", op.name);
+          auto node = op.alias ? std::format("{} AS {}", op.name, *op.alias)
+                               : std::format("{}", op.name);
           return {node, std::format("\"{}\"", node)};
         }
         std::pair<std::string, std::string> operator()(const CrossJoin& op) {

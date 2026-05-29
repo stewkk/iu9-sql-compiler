@@ -43,6 +43,7 @@ void CollectAttrTables(const Expression& e, std::unordered_set<std::string>& out
       },
       [&](const UnaryExpression& u) { CollectAttrTables(*u.child, out); },
       [&](const IntConst&) {},
+      [&](const StringConst&) {},
       [&](const Literal&) {},
   }, e);
 }
@@ -63,7 +64,7 @@ void CollectGroupTables(utils::NotNull<Group*> g, std::unordered_set<std::string
   auto exprs = g->GetLogicalExprs();
   if (exprs.empty()) return;
   std::visit(utils::Overloaded{
-      [&](const logical::Table& t) { out.insert(t.name); },
+      [&](const logical::Table& t) { out.insert(std::string{VisibleName(t)}); },
       [&](const logical::Filter& f) { CollectGroupTables(f.source, out, seen); },
       [&](const logical::Projection& p) { CollectGroupTables(p.source, out, seen); },
       [&](const logical::CrossJoin& j) {

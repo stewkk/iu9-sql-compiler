@@ -2,6 +2,7 @@
 
 #include <variant>
 #include <vector>
+#include <optional>
 
 #include <stewkk/sql/utils/not_null.hpp>
 #include <stewkk/sql/models/parser/relational_algebra_ast.hpp>
@@ -16,6 +17,7 @@ namespace physical {
 
 struct SeqScan {
   std::string table;
+  std::optional<std::string> alias;
 
   bool operator==(const SeqScan&) const = default;
 };

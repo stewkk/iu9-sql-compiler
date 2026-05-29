@@ -17,6 +17,7 @@ struct Attribute {
 std::string ToString(const Attribute& attr);
 
 using IntConst = std::int64_t;
+using StringConst = std::string;
 
 enum class Literal {
     kNull,
@@ -57,7 +58,7 @@ std::string ToString(UnaryOp op);
 struct BinaryExpression;
 struct UnaryExpression;
 
-using Expression = std::variant<BinaryExpression, Attribute, IntConst, UnaryExpression, Literal>;
+using Expression = std::variant<BinaryExpression, Attribute, IntConst, StringConst, UnaryExpression, Literal>;
 
 std::string ToString(const Expression& expr);
 
