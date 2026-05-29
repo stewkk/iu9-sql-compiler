@@ -61,6 +61,9 @@ std::string GetDotRepresentation(const Expression& expr) {
     std::string operator()(const UnaryExpression& expr) {
       return std::format("({} {})",ToString(expr.op), std::visit(DotFormatter{}, *expr.child));
     }
+    std::string operator()(const InExpression& expr) {
+      return ToString(Expression{expr});
+    }
     std::string operator()(const Attribute& expr) {
       return ToString(expr);
     }

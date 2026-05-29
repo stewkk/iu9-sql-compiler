@@ -86,6 +86,20 @@ Type GetExpressionType(const Expression& expr, const AttributesInfo& available_a
       }
       return Type::kBool;
     }
+    Type operator()(const InExpression& in) const {
+      auto lhs_type = std::visit(*this, *in.lhs);
+      for (const auto& value : in.values) {
+        if (const auto* lit = std::get_if<Literal>(&value);
+            lit && (*lit == Literal::kNull || *lit == Literal::kUnknown)) {
+          continue;
+        }
+        auto value_type = std::visit(*this, value);
+        if (value_type != lhs_type) {
+          throw std::logic_error{"types mismatch"};
+        }
+      }
+      return Type::kBool;
+    }
     Type operator()(const IntConst& iconst) const {
       return Type::kInt;
     }
@@ -136,6 +150,9 @@ Type GetExpressionTypeUnchecked(const Expression& expr, const AttributesInfo& av
       if (unop.op == UnaryOp::kMinus) {
         return Type::kInt;
       }
+      return Type::kBool;
+    }
+    Type operator()(const InExpression& in) const {
       return Type::kBool;
     }
     Type operator()(const IntConst& iconst) const {
@@ -189,6 +206,17 @@ AttributesInfo GetAttributesAfterProjection(const AttributesInfo& attrs, const P
 
 Value CalcExpression(const Tuple& source, const AttributesInfo& source_attrs, const Expression& expr) {
   struct ExpressionVisitor {
+    bool ValuesEqual(Value lhs, Value rhs, Type type) {
+      switch (type) {
+        case Type::kInt:
+          return lhs.value.int_value == rhs.value.int_value;
+        case Type::kBool:
+          return lhs.value.bool_value == rhs.value.bool_value;
+        case Type::kString:
+          return lhs.value.string_id == rhs.value.string_id;
+      }
+    }
+
     Value operator()(const BinaryExpression& expr) {
       auto lhs = std::visit(*this, *expr.lhs);
       auto rhs = std::visit(*this, *expr.rhs);
@@ -271,6 +299,30 @@ Value CalcExpression(const Tuple& source, const AttributesInfo& source_attrs, co
         case UnaryOp::kIsNull:
           return Value{false, child.is_null};
       }
+    }
+    Value operator()(const InExpression& expr) {
+      auto lhs = std::visit(*this, *expr.lhs);
+      if (lhs.is_null) {
+        return Value{true};
+      }
+
+      auto lhs_type = GetExpressionTypeUnchecked(*expr.lhs, source_attrs);
+      bool saw_null = false;
+      for (const auto& value_expr : expr.values) {
+        auto value = std::visit(*this, value_expr);
+        if (value.is_null) {
+          saw_null = true;
+          continue;
+        }
+        if (ValuesEqual(lhs, value, lhs_type)) {
+          return Value{false, !expr.negated};
+        }
+      }
+
+      if (saw_null) {
+        return Value{true};
+      }
+      return Value{false, expr.negated};
     }
     Value operator()(const Attribute& expr) {
       auto it = std::find_if(source_attrs.begin(), source_attrs.end(),
@@ -373,6 +425,12 @@ bool ContainsStringExpression(const Expression& expr, const AttributesInfo& attr
     bool operator()(const UnaryExpression& expr) const {
       return std::visit(*this, *expr.child);
     }
+    bool operator()(const InExpression& expr) const {
+      return std::visit(*this, *expr.lhs)
+             || std::ranges::any_of(expr.values, [&](const Expression& value) {
+                  return std::visit(*this, value);
+                });
+    }
     bool operator()(const Attribute& attr) const {
       auto it = std::find_if(attrs.begin(), attrs.end(), [&](const AttributeInfo& attr_info) {
         return attr_info.name == attr.name && attr_info.table == attr.table;
@@ -388,6 +446,23 @@ bool ContainsStringExpression(const Expression& expr, const AttributesInfo& attr
   return std::visit(Visitor{attrs}, expr);
 }
 
+bool ContainsInExpression(const Expression& expr) {
+  struct Visitor {
+    bool operator()(const BinaryExpression& expr) const {
+      return std::visit(*this, *expr.lhs) || std::visit(*this, *expr.rhs);
+    }
+    bool operator()(const UnaryExpression& expr) const {
+      return std::visit(*this, *expr.child);
+    }
+    bool operator()(const InExpression&) const { return true; }
+    bool operator()(const Attribute&) const { return false; }
+    bool operator()(const StringConst&) const { return false; }
+    bool operator()(const IntConst&) const { return false; }
+    bool operator()(const Literal&) const { return false; }
+  };
+  return std::visit(Visitor{}, expr);
+}
+
 boost::asio::awaitable<ExecExpression> InterpretedExpressionExecutor::GetExpressionExecutor(const Expression& expr, const AttributesInfo& attrs) {
   struct Executor {
     Value operator()(const Tuple& source, const AttributesInfo& source_attrs) {
@@ -400,6 +475,9 @@ boost::asio::awaitable<ExecExpression> InterpretedExpressionExecutor::GetExpress
 }
 
 boost::asio::awaitable<ExecExpression> JitCompiledExpressionExecutor::GetExpressionExecutor(const Expression& expr, const AttributesInfo& attrs) {
+  if (ContainsInExpression(expr)) {
+    throw std::logic_error{"IN expressions are not supported by JIT"};
+  }
   if (ContainsStringExpression(expr, attrs)) {
     throw std::logic_error{"string expressions are not supported by JIT"};
   }
@@ -422,6 +500,9 @@ JitCompiledExpressionExecutor::JitCompiledExpressionExecutor(boost::asio::any_io
 InterpretedExpressionExecutor::InterpretedExpressionExecutor(boost::asio::any_io_executor executor) {}
 
 boost::asio::awaitable<ExecExpression> CachedJitCompiledExpressionExecutor::GetExpressionExecutor(const Expression& expr, const AttributesInfo& attrs) {
+  if (ContainsInExpression(expr)) {
+    throw std::logic_error{"IN expressions are not supported by JIT"};
+  }
   if (ContainsStringExpression(expr, attrs)) {
     throw std::logic_error{"string expressions are not supported by JIT"};
   }

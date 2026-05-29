@@ -105,6 +105,33 @@ TEST(PlanSerializerTest, ExprStringConst) {
     EXPECT_THAT(Serialize(plan), Eq("(PhysicalFilter (str \"Bob's Market \\\"North\\\"\") (SeqScan t))"));
 }
 
+TEST(PlanSerializerTest, ExprInList) {
+    PhysicalPlanNode plan = PhysicalFilter{
+        std::make_shared<PhysicalPlanNode>(SeqScan{"t"}),
+        InExpression{
+            std::make_shared<Expression>(Attribute{"t", "region"}),
+            {StringConst{"AMERICA"}, StringConst{"ASIA"}, Literal::kNull},
+            false,
+        },
+    };
+    EXPECT_THAT(RoundTrip(plan), Eq(plan));
+    EXPECT_THAT(Serialize(plan),
+                Eq("(PhysicalFilter (in (attr t region) (values (str \"AMERICA\") (str \"ASIA\") NULL)) (SeqScan t))"));
+}
+
+TEST(PlanSerializerTest, ExprNotInList) {
+    PhysicalPlanNode plan = PhysicalFilter{
+        std::make_shared<PhysicalPlanNode>(SeqScan{"t"}),
+        InExpression{
+            std::make_shared<Expression>(Attribute{"t", "id"}),
+            {IntConst{1}, IntConst{2}},
+            true,
+        },
+    };
+    EXPECT_THAT(RoundTrip(plan), Eq(plan));
+    EXPECT_THAT(Serialize(plan), Eq("(PhysicalFilter (notin (attr t id) (values 1 2)) (SeqScan t))"));
+}
+
 TEST(PlanSerializerTest, ExprLiterals) {
     for (auto lit : {Literal::kNull, Literal::kTrue, Literal::kFalse, Literal::kUnknown}) {
         PhysicalPlanNode plan = PhysicalFilter{

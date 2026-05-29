@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <variant>
+#include <vector>
 
 namespace stewkk::sql {
 
@@ -57,8 +58,10 @@ std::string ToString(UnaryOp op);
 
 struct BinaryExpression;
 struct UnaryExpression;
+struct InExpression;
 
-using Expression = std::variant<BinaryExpression, Attribute, IntConst, StringConst, UnaryExpression, Literal>;
+using Expression = std::variant<BinaryExpression, Attribute, IntConst, StringConst, UnaryExpression,
+                                InExpression, Literal>;
 
 std::string ToString(const Expression& expr);
 
@@ -75,6 +78,14 @@ struct UnaryExpression {
     std::shared_ptr<Expression> child;
 
     bool operator==(const UnaryExpression& other) const;
+};
+
+struct InExpression {
+    std::shared_ptr<Expression> lhs;
+    std::vector<Expression> values;
+    bool negated = false;
+
+    bool operator==(const InExpression& other) const;
 };
 
 }  // namespace stewkk::sql

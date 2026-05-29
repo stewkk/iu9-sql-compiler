@@ -1,6 +1,7 @@
 #include <stewkk/sql/models/parser/expression.hpp>
 
 #include <format>
+#include <ranges>
 
 namespace stewkk::sql {
 
@@ -10,6 +11,10 @@ bool BinaryExpression::operator==(const BinaryExpression& other) const {
 
 bool UnaryExpression::operator==(const UnaryExpression& other) const {
   return op == other.op && *child == *other.child;
+}
+
+bool InExpression::operator==(const InExpression& other) const {
+  return *lhs == *other.lhs && values == other.values && negated == other.negated;
 }
 
 std::string ToString(const Attribute& attr) {
@@ -97,6 +102,12 @@ std::string ToString(const Expression& expr) {
         }
         std::string operator()(const UnaryExpression& expr) {
           return std::format("{} {}", ToString(expr.op), ToString(*expr.child));
+        }
+        std::string operator()(const InExpression& expr) {
+          auto values = expr.values | std::views::transform([](const Expression& v) {
+                          return ToString(v);
+                        }) | std::views::join_with(',') | std::ranges::to<std::string>();
+          return std::format("{} {}in ({})", ToString(*expr.lhs), expr.negated ? "not " : "", values);
         }
         std::string operator()(const Literal& expr) {
           return ToString(expr);

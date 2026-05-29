@@ -19,6 +19,12 @@ void CollectAttributes(const Expression& e, std::vector<Attribute>& out) {
         CollectAttributes(*b.rhs, out);
       },
       [&](const UnaryExpression& u) { CollectAttributes(*u.child, out); },
+      [&](const InExpression& i) {
+        CollectAttributes(*i.lhs, out);
+        for (const auto& value : i.values) {
+          CollectAttributes(value, out);
+        }
+      },
       [&](const IntConst&) {},
       [&](const StringConst&) {},
       [&](const Literal&) {},

@@ -213,6 +213,18 @@ using ChildIt = std::vector<antlr4::tree::ParseTree*>::const_iterator;
 
 Operator BuildTableRef(Visitor* v, TableRefCtx* ctx);
 
+Expression MakeBinary(Expression lhs, BinaryOp op, Expression rhs) {
+  return BinaryExpression{
+      std::make_shared<Expression>(std::move(lhs)),
+      op,
+      std::make_shared<Expression>(std::move(rhs)),
+  };
+}
+
+Expression MakeUnary(UnaryOp op, Expression child) {
+  return UnaryExpression{op, std::make_shared<Expression>(std::move(child))};
+}
+
 // Returns the table_ref's atom (no joins) and an iterator pointing to its first
 // post-atom child. The grammar's `(... join ...)*` tail is greedy on the rhs
 // table_ref, so the caller is responsible for flattening that chain instead of
@@ -497,19 +509,47 @@ std::any Visitor::visitA_expr_and(codegen::PostgreSQLParser::A_expr_andContext *
 }
 
 std::any Visitor::visitA_expr_between(codegen::PostgreSQLParser::A_expr_betweenContext *ctx) {
-  if (ctx->BETWEEN()) {
-    // NOTE: may want to support
-    throw Error{ErrorType::kQueryNotSupported, "BETWEEN clause is not supported"};
+  if (!ctx->BETWEEN()) {
+    return visit(ctx->a_expr_in(0));
   }
-  return visit(ctx->a_expr_in(0));
+  if (ctx->SYMMETRIC()) {
+    throw Error{ErrorType::kQueryNotSupported, "BETWEEN SYMMETRIC clause is not supported"};
+  }
+
+  auto exprs = ctx->a_expr_in();
+  auto value = std::any_cast<Expression>(visit(exprs[0]));
+  auto lower = std::any_cast<Expression>(visit(exprs[1]));
+  auto upper = std::any_cast<Expression>(visit(exprs[2]));
+
+  auto ge = MakeBinary(value, BinaryOp::kGe, std::move(lower));
+  auto le = MakeBinary(std::move(value), BinaryOp::kLe, std::move(upper));
+  auto result = MakeBinary(std::move(ge), BinaryOp::kAnd, std::move(le));
+  if (ctx->NOT()) {
+    result = MakeUnary(UnaryOp::kNot, std::move(result));
+  }
+  return result;
 }
 
 std::any Visitor::visitA_expr_in(codegen::PostgreSQLParser::A_expr_inContext *ctx) {
-  if (ctx->IN_P()) {
-    // NOTE: may want to support
-    throw Error{ErrorType::kQueryNotSupported, "IN clause is not supported"};
+  auto lhs = std::any_cast<Expression>(visit(ctx->a_expr_unary_not()));
+  if (!ctx->IN_P()) {
+    return lhs;
   }
-  return visit(ctx->a_expr_unary_not());
+
+  auto* in_list = dynamic_cast<codegen::PostgreSQLParser::In_expr_listContext*>(ctx->in_expr());
+  if (!in_list) {
+    throw Error{ErrorType::kQueryNotSupported, "IN subqueries are not supported"};
+  }
+
+  std::vector<Expression> values;
+  for (auto* expr : in_list->expr_list()->a_expr()) {
+    values.push_back(std::any_cast<Expression>(visit(expr)));
+  }
+  return Expression{InExpression{
+      std::make_shared<Expression>(std::move(lhs)),
+      std::move(values),
+      ctx->NOT() != nullptr,
+  }};
 }
 
 std::any Visitor::visitA_expr_unary_not(codegen::PostgreSQLParser::A_expr_unary_notContext *ctx) {

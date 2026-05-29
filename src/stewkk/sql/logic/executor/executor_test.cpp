@@ -155,6 +155,112 @@ TEST(ExecutorTest, StringFilterProjectionAndCsvQuotes) {
   ctx.run();
 }
 
+TEST(ExecutorTest, StringInFilter) {
+  boost::asio::io_context ctx;
+  boost::asio::co_spawn(
+      ctx,
+      []() -> boost::asio::awaitable<Result<Relation>> {
+        std::stringstream s{"SELECT m.id FROM markets AS m WHERE m.region IN ('AMERICA', 'ASIA');"};
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
+        CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
+        Executor<InterpretedExpressionExecutor> executor(
+            std::move(seq_scan), co_await boost::asio::this_coro::executor);
+
+        auto got = co_await executor.Execute(op);
+
+        co_return got;
+      }(),
+      [](std::exception_ptr p, Result<Relation> got) {
+        if (p) std::rethrow_exception(p);
+
+        ASSERT_THAT(got.value().attributes, Eq(AttributesInfo{{"m", "id", Type::kInt}}));
+        ASSERT_THAT(got.value().tuples, Eq(Tuples{{Value{false, 1}}, {Value{false, 3}}}));
+      });
+
+  ctx.run();
+}
+
+TEST(ExecutorTest, StringNotInFilter) {
+  boost::asio::io_context ctx;
+  boost::asio::co_spawn(
+      ctx,
+      []() -> boost::asio::awaitable<Result<Relation>> {
+        std::stringstream s{"SELECT m.id FROM markets AS m WHERE m.region NOT IN ('AMERICA', 'ASIA');"};
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
+        CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
+        Executor<InterpretedExpressionExecutor> executor(
+            std::move(seq_scan), co_await boost::asio::this_coro::executor);
+
+        auto got = co_await executor.Execute(op);
+
+        co_return got;
+      }(),
+      [](std::exception_ptr p, Result<Relation> got) {
+        if (p) std::rethrow_exception(p);
+
+        ASSERT_THAT(got.value().attributes, Eq(AttributesInfo{{"m", "id", Type::kInt}}));
+        ASSERT_THAT(got.value().tuples, Eq(Tuples{{Value{false, 2}}}));
+      });
+
+  ctx.run();
+}
+
+TEST(ExecutorTest, IntegerBetweenFilter) {
+  boost::asio::io_context ctx;
+  boost::asio::co_spawn(
+      ctx,
+      []() -> boost::asio::awaitable<Result<Relation>> {
+        std::stringstream s{"SELECT users.id FROM users WHERE users.age BETWEEN 5 AND 11;"};
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
+        CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
+        Executor<InterpretedExpressionExecutor> executor(
+            std::move(seq_scan), co_await boost::asio::this_coro::executor);
+
+        auto got = co_await executor.Execute(op);
+
+        co_return got;
+      }(),
+      [](std::exception_ptr p, Result<Relation> got) {
+        if (p) std::rethrow_exception(p);
+
+        ASSERT_THAT(got.value().attributes, Eq(AttributesInfo{{"users", "id", Type::kInt}}));
+        ASSERT_THAT(got.value().tuples, Eq(Tuples{{Value{false, 4}}, {Value{false, 6}}}));
+      });
+
+  ctx.run();
+}
+
+TEST(ExecutorTest, InNullSemantics) {
+  AttributesInfo attrs{{"t", "x", Type::kInt}};
+  Tuple tuple{Value{false, 2}};
+
+  Expression positive = InExpression{
+      std::make_shared<Expression>(Attribute{"t", "x"}),
+      {IntConst{1}, Literal::kNull},
+      false,
+  };
+  Expression negative = InExpression{
+      std::make_shared<Expression>(Attribute{"t", "x"}),
+      {IntConst{1}, Literal::kNull},
+      true,
+  };
+  Expression matched = InExpression{
+      std::make_shared<Expression>(Attribute{"t", "x"}),
+      {IntConst{2}, Literal::kNull},
+      false,
+  };
+  Expression null_lhs = InExpression{
+      std::make_shared<Expression>(Literal::kNull),
+      {IntConst{1}, IntConst{2}},
+      false,
+  };
+
+  ASSERT_THAT(CalcExpression(tuple, attrs, positive).is_null, Eq(true));
+  ASSERT_THAT(CalcExpression(tuple, attrs, negative).is_null, Eq(true));
+  ASSERT_THAT(CalcExpression(tuple, attrs, matched), Eq(Value{false, true}));
+  ASSERT_THAT(CalcExpression(tuple, attrs, null_lhs).is_null, Eq(true));
+}
+
 TEST(ExecutorTest, JitRejectsStringExpressions) {
   boost::asio::io_context ctx;
   bool rejected = false;
@@ -171,6 +277,33 @@ TEST(ExecutorTest, JitRejectsStringExpressions) {
           (void) co_await executor.Execute(op);
         } catch (const std::logic_error& e) {
           rejected = std::string_view{e.what()}.find("string expressions are not supported by JIT")
+              != std::string_view::npos;
+        }
+      }(),
+      [](std::exception_ptr p) {
+        if (p) std::rethrow_exception(p);
+      });
+
+  ctx.run();
+  ASSERT_THAT(rejected, Eq(true));
+}
+
+TEST(ExecutorTest, JitRejectsInExpressions) {
+  boost::asio::io_context ctx;
+  bool rejected = false;
+  boost::asio::co_spawn(
+      ctx,
+      [&rejected]() -> boost::asio::awaitable<void> {
+        std::stringstream s{"SELECT users.id FROM users WHERE users.age IN (1, 2);"};
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
+        CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
+        Executor<JitCompiledExpressionExecutor> executor(
+            std::move(seq_scan), co_await boost::asio::this_coro::executor);
+
+        try {
+          (void) co_await executor.Execute(op);
+        } catch (const std::logic_error& e) {
+          rejected = std::string_view{e.what()}.find("IN expressions are not supported by JIT")
               != std::string_view::npos;
         }
       }(),

@@ -42,6 +42,12 @@ void CollectAttrTables(const Expression& e, std::unordered_set<std::string>& out
         CollectAttrTables(*b.rhs, out);
       },
       [&](const UnaryExpression& u) { CollectAttrTables(*u.child, out); },
+      [&](const InExpression& i) {
+        CollectAttrTables(*i.lhs, out);
+        for (const auto& value : i.values) {
+          CollectAttrTables(value, out);
+        }
+      },
       [&](const IntConst&) {},
       [&](const StringConst&) {},
       [&](const Literal&) {},

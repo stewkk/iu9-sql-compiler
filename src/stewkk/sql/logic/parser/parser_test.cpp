@@ -119,6 +119,106 @@ TEST(ParserTest, SelectWithStringLiteral) {
                                   std::make_shared<Operator>(Table{"users"})})}));
 }
 
+TEST(ParserTest, SelectWithBetween) {
+  std::stringstream s{"SELECT users.id FROM users WHERE users.age BETWEEN 18 AND 30;"};
+
+  Operator got = GetAST(s).value().op;
+
+  auto ge = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "age"}),
+      BinaryOp::kGe,
+      std::make_shared<Expression>(IntConst{18}),
+  };
+  auto le = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "age"}),
+      BinaryOp::kLe,
+      std::make_shared<Expression>(IntConst{30}),
+  };
+  ASSERT_THAT(got, VariantWith<Projection>(Projection{
+                       std::vector<Expression>{Attribute{"users", "id"}},
+                       std::make_shared<Operator>(
+                           Filter{Expression{BinaryExpression{
+                                      std::make_shared<Expression>(std::move(ge)),
+                                      BinaryOp::kAnd,
+                                      std::make_shared<Expression>(std::move(le))}},
+                                  std::make_shared<Operator>(Table{"users"})})}));
+}
+
+TEST(ParserTest, SelectWithNotBetween) {
+  std::stringstream s{"SELECT users.id FROM users WHERE users.age NOT BETWEEN 18 AND 30;"};
+
+  Operator got = GetAST(s).value().op;
+
+  auto ge = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "age"}),
+      BinaryOp::kGe,
+      std::make_shared<Expression>(IntConst{18}),
+  };
+  auto le = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "age"}),
+      BinaryOp::kLe,
+      std::make_shared<Expression>(IntConst{30}),
+  };
+  auto between = BinaryExpression{
+      std::make_shared<Expression>(std::move(ge)),
+      BinaryOp::kAnd,
+      std::make_shared<Expression>(std::move(le)),
+  };
+  ASSERT_THAT(got, VariantWith<Projection>(Projection{
+                       std::vector<Expression>{Attribute{"users", "id"}},
+                       std::make_shared<Operator>(
+                           Filter{Expression{UnaryExpression{
+                                      UnaryOp::kNot,
+                                      std::make_shared<Expression>(std::move(between))}},
+                                  std::make_shared<Operator>(Table{"users"})})}));
+}
+
+TEST(ParserTest, SelectWithInList) {
+  std::stringstream s{"SELECT m.id FROM markets AS m WHERE m.region IN ('AMERICA', 'ASIA');"};
+
+  Operator got = GetAST(s).value().op;
+
+  ASSERT_THAT(got, VariantWith<Projection>(Projection{
+                       std::vector<Expression>{Attribute{"m", "id"}},
+                       std::make_shared<Operator>(
+                           Filter{Expression{InExpression{
+                                      std::make_shared<Expression>(Attribute{"m", "region"}),
+                                      {StringConst{"AMERICA"}, StringConst{"ASIA"}},
+                                      false}},
+                                  std::make_shared<Operator>(Table{"markets", "m"})})}));
+}
+
+TEST(ParserTest, SelectWithNotInList) {
+  std::stringstream s{"SELECT m.id FROM markets AS m WHERE m.region NOT IN ('AMERICA', 'ASIA');"};
+
+  Operator got = GetAST(s).value().op;
+
+  ASSERT_THAT(got, VariantWith<Projection>(Projection{
+                       std::vector<Expression>{Attribute{"m", "id"}},
+                       std::make_shared<Operator>(
+                           Filter{Expression{InExpression{
+                                      std::make_shared<Expression>(Attribute{"m", "region"}),
+                                      {StringConst{"AMERICA"}, StringConst{"ASIA"}},
+                                      true}},
+                                  std::make_shared<Operator>(Table{"markets", "m"})})}));
+}
+
+TEST(ParserTest, SelectWithBetweenSymmetricRejected) {
+  std::stringstream s{"SELECT users.id FROM users WHERE users.age BETWEEN SYMMETRIC 18 AND 30;"};
+
+  auto got = GetAST(s).error();
+
+  ASSERT_THAT(got.Wraps(ErrorType::kQueryNotSupported), IsTrue());
+}
+
+TEST(ParserTest, SelectWithInSubqueryRejected) {
+  std::stringstream s{"SELECT users.id FROM users WHERE users.age IN (SELECT users.age FROM users);"};
+
+  auto got = GetAST(s).error();
+
+  ASSERT_THAT(got.Wraps(ErrorType::kQueryNotSupported), IsTrue());
+}
+
 TEST(ParserTest, GetDotRepresentation) {
   std::stringstream s{"SELECT users.id FROM users WHERE users.age > 18;"};
   Operator op = GetAST(s).value().op;

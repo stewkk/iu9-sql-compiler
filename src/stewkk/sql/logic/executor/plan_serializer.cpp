@@ -112,6 +112,15 @@ std::string SerializeExpr(const Expression& expr) {
         std::string operator()(const UnaryExpression& e) const {
             return std::format("({} {})", SerializeUnaryOp(e.op), SerializeExpr(*e.child));
         }
+        std::string operator()(const InExpression& e) const {
+            std::string values;
+            for (const auto& value : e.values) {
+                if (!values.empty()) values += ' ';
+                values += SerializeExpr(value);
+            }
+            return std::format("({} {} (values {}))",
+                               e.negated ? "notin" : "in", SerializeExpr(*e.lhs), values);
+        }
         std::string operator()(Literal l) const {
             switch (l) {
                 case Literal::kNull:    return "NULL";
@@ -316,6 +325,25 @@ Expression ParseExpr(ParseState& s) {
             auto value = UnquoteString(s.ExpectAtom());
             s.ExpectRParen();
             return StringConst{std::move(value)};
+        }
+        if (head == "in" || head == "notin") {
+            auto lhs = ParseExpr(s);
+            s.ExpectLParen();
+            auto values_head = s.ExpectAtom();
+            if (values_head != "values") {
+                throw std::runtime_error(std::format("expected values but got '{}'", values_head));
+            }
+            std::vector<Expression> values;
+            while (s.Peek().kind != TokenKind::RParen) {
+                values.push_back(ParseExpr(s));
+            }
+            s.ExpectRParen();
+            s.ExpectRParen();
+            return InExpression{
+                std::make_shared<Expression>(std::move(lhs)),
+                std::move(values),
+                head == "notin",
+            };
         }
         if (auto it = kBinaryOps.find(head); it != kBinaryOps.end()) {
             auto lhs = ParseExpr(s);
