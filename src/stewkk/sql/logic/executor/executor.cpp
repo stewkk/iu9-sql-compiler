@@ -35,7 +35,7 @@ Value ApplyBooleanOperator(Value lhs, Value rhs) {
   if (lhs.is_null || rhs.is_null) {
     return Value{true};
   }
-  return Value{false, Op{}(lhs.value.bool_value, rhs.value.bool_value)};
+  return Value{false, {.bool_value = Op{}(lhs.value.bool_value, rhs.value.bool_value)}};
 }
 
 struct IntPow {
@@ -67,8 +67,11 @@ Type GetExpressionType(const Expression& expr, const AttributesInfo& available_a
         return Type::kBool;
       }
       if (lhs_type == Type::kString
-          && !std::ranges::contains(std::vector{BinaryOp::kEq, BinaryOp::kNotEq}, binop.binop)) {
-        throw std::logic_error{"strings support only = and != operators"};
+          && !std::ranges::contains(std::vector{BinaryOp::kEq, BinaryOp::kNotEq,
+                                                BinaryOp::kLt, BinaryOp::kLe,
+                                                BinaryOp::kGt, BinaryOp::kGe},
+                                    binop.binop)) {
+        throw std::logic_error{"strings support only comparison operators"};
       }
       return Type::kBool;
     }
@@ -150,8 +153,8 @@ Type GetExpressionType(const Expression& expr, const AttributesInfo& available_a
 Type GetExpressionTypeUnchecked(const Expression& expr, const AttributesInfo& available_attrs) {
   struct ExpressionTypeVisitor {
     Type operator()(const BinaryExpression& binop) const {
-      if (std::ranges::contains(std::vector{BinaryOp::kPlus, BinaryOp::kMinus, BinaryOp::kDiv,
-                                            BinaryOp::kMod, BinaryOp::kPow},
+      if (std::ranges::contains(std::vector{BinaryOp::kPlus, BinaryOp::kMinus, BinaryOp::kMul,
+                                            BinaryOp::kDiv, BinaryOp::kMod, BinaryOp::kPow},
                                 binop.binop)) {
         return Type::kInt;
       }
@@ -206,10 +209,13 @@ Type GetExpressionTypeUnchecked(const Expression& expr, const AttributesInfo& av
 AttributesInfo GetAttributesAfterProjection(const AttributesInfo& attrs, const PhysicalProjection& proj) {
   AttributesInfo result_attributes;
   result_attributes.reserve(proj.expressions.size());
-  for (const auto& target : proj.expressions) {
+  for (const auto& [index, target] : proj.expressions | std::views::enumerate) {
     AttributeInfo projection_result;
     projection_result.type = GetExpressionType(target, attrs);
-    if (const Attribute* attr = std::get_if<Attribute>(&target)) {
+    if (index < static_cast<std::ptrdiff_t>(proj.aliases.size()) && proj.aliases[index]) {
+      projection_result.name = *proj.aliases[index];
+      projection_result.table = "";
+    } else if (const Attribute* attr = std::get_if<Attribute>(&target)) {
       projection_result.name = std::move(attr->name);
       projection_result.table = std::move(attr->table);
     }
@@ -231,53 +237,70 @@ Value CalcExpression(const Tuple& source, const AttributesInfo& source_attrs, co
       }
     }
 
+    Value CompareValues(Value lhs, Value rhs, BinaryOp op, Type type) {
+      if (lhs.is_null || rhs.is_null) {
+        return Value{true};
+      }
+      int cmp = 0;
+      switch (type) {
+        case Type::kInt:
+          cmp = (lhs.value.int_value > rhs.value.int_value)
+              - (lhs.value.int_value < rhs.value.int_value);
+          break;
+        case Type::kBool:
+          cmp = (lhs.value.bool_value > rhs.value.bool_value)
+              - (lhs.value.bool_value < rhs.value.bool_value);
+          break;
+        case Type::kString: {
+          const auto& l = GetInternedString(lhs.value.string_id);
+          const auto& r = GetInternedString(rhs.value.string_id);
+          cmp = (l > r) - (l < r);
+          break;
+        }
+      }
+      switch (op) {
+        case BinaryOp::kGt:
+          return Value{false, {.bool_value = cmp > 0}};
+        case BinaryOp::kLt:
+          return Value{false, {.bool_value = cmp < 0}};
+        case BinaryOp::kLe:
+          return Value{false, {.bool_value = cmp <= 0}};
+        case BinaryOp::kGe:
+          return Value{false, {.bool_value = cmp >= 0}};
+        case BinaryOp::kNotEq:
+          return Value{false, {.bool_value = cmp != 0}};
+        case BinaryOp::kEq:
+          return Value{false, {.bool_value = cmp == 0}};
+        default:
+          std::unreachable();
+      }
+    }
+
     Value operator()(const BinaryExpression& expr) {
       auto lhs = std::visit(*this, *expr.lhs);
       auto rhs = std::visit(*this, *expr.rhs);
       switch (expr.binop) {
         case BinaryOp::kGt:
-          if (GetExpressionTypeUnchecked(*expr.lhs, source_attrs) == Type::kBool) {
-            return ApplyBooleanOperator<std::greater<void>>(std::move(lhs), std::move(rhs));
-          }
-          return ApplyIntegersOperator<std::greater<void>, bool>(std::move(lhs), std::move(rhs));
         case BinaryOp::kLt:
-          if (GetExpressionTypeUnchecked(*expr.lhs, source_attrs) == Type::kBool) {
-            return ApplyBooleanOperator<std::less<void>>(std::move(lhs), std::move(rhs));
-          }
-          return ApplyIntegersOperator<std::less<void>, bool>(std::move(lhs), std::move(rhs));
         case BinaryOp::kLe:
-          if (GetExpressionTypeUnchecked(*expr.lhs, source_attrs) == Type::kBool) {
-            return ApplyBooleanOperator<std::less_equal<void>>(std::move(lhs), std::move(rhs));
-          }
-          return ApplyIntegersOperator<std::less_equal<void>, bool>(std::move(lhs), std::move(rhs));
         case BinaryOp::kGe:
-          if (GetExpressionTypeUnchecked(*expr.lhs, source_attrs) == Type::kBool) {
-            return ApplyBooleanOperator<std::greater_equal<void>>(std::move(lhs), std::move(rhs));
-          }
-          return ApplyIntegersOperator<std::greater_equal<void>, bool>(std::move(lhs), std::move(rhs));
         case BinaryOp::kNotEq:
-          if (GetExpressionTypeUnchecked(*expr.lhs, source_attrs) == Type::kBool) {
-            return ApplyBooleanOperator<std::not_equal_to<void>>(std::move(lhs), std::move(rhs));
-          }
-          return ApplyIntegersOperator<std::not_equal_to<void>, bool>(std::move(lhs), std::move(rhs));
         case BinaryOp::kEq:
-          if (GetExpressionTypeUnchecked(*expr.lhs, source_attrs) == Type::kBool) {
-            return ApplyBooleanOperator<std::equal_to<void>>(std::move(lhs), std::move(rhs));
-          }
-          return ApplyIntegersOperator<std::equal_to<void>, bool>(std::move(lhs), std::move(rhs));
+          return CompareValues(std::move(lhs), std::move(rhs), expr.binop,
+                               GetExpressionTypeUnchecked(*expr.lhs, source_attrs));
         case BinaryOp::kOr: {
           bool lhs_true = !lhs.is_null && lhs.value.bool_value;
           bool rhs_true = !rhs.is_null && rhs.value.bool_value;
-          if (lhs_true || rhs_true) return Value{false, true};
+          if (lhs_true || rhs_true) return Value{false, {.bool_value = true}};
           if (lhs.is_null || rhs.is_null) return Value{true};
-          return Value{false, false};
+          return Value{false, {.bool_value = false}};
         }
         case BinaryOp::kAnd: {
           bool lhs_false = !lhs.is_null && !lhs.value.bool_value;
           bool rhs_false = !rhs.is_null && !rhs.value.bool_value;
-          if (lhs_false || rhs_false) return Value{false, false};
+          if (lhs_false || rhs_false) return Value{false, {.bool_value = false}};
           if (lhs.is_null || rhs.is_null) return Value{true};
-          return Value{false, true};
+          return Value{false, {.bool_value = true}};
         }
         case BinaryOp::kPlus:
           return ApplyIntegersOperator<std::plus<int64_t>, int64_t>(std::move(lhs), std::move(rhs));
@@ -302,16 +325,16 @@ Value CalcExpression(const Tuple& source, const AttributesInfo& source_attrs, co
             return Value{true};
           }
           if (child.value.bool_value) {
-            return Value{false, false};
+            return Value{false, {.bool_value = false}};
           }
-          return Value{false, true};
+          return Value{false, {.bool_value = true}};
         case UnaryOp::kMinus:
           if (child.is_null) {
             return Value{true};
           }
           return Value{false, -child.value.int_value};
         case UnaryOp::kIsNull:
-          return Value{false, child.is_null};
+          return Value{false, {.bool_value = child.is_null}};
       }
     }
     Value operator()(const InExpression& expr) {
@@ -329,14 +352,14 @@ Value CalcExpression(const Tuple& source, const AttributesInfo& source_attrs, co
           continue;
         }
         if (ValuesEqual(lhs, value, lhs_type)) {
-          return Value{false, !expr.negated};
+          return Value{false, {.bool_value = !expr.negated}};
         }
       }
 
       if (saw_null) {
         return Value{true};
       }
-      return Value{false, expr.negated};
+      return Value{false, {.bool_value = expr.negated}};
     }
     Value operator()(const AggregateExpression&) {
       throw std::logic_error{"aggregate expressions cannot be evaluated as scalar expressions"};
@@ -361,10 +384,10 @@ Value CalcExpression(const Tuple& source, const AttributesInfo& source_attrs, co
         case Literal::kNull:
           return Value{true};
         case Literal::kTrue: {
-          return Value{false, true};
+          return Value{false, {.bool_value = true}};
         }
         case Literal::kFalse: {
-          return Value{false, false};
+          return Value{false, {.bool_value = false}};
         }
         case Literal::kUnknown: {
           return Value{true};
@@ -659,7 +682,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
       for (const auto& key : sort.keys.keys) {
         auto it = std::find_if(attrs.begin(), attrs.end(),
             [&](const AttributeInfo& a) {
-              return a.table == key.table && a.name == key.column;
+              return a.name == key.column && (key.table.empty() || a.table == key.table);
             });
         if (it == attrs.end())
           throw std::runtime_error{"sort key column not found: " + key.table + "." + key.column};
@@ -669,15 +692,32 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
       std::sort(all_tuples.begin(), all_tuples.end(),
           [&](const Tuple& a, const Tuple& b) {
             for (const auto& [idx, dir] : key_indices) {
+              const auto& attr = attrs[idx];
               const auto& va = a[idx];
               const auto& vb = b[idx];
               if (va.is_null && vb.is_null) continue;
               if (va.is_null) return false;
               if (vb.is_null) return true;
-              if (va.value.int_value != vb.value.int_value)
-                return dir == Direction::kAsc
-                    ? va.value.int_value < vb.value.int_value
-                    : va.value.int_value > vb.value.int_value;
+              bool less = false;
+              bool greater = false;
+              switch (attr.type) {
+                case Type::kInt:
+                  less = va.value.int_value < vb.value.int_value;
+                  greater = va.value.int_value > vb.value.int_value;
+                  break;
+                case Type::kBool:
+                  less = va.value.bool_value < vb.value.bool_value;
+                  greater = va.value.bool_value > vb.value.bool_value;
+                  break;
+                case Type::kString: {
+                  const auto& sa = GetInternedString(va.value.string_id);
+                  const auto& sb = GetInternedString(vb.value.string_id);
+                  less = sa < sb;
+                  greater = sa > sb;
+                  break;
+                }
+              }
+              if (less || greater) return dir == Direction::kAsc ? less : greater;
             }
             return false;
           });

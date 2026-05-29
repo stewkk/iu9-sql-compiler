@@ -29,6 +29,7 @@ PhysicalPlanNode ToPhysicalPlan(const Operator& op) {
       return PhysicalProjection{
         .source = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*p.source)),
         .expressions = p.expressions,
+        .aliases = p.aliases,
       };
     },
     [](const Filter& f) -> PhysicalPlanNode {
@@ -187,6 +188,31 @@ TEST(ExecutorTest, StringInFilter) {
   ctx.run();
 }
 
+TEST(ExecutorTest, StringOrderedFilter) {
+  boost::asio::io_context ctx;
+  boost::asio::co_spawn(
+      ctx,
+      []() -> boost::asio::awaitable<Result<Relation>> {
+        std::stringstream s{"SELECT m.id FROM markets AS m WHERE m.region >= 'AMERICA';"};
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
+        CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
+        Executor<InterpretedExpressionExecutor> executor(
+            std::move(seq_scan), co_await boost::asio::this_coro::executor);
+
+        auto got = co_await executor.Execute(op);
+
+        co_return got;
+      }(),
+      [](std::exception_ptr p, Result<Relation> got) {
+        if (p) std::rethrow_exception(p);
+
+        ASSERT_THAT(got.value().attributes, Eq(AttributesInfo{{"m", "id", Type::kInt}}));
+        ASSERT_THAT(got.value().tuples, Eq(Tuples{{Value{false, 1}}, {Value{false, 2}}, {Value{false, 3}}}));
+      });
+
+  ctx.run();
+}
+
 TEST(ExecutorTest, StringNotInFilter) {
   boost::asio::io_context ctx;
   boost::asio::co_spawn(
@@ -266,6 +292,27 @@ TEST(ExecutorTest, InNullSemantics) {
   ASSERT_THAT(CalcExpression(tuple, attrs, negative).is_null, Eq(true));
   ASSERT_THAT(CalcExpression(tuple, attrs, matched), Eq(Value{false, true}));
   ASSERT_THAT(CalcExpression(tuple, attrs, null_lhs).is_null, Eq(true));
+}
+
+TEST(ExecutorTest, StringOrderedComparison) {
+  AttributesInfo attrs{{"t", "x", Type::kString}};
+  Tuple tuple{Value{false, {.string_id = InternString("MFGR#2223")}}};
+
+  Expression lower = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"t", "x"}),
+      BinaryOp::kGe,
+      std::make_shared<Expression>(StringConst{"MFGR#2221"}),
+  };
+  Expression upper = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"t", "x"}),
+      BinaryOp::kLe,
+      std::make_shared<Expression>(StringConst{"MFGR#2228"}),
+  };
+
+  ASSERT_THAT(CalcExpression(tuple, attrs, lower),
+              Eq(Value{false, {.bool_value = true}}));
+  ASSERT_THAT(CalcExpression(tuple, attrs, upper),
+              Eq(Value{false, {.bool_value = true}}));
 }
 
 TEST(ExecutorTest, JitRejectsStringExpressions) {

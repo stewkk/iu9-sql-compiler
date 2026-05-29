@@ -157,8 +157,21 @@ std::string SerializeNode(const PhysicalPlanNode& node) {
                 if (!exprs.empty()) exprs += ' ';
                 exprs += SerializeExpr(e);
             }
-            return std::format("(PhysicalProjection (exprs {}) {})",
-                               exprs, SerializeNode(*n.source));
+            if (!n.aliases.empty()) {
+                std::string aliases;
+                for (size_t i = 0; i < n.expressions.size(); ++i) {
+                    if (!aliases.empty()) aliases += ' ';
+                    if (i < n.aliases.size() && n.aliases[i]) {
+                        aliases += QuoteString(*n.aliases[i]);
+                    } else {
+                        aliases += "-";
+                    }
+                }
+                return std::format("(PhysicalProjection (exprs {}) (aliases {}) {})",
+                                   exprs, aliases, SerializeNode(*n.source));
+            }
+            return std::format("(PhysicalProjection (exprs {}) {})", exprs,
+                               SerializeNode(*n.source));
         }
         std::string operator()(const NestedLoopCrossJoin& n) const {
             return std::format("(NestedLoopCrossJoin {} {})",
@@ -314,6 +327,11 @@ const std::unordered_map<std::string, Literal> kLiterals = {
     {"FALSE", Literal::kFalse}, {"UNKNOWN", Literal::kUnknown},
 };
 
+const std::unordered_map<std::string, AggregateFunction> kAggregateFunctions = {
+    {"SUM", AggregateFunction::kSum},
+    {"COUNT", AggregateFunction::kCount},
+};
+
 Expression ParseExpr(ParseState& s);
 PhysicalPlanNode ParseNode(ParseState& s);
 
@@ -363,6 +381,20 @@ Expression ParseExpr(ParseState& s) {
                 std::make_shared<Expression>(std::move(lhs)),
                 std::move(values),
                 head == "notin",
+            };
+        }
+        if (auto it = kAggregateFunctions.find(head); it != kAggregateFunctions.end()) {
+            if (s.Peek().kind == TokenKind::Atom && s.Peek().text == "*") {
+                s.ExpectAtom();
+                s.ExpectRParen();
+                return AggregateExpression{it->second, nullptr, true};
+            }
+            auto arg = ParseExpr(s);
+            s.ExpectRParen();
+            return AggregateExpression{
+                it->second,
+                std::make_shared<Expression>(std::move(arg)),
+                false,
             };
         }
         if (auto it = kBinaryOps.find(head); it != kBinaryOps.end()) {
@@ -417,11 +449,31 @@ PhysicalPlanNode ParseNode(ParseState& s) {
         while (s.Peek().kind != TokenKind::RParen)
             exprs.push_back(ParseExpr(s));
         s.ExpectRParen();
+        std::vector<std::optional<std::string>> aliases;
+        if (s.Peek().kind == TokenKind::LParen
+            && s.pos + 1 < s.tokens.size()
+            && s.tokens[s.pos + 1].kind == TokenKind::Atom
+            && s.tokens[s.pos + 1].text == "aliases") {
+            s.ExpectLParen();
+            auto aliases_kw = s.ExpectAtom();
+            if (aliases_kw != "aliases")
+                throw std::runtime_error(std::format("expected 'aliases' but got '{}'", aliases_kw));
+            while (s.Peek().kind != TokenKind::RParen) {
+                auto alias = s.ExpectAtom();
+                if (alias == "-") {
+                    aliases.push_back(std::nullopt);
+                } else {
+                    aliases.push_back(UnquoteString(alias));
+                }
+            }
+            s.ExpectRParen();
+        }
         auto source = ParseNode(s);
         s.ExpectRParen();
         return PhysicalProjection{
             std::make_shared<PhysicalPlanNode>(std::move(source)),
             std::move(exprs),
+            std::move(aliases),
         };
     }
     if (head == "NestedLoopCrossJoin") {

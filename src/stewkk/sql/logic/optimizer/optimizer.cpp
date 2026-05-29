@@ -421,6 +421,7 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
                 .source = std::make_shared<PhysicalPlanNode>(
                     BuildOptimalPlan(op.source.get(), RequiredInputProps(best_expr_nn, required, 0))),
                 .expressions = op.expressions,
+                .aliases = op.aliases,
             };
           },
           [this, best_expr_nn, required](const physical::Filter& op) -> PhysicalPlanNode {

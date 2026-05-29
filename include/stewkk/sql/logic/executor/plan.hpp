@@ -38,6 +38,7 @@ std::string_view OutputTable(const SeqScan& scan);
 struct PhysicalProjection {
   std::shared_ptr<PhysicalPlanNode> source;
   std::vector<Expression> expressions;
+  std::vector<std::optional<std::string>> aliases;
 
   bool operator==(const PhysicalProjection&) const;
 };

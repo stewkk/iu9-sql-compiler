@@ -15,7 +15,10 @@ std::optional<PhysicalOperator> SortEnforcer::TryBuild(
     for (const auto& sk : req->order.keys) {
       bool found = false;
       for (const auto& a : *sch) {
-        if (a.table == sk.table && a.name == sk.column) { found = true; break; }
+        if (a.name == sk.column && (sk.table.empty() || a.table == sk.table)) {
+          found = true;
+          break;
+        }
       }
       if (!found) return std::nullopt;
     }

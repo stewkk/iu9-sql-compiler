@@ -29,12 +29,28 @@ preserved as `string` values in the generated CSV.
 Generated full-scale data should stay under `benchmarks/datasets/ssb/generated/`
 or another ignored location.
 
-## Current engine limitation
+## Queries
 
-This first slice only adds data layout and conversion. The current C++ scanner
-supports `int` and `NULL` values, so SSB CSV files containing `string` columns
-are not executable until string type support is added to the parser, scanner,
-executor, and output formatting.
+The standard 13 SSB query templates are in `queries/`. They are written in the
+subset supported by this engine: explicit joins, table aliases, string
+predicates, `BETWEEN`, list `IN`, `SUM`, `COUNT`, `GROUP BY`, and `ORDER BY`.
+
+Run one query through the CLI:
+
+```sh
+./build/bin/sql --data-dir benchmarks/datasets/ssb/generated/sf1 \
+  < benchmarks/datasets/ssb/queries/q1.1.sql
+```
+
+Run SSB benchmarks after generating data:
+
+```sh
+SSB_DATA_DIR=benchmarks/datasets/ssb/generated/sf1 \
+  ./build/bin/benchmarks --benchmark_filter='SSB/'
+```
+
+The JIT expression executor still rejects string and `IN` expressions, so the
+SSB benchmark registrations currently use the interpreted expression executor.
 
 ## Test the converter
 

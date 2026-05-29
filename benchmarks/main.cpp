@@ -1,19 +1,28 @@
 #include <benchmark/benchmark.h>
 
+#include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <random>
+#include <sstream>
+#include <string>
+#include <string_view>
+#include <unordered_map>
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/co_spawn.hpp>
+#include <boost/asio/use_future.hpp>
 
 #include <stewkk/sql/logic/parser/parser.hpp>
 #include <stewkk/sql/logic/executor/executor.hpp>
 #include <stewkk/sql/logic/executor/sequential_scan.hpp>
 #include <stewkk/sql/logic/optimizer/cardinality.hpp>
 #include <stewkk/sql/logic/optimizer/optimizer.hpp>
+#include <stewkk/sql/logic/optimizer/properties/property_set.hpp>
+#include <stewkk/sql/logic/optimizer/properties/sort_property.hpp>
 #include <stewkk/sql/logic/optimizer/rules.hpp>
 #include <stewkk/sql/models/parser/relational_algebra_ast.hpp>
 #include <stewkk/sql/utils/overloaded.hpp>
@@ -22,7 +31,6 @@ namespace stewkk::sql {
 
 namespace {
 
-// FIXME: ORDER BY support missing
 PhysicalPlanNode ToPhysicalPlan(const Operator& op) {
   return std::visit(utils::Overloaded{
     [](const Table& t) -> PhysicalPlanNode {
@@ -32,6 +40,7 @@ PhysicalPlanNode ToPhysicalPlan(const Operator& op) {
       return PhysicalProjection{
         .source = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*p.source)),
         .expressions = p.expressions,
+        .aliases = p.aliases,
       };
     },
     [](const Filter& f) -> PhysicalPlanNode {
@@ -40,8 +49,12 @@ PhysicalPlanNode ToPhysicalPlan(const Operator& op) {
         .predicate = f.expr,
       };
     },
-    [](const Aggregation&) -> PhysicalPlanNode {
-      throw std::runtime_error{"Aggregation execution is not implemented"};
+    [](const Aggregation& a) -> PhysicalPlanNode {
+      return PhysicalAggregation{
+        .source = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*a.source)),
+        .group_by = a.group_by,
+        .aggregates = a.aggregates,
+      };
     },
     [](const CrossJoin& j) -> PhysicalPlanNode {
       return NestedLoopCrossJoin{
@@ -79,6 +92,22 @@ CardinalityEstimates MakeBenchCardinality() {
   });
 }
 
+CardinalityEstimates LoadCardinalityFromCsvDir(const std::filesystem::path& dir) {
+  std::unordered_map<std::string, int64_t> counts;
+  if (!std::filesystem::is_directory(dir)) {
+    return CardinalityEstimates{};
+  }
+  for (const auto& entry : std::filesystem::directory_iterator{dir}) {
+    if (entry.path().extension() != ".csv") continue;
+    std::ifstream in{entry.path()};
+    std::string line;
+    int64_t rows = -1; // header
+    while (std::getline(in, line)) ++rows;
+    counts.emplace(entry.path().stem().string(), std::max<int64_t>(0, rows));
+  }
+  return CardinalityEstimates{std::move(counts)};
+}
+
 enum class PlannerMode { kNaive, kOptimized };
 
 template <PlannerMode Mode>
@@ -87,6 +116,20 @@ PhysicalPlanNode MakePlan(const Operator& op) {
     return ToPhysicalPlan(op);
   } else {
     Optimizer optimizer(op, MakeMainRules(), MakeBenchCardinality());
+    return optimizer.Optimize();
+  }
+}
+
+template <PlannerMode Mode>
+PhysicalPlanNode MakePlan(const ParsedQuery& query, CardinalityEstimates cardinality) {
+  if constexpr (Mode == PlannerMode::kNaive) {
+    return ToPhysicalPlan(query.op);
+  } else {
+    PropertySet required = query.required_order
+        ? PropertySet{SortProperty{*query.required_order}}
+        : PropertySet::Any();
+    Optimizer optimizer(query.op, MakeMainRules(), std::move(cardinality), {},
+                        std::move(required));
     return optimizer.Optimize();
   }
 }
@@ -211,6 +254,95 @@ REGISTER_BM_SQL_MT(kComplex2000)
 REGISTER_BM_SQL_MT(kComplex4000)
 REGISTER_BM_SQL_MT(kComplex8000)
 REGISTER_BM_SQL_MT(kComplex16000)
+
+namespace {
+
+std::string ReadTextFile(const std::filesystem::path& path) {
+  std::ifstream in{path};
+  std::ostringstream out;
+  out << in.rdbuf();
+  return out.str();
+}
+
+std::filesystem::path SsbDataDir() {
+  if (const char* env = std::getenv("SSB_DATA_DIR")) {
+    return env;
+  }
+  return std::filesystem::path{kProjectDir} / "benchmarks/datasets/ssb/generated/sf1";
+}
+
+template <typename ExprExecutor, PlannerMode Mode>
+void BM_SSB(benchmark::State& state, std::string query, std::filesystem::path data_dir) {
+  std::ofstream nullstream("/dev/null");
+  std::clog.rdbuf(nullstream.rdbuf());
+
+  if (!std::filesystem::is_directory(data_dir)) {
+    state.SkipWithError(("SSB data directory not found: " + data_dir.string()
+                         + " (set SSB_DATA_DIR)").c_str());
+    return;
+  }
+
+  std::stringstream sql{query};
+  auto parsed = GetAST(sql);
+  if (!parsed.has_value()) {
+    state.SkipWithError(("SSB query parse failed: " + What(parsed.error())).c_str());
+    return;
+  }
+
+  PhysicalPlanNode plan;
+  try {
+    plan = MakePlan<Mode>(parsed.value(), LoadCardinalityFromCsvDir(data_dir));
+  } catch (const std::exception& e) {
+    state.SkipWithError(e.what());
+    return;
+  }
+
+  boost::asio::io_context ctx;
+  CsvDirSequentialScanner seq_scan{data_dir.string()};
+  Executor<ExprExecutor> executor(std::move(seq_scan), ctx.get_executor());
+
+  auto run_once = [&]() {
+    auto fut = boost::asio::co_spawn(ctx, executor.Execute(plan), boost::asio::use_future);
+    ctx.restart();
+    ctx.run();
+    return fut.get();
+  };
+
+  try {
+    benchmark::DoNotOptimize(run_once());
+    for (auto _ : state) {
+      benchmark::DoNotOptimize(run_once());
+    }
+  } catch (const std::exception& e) {
+    state.SkipWithError(e.what());
+  }
+}
+
+struct SsbRegistration {
+  SsbRegistration() {
+    const auto query_dir = std::filesystem::path{kProjectDir} / "benchmarks/datasets/ssb/queries";
+    const auto data_dir = SsbDataDir();
+    if (!std::filesystem::is_directory(query_dir)) return;
+
+    for (const auto& entry : std::filesystem::directory_iterator{query_dir}) {
+      if (entry.path().extension() != ".sql") continue;
+      auto query = ReadTextFile(entry.path());
+      auto name = "SSB/" + entry.path().stem().string();
+      benchmark::RegisterBenchmark(
+          (name + "/Interpreted/Naive").c_str(),
+          &BM_SSB<InterpretedExpressionExecutor, PlannerMode::kNaive>, query, data_dir)
+          ->UseRealTime();
+      benchmark::RegisterBenchmark(
+          (name + "/Interpreted/Optimized").c_str(),
+          &BM_SSB<InterpretedExpressionExecutor, PlannerMode::kOptimized>, query, data_dir)
+          ->UseRealTime();
+    }
+  }
+};
+
+const SsbRegistration kRegisterSsb;
+
+} // namespace
 
 }  // namespace stewkk::sql
 

@@ -25,6 +25,7 @@ struct SeqScan {
 struct Projection {
   utils::NotNull<Group*> source;
   std::vector<Expression> expressions;
+  std::vector<std::optional<std::string>> aliases;
 
   bool operator==(const Projection&) const = default;
 };

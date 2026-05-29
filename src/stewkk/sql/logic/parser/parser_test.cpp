@@ -387,12 +387,12 @@ TEST(ParserTest, OrderByIntOrdinalRejected) {
   ASSERT_THAT(got.Wraps(ErrorType::kQueryNotSupported), IsTrue());
 }
 
-TEST(ParserTest, OrderByUnqualifiedColumnRejected) {
+TEST(ParserTest, OrderByUnqualifiedColumnAccepted) {
   std::stringstream s{"SELECT * FROM users ORDER BY id;"};
 
-  auto got = GetAST(s).error();
+  auto parsed = GetAST(s).value();
 
-  ASSERT_THAT(got.Wraps(ErrorType::kQueryNotSupported), IsTrue());
+  ASSERT_THAT(parsed.required_order, Optional(SortOrder{{SortKey{"", "id", Direction::kAsc}}}));
 }
 
 TEST(ParserTest, OrderByNullsFirstRejected) {

@@ -7,7 +7,7 @@ std::string_view OutputTable(const SeqScan& scan) {
 }
 
 bool PhysicalProjection::operator==(const PhysicalProjection& other) const {
-  return *source == *other.source && expressions == other.expressions;
+  return *source == *other.source && expressions == other.expressions && aliases == other.aliases;
 }
 
 bool PhysicalFilter::operator==(const PhysicalFilter& other) const {

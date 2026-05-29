@@ -8,7 +8,8 @@ bool ImplementProjection::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
 
 utils::NotNull<PhysicalExpr*> ImplementProjection::Apply(utils::NotNull<LogicalExpr*> expr, Memo&) {
     auto& proj = std::get<logical::Projection>(expr->root_operator);
-    return expr->group->AddPhysicalExpr(physical::Projection{proj.source, proj.expressions});
+    return expr->group->AddPhysicalExpr(
+        physical::Projection{proj.source, proj.expressions, proj.aliases});
 }
 
 }  // namespace stewkk::sql

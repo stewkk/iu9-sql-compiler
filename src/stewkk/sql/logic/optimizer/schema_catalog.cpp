@@ -35,13 +35,13 @@ std::optional<Schema> SchemaCatalog::Derive(const LogicalOperator& op) {
           return GetSchema(f.source);
       },
       [](const logical::Projection& p) -> std::optional<Schema> {
-          // Schema after projection is exactly the Attributes named in its
-          // expression list. Computed (non-Attribute) expressions produce
-          // columns that can't be referenced by (table, name), so they are
-          // dropped from the schema — sorting on them is impossible anyway.
+          // Aliased projection outputs can be referenced by unqualified ORDER
+          // BY names. Unaliased computed expressions are not addressable.
           Schema out;
-          for (const auto& expr : p.expressions) {
-              if (const auto* a = std::get_if<Attribute>(&expr)) {
+          for (size_t i = 0; i < p.expressions.size(); ++i) {
+              if (i < p.aliases.size() && p.aliases[i]) {
+                  out.push_back(Attribute{"", *p.aliases[i]});
+              } else if (const auto* a = std::get_if<Attribute>(&p.expressions[i])) {
                   out.push_back(*a);
               }
           }

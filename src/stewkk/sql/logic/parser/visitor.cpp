@@ -325,6 +325,9 @@ std::any Visitor::visitTarget_list(codegen::PostgreSQLParser::Target_listContext
       aliases.push_back(std::move(target.alias));
       target_expressions.push_back(std::move(target.expression));
     }
+    if (std::ranges::none_of(aliases, [](const auto& alias) { return alias.has_value(); })) {
+      aliases.clear();
+    }
     return Operator{Projection{std::move(target_expressions), nullptr, std::move(aliases)}};
   }
 
@@ -591,6 +594,10 @@ std::any Visitor::visitSimple_select_pramary(
   }
 
   if (projection) {
+    if (std::ranges::none_of(projection->aliases,
+                             [](const auto& alias) { return alias.has_value(); })) {
+      projection->aliases.clear();
+    }
     result = Projection{
         std::move(projection->expressions),
         std::make_shared<Operator>(std::move(result)),
@@ -648,10 +655,7 @@ std::any Visitor::visitSortby(codegen::PostgreSQLParser::SortbyContext *ctx) {
   auto expr = std::any_cast<Expression>(visit(ctx->a_expr()));
   auto* attr = std::get_if<Attribute>(&expr);
   if (!attr) {
-    throw Error{ErrorType::kQueryNotSupported, "ORDER BY expression must be a qualified column reference"};
-  }
-  if (attr->table.empty()) {
-    throw Error{ErrorType::kQueryNotSupported, "ORDER BY requires a qualified column reference (table.column)"};
+    throw Error{ErrorType::kQueryNotSupported, "ORDER BY expression must be a column reference"};
   }
 
   Direction dir = Direction::kAsc;
