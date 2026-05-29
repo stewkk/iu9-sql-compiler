@@ -13,3 +13,5 @@ FlameGraph/
 /.odbc/
 **/__pycache__
 /build-tsan/
+/benchmarks/datasets/ssb/generated/
+/benchmarks/datasets/ssb/raw/

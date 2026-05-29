@@ -11,4 +11,7 @@ sanitize:
 codegen:
 	@antlr -Dlanguage=Cpp -visitor -o $(CODEGEN_DIR) -package stewkk::sql::codegen $(PARSER_SOURCE_DIR)/PostgreSQLParser.g4 $(PARSER_SOURCE_DIR)/PostgreSQLLexer.g4
 
-.PHONY: codegen build
+test-ssb-converter:
+	pytest benchmarks/datasets/ssb
+
+.PHONY: codegen build sanitize test-ssb-converter
