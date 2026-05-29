@@ -1,6 +1,7 @@
 #include <stewkk/sql/logic/executor/executor.hpp>
 
 #include <algorithm>
+#include <format>
 #include <ranges>
 #include <cmath>
 #include <unordered_map>
@@ -9,6 +10,7 @@
 #include <boost/asio/detached.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/asio/this_coro.hpp>
+#include <boost/container_hash/hash.hpp>
 #include <boost/scope/scope_fail.hpp>
 
 #include <stewkk/sql/logic/executor/buffer_size.hpp>
@@ -100,6 +102,15 @@ Type GetExpressionType(const Expression& expr, const AttributesInfo& available_a
       }
       return Type::kBool;
     }
+    Type operator()(const AggregateExpression& aggregate) const {
+      if (aggregate.function == AggregateFunction::kCount) {
+        return Type::kInt;
+      }
+      if (aggregate.is_star) {
+        throw std::logic_error{"star aggregate has no scalar type"};
+      }
+      return std::visit(*this, *aggregate.argument);
+    }
     Type operator()(const IntConst& iconst) const {
       return Type::kInt;
     }
@@ -154,6 +165,9 @@ Type GetExpressionTypeUnchecked(const Expression& expr, const AttributesInfo& av
     }
     Type operator()(const InExpression& in) const {
       return Type::kBool;
+    }
+    Type operator()(const AggregateExpression& aggregate) const {
+      return Type::kInt;
     }
     Type operator()(const IntConst& iconst) const {
       return Type::kInt;
@@ -324,6 +338,9 @@ Value CalcExpression(const Tuple& source, const AttributesInfo& source_attrs, co
       }
       return Value{false, expr.negated};
     }
+    Value operator()(const AggregateExpression&) {
+      throw std::logic_error{"aggregate expressions cannot be evaluated as scalar expressions"};
+    }
     Value operator()(const Attribute& expr) {
       auto it = std::find_if(source_attrs.begin(), source_attrs.end(),
                              [&expr](const AttributeInfo& attr_info) {
@@ -431,6 +448,9 @@ bool ContainsStringExpression(const Expression& expr, const AttributesInfo& attr
                   return std::visit(*this, value);
                 });
     }
+    bool operator()(const AggregateExpression& expr) const {
+      return !expr.is_star && expr.argument && std::visit(*this, *expr.argument);
+    }
     bool operator()(const Attribute& attr) const {
       auto it = std::find_if(attrs.begin(), attrs.end(), [&](const AttributeInfo& attr_info) {
         return attr_info.name == attr.name && attr_info.table == attr.table;
@@ -455,6 +475,9 @@ bool ContainsInExpression(const Expression& expr) {
       return std::visit(*this, *expr.child);
     }
     bool operator()(const InExpression&) const { return true; }
+    bool operator()(const AggregateExpression& expr) const {
+      return !expr.is_star && expr.argument && std::visit(*this, *expr.argument);
+    }
     bool operator()(const Attribute&) const { return false; }
     bool operator()(const StringConst&) const { return false; }
     bool operator()(const IntConst&) const { return false; }
@@ -599,6 +622,10 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
     }
     boost::asio::awaitable<void> operator()(const HashJoin& join) {
       co_await executor.ExecuteHashJoin(join, attr_chan, tuples_chan);
+      co_return;
+    }
+    boost::asio::awaitable<void> operator()(const PhysicalAggregation& agg) {
+      co_await executor.ExecuteHashAggregate(agg, attr_chan, tuples_chan);
       co_return;
     }
     boost::asio::awaitable<void> operator()(const MergeJoin&) {
@@ -1100,6 +1127,139 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashJoin(
   co_await lhs_task(boost::asio::use_awaitable);
   co_await rhs_task(boost::asio::use_awaitable);
   tuples_chan.close();
+}
+
+template <typename ExpressionExecutor>
+boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashAggregate(
+    const PhysicalAggregation& agg, AttributesInfoChannel& out_attr_chan,
+    TuplesChannel& out_tuples_chan) {
+  Log("Executing hash aggregate");
+  auto close_on_fail = boost::scope::make_scope_fail(
+      [&] { out_attr_chan.close(); out_tuples_chan.close(); });
+  auto exec = co_await boost::asio::this_coro::executor;
+  auto [in_attrs_chan, in_tuples_chan] = co_await GetChannels();
+  auto task = SpawnExecutor(exec, *agg.source, in_attrs_chan, in_tuples_chan);
+
+  auto in_attrs = co_await in_attrs_chan.async_receive(boost::asio::use_awaitable);
+
+  // Build output AttributesInfo: group_by cols then one slot per aggregate.
+  AttributesInfo out_attrs;
+  for (const auto& expr : agg.group_by) {
+    if (const auto* attr = std::get_if<Attribute>(&expr)) {
+      auto it = std::find_if(in_attrs.begin(), in_attrs.end(), [&](const AttributeInfo& ai) {
+        return ai.table == attr->table && ai.name == attr->name;
+      });
+      if (it != in_attrs.end()) {
+        out_attrs.push_back(*it);
+      }
+    }
+  }
+  for (size_t i = 0; i < agg.aggregates.size(); ++i) {
+    const auto& agg_expr = std::get<AggregateExpression>(agg.aggregates[i]);
+    Type t = (agg_expr.function == AggregateFunction::kCount)
+                 ? Type::kInt
+                 : (agg_expr.is_star ? Type::kInt : GetExpressionTypeUnchecked(*agg_expr.argument, in_attrs));
+    out_attrs.push_back(AttributeInfo{"", std::format("__agg{}", i), t});
+  }
+  co_await out_attr_chan.async_send(boost::system::error_code{}, out_attrs,
+                                   boost::asio::use_awaitable);
+  out_attr_chan.close();
+
+  // Per-group state: vector of int64_t accumulators, one per aggregate.
+  // For SUM: running total (null if all inputs null).
+  // For COUNT: running count of non-null inputs (or all rows for COUNT(*)).
+  struct GroupState {
+    std::vector<int64_t> accumulators;
+    std::vector<bool> any_non_null; // for SUM null tracking
+  };
+  struct TupleKeyHash {
+    size_t operator()(const std::vector<Value>& key) const {
+      size_t seed = 0;
+      for (const auto& v : key) {
+        boost::hash_combine(seed, v.is_null);
+        if (!v.is_null) boost::hash_combine(seed, v.value.int_value);
+      }
+      return seed;
+    }
+  };
+  std::unordered_map<std::vector<Value>, GroupState, TupleKeyHash> groups;
+
+  // Scalar evaluator for group-by keys and aggregate arguments.
+  auto do_scalar = [&](const Expression& expr, const Tuple& tuple) -> Value {
+    return CalcExpression(tuple, in_attrs, expr);
+  };
+
+  const bool scalar_agg = agg.group_by.empty();
+
+  auto init_state = [&]() -> GroupState {
+    GroupState s;
+    s.accumulators.resize(agg.aggregates.size(), 0);
+    s.any_non_null.resize(agg.aggregates.size(), false);
+    return s;
+  };
+
+  for (;;) {
+    auto buf = co_await ReceiveTuples(in_tuples_chan);
+    if (buf.empty()) break;
+    for (const auto& tuple : buf) {
+      std::vector<Value> key;
+      for (const auto& expr : agg.group_by) {
+        key.push_back(do_scalar(expr, tuple));
+      }
+      auto [it, inserted] = groups.emplace(key, GroupState{});
+      if (inserted) it->second = init_state();
+      auto& state = it->second;
+      for (size_t i = 0; i < agg.aggregates.size(); ++i) {
+        const auto& agg_expr = std::get<AggregateExpression>(agg.aggregates[i]);
+        if (agg_expr.function == AggregateFunction::kCount) {
+          if (agg_expr.is_star) {
+            state.accumulators[i]++;
+          } else {
+            auto v = do_scalar(*agg_expr.argument, tuple);
+            if (!v.is_null) state.accumulators[i]++;
+          }
+        } else { // SUM
+          auto v = do_scalar(*agg_expr.argument, tuple);
+          if (!v.is_null) {
+            state.accumulators[i] += v.value.int_value;
+            state.any_non_null[i] = true;
+          }
+        }
+      }
+    }
+  }
+
+  // For scalar aggregate over empty input, emit one row with COUNT=0 / SUM=NULL.
+  if (scalar_agg && groups.empty()) {
+    groups.emplace(std::vector<Value>{}, init_state());
+  }
+
+  Tuples out_buf;
+  out_buf.reserve(kBufSize);
+  for (auto& [key, state] : groups) {
+    Tuple tuple = key;
+    for (size_t i = 0; i < agg.aggregates.size(); ++i) {
+      const auto& agg_expr = std::get<AggregateExpression>(agg.aggregates[i]);
+      if (agg_expr.function == AggregateFunction::kSum && !state.any_non_null[i]) {
+        tuple.push_back(Value{true}); // NULL
+      } else {
+        tuple.push_back(Value{false, {.int_value = state.accumulators[i]}});
+      }
+    }
+    out_buf.push_back(std::move(tuple));
+    if (out_buf.size() == kBufSize) {
+      co_await out_tuples_chan.async_send(boost::system::error_code{}, std::move(out_buf),
+                                          boost::asio::use_awaitable);
+      out_buf.clear();
+      out_buf.reserve(kBufSize);
+    }
+  }
+  if (!out_buf.empty()) {
+    co_await out_tuples_chan.async_send(boost::system::error_code{}, std::move(out_buf),
+                                        boost::asio::use_awaitable);
+  }
+  co_await task(boost::asio::use_awaitable);
+  out_tuples_chan.close();
 }
 
 template <typename ExpressionExecutor>

@@ -126,8 +126,20 @@ std::string SerializeAst(const Operator& op) {
       return "(Filter " + ToString(node.expr) + " " + SerializeAst(*node.source) + ")";
     } else if constexpr (std::is_same_v<T, Projection>) {
       std::string exprs;
-      for (const auto& e : node.expressions) exprs += " " + ToString(e);
+      for (size_t i = 0; i < node.expressions.size(); ++i) {
+        exprs += " " + ToString(node.expressions[i]);
+        if (i < node.aliases.size() && node.aliases[i]) {
+          exprs += " AS " + *node.aliases[i];
+        }
+      }
       return "(Projection" + exprs + " " + SerializeAst(*node.source) + ")";
+    } else if constexpr (std::is_same_v<T, Aggregation>) {
+      std::string group_by;
+      for (const auto& e : node.group_by) group_by += " " + ToString(e);
+      std::string aggregates;
+      for (const auto& e : node.aggregates) aggregates += " " + ToString(e);
+      return "(Aggregation (GroupBy" + group_by + ") (Aggregates" + aggregates + ") "
+             + SerializeAst(*node.source) + ")";
     } else if constexpr (std::is_same_v<T, CrossJoin>) {
       return "(CrossJoin " + SerializeAst(*node.lhs) + " " + SerializeAst(*node.rhs) + ")";
     } else if constexpr (std::is_same_v<T, Join>) {

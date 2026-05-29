@@ -17,10 +17,11 @@ constexpr static std::string kEmptyTableName = "_EMPTY_TABLE_";
 struct Table;
 struct Projection;
 struct Filter;
+struct Aggregation;
 struct CrossJoin;
 struct Join;
 
-using Operator = std::variant<Table, Projection, Filter, CrossJoin, Join>;
+using Operator = std::variant<Table, Projection, Filter, Aggregation, CrossJoin, Join>;
 
 struct Table {
     std::string name;
@@ -34,6 +35,7 @@ std::string_view VisibleName(const Table& table);
 struct Projection {
     std::vector<Expression> expressions;
     std::shared_ptr<Operator> source;
+    std::vector<std::optional<std::string>> aliases;
 
     bool operator==(const Projection& other) const;
 };
@@ -43,6 +45,14 @@ struct Filter {
     std::shared_ptr<Operator> source;
 
     bool operator==(const Filter& other) const;
+};
+
+struct Aggregation {
+    std::vector<Expression> group_by;
+    std::vector<Expression> aggregates;
+    std::shared_ptr<Operator> source;
+
+    bool operator==(const Aggregation& other) const;
 };
 
 struct CrossJoin {

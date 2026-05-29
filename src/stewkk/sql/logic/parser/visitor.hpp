@@ -25,6 +25,12 @@ class Visitor : public codegen::PostgreSQLParserBaseVisitor {
     virtual std::any visitTarget_list(codegen::PostgreSQLParser::Target_listContext *ctx) override;
     virtual std::any visitTarget_label(codegen::PostgreSQLParser::Target_labelContext *ctx) override;
     virtual std::any visitTarget_star(codegen::PostgreSQLParser::Target_starContext *ctx) override;
+    virtual std::any visitGroup_clause(codegen::PostgreSQLParser::Group_clauseContext *ctx) override;
+    virtual std::any visitGroup_by_list(codegen::PostgreSQLParser::Group_by_listContext *ctx) override;
+    virtual std::any visitGroup_by_item(codegen::PostgreSQLParser::Group_by_itemContext *ctx) override;
+    virtual std::any visitFunc_expr(codegen::PostgreSQLParser::Func_exprContext *ctx) override;
+    virtual std::any visitFunc_application(codegen::PostgreSQLParser::Func_applicationContext *ctx) override;
+    virtual std::any visitFunc_arg_expr(codegen::PostgreSQLParser::Func_arg_exprContext *ctx) override;
     virtual std::any visitFrom_clause(codegen::PostgreSQLParser::From_clauseContext *ctx) override;
     virtual std::any visitWhere_clause(codegen::PostgreSQLParser::Where_clauseContext *ctx) override;
     virtual std::any visitSelect_with_parens(codegen::PostgreSQLParser::Select_with_parensContext *ctx) override;

@@ -38,4 +38,8 @@ bool PhysicalSort::operator==(const PhysicalSort& other) const {
   return *source == *other.source && keys == other.keys;
 }
 
+bool PhysicalAggregation::operator==(const PhysicalAggregation& other) const {
+  return *source == *other.source && group_by == other.group_by && aggregates == other.aggregates;
+}
+
 } // namespace stewkk::sql

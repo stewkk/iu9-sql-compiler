@@ -7,11 +7,23 @@ std::string_view VisibleName(const Table& table) {
 }
 
 bool Projection::operator==(const Projection& other) const {
-  return expressions == other.expressions && *source == *other.source;
+  auto normalize = [](const std::vector<std::optional<std::string>>& aliases) {
+    auto result = aliases;
+    while (!result.empty() && !result.back()) {
+      result.pop_back();
+    }
+    return result;
+  };
+  return expressions == other.expressions && *source == *other.source
+         && normalize(aliases) == normalize(other.aliases);
 }
 
 bool Filter::operator==(const Filter& other) const {
   return expr == other.expr && *source == *other.source;
+}
+
+bool Aggregation::operator==(const Aggregation& other) const {
+  return group_by == other.group_by && aggregates == other.aggregates && *source == *other.source;
 }
 
 bool CrossJoin::operator==(const CrossJoin& other) const {

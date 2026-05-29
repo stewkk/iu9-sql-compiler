@@ -403,8 +403,125 @@ TEST(ParserTest, OrderByNullsFirstRejected) {
   ASSERT_THAT(got.Wraps(ErrorType::kQueryNotSupported), IsTrue());
 }
 
-/*
-** aggregations: SELECT kind, sum(len) AS total FROM films GROUP BY kind;
- */
+TEST(ParserTest, SelectWithSumAggregateAlias) {
+  std::stringstream s{
+      "SELECT SUM(lineorder.lo_extendedprice * lineorder.lo_discount) AS revenue "
+      "FROM lineorder;"};
+
+  Operator got = GetAST(s).value().op;
+
+  Expression revenue_arg = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"lineorder", "lo_extendedprice"}),
+      BinaryOp::kMul,
+      std::make_shared<Expression>(Attribute{"lineorder", "lo_discount"}),
+  };
+  Expression revenue = AggregateExpression{
+      AggregateFunction::kSum,
+      std::make_shared<Expression>(revenue_arg),
+      false,
+  };
+
+  ASSERT_THAT(got, VariantWith<Projection>(Projection{
+                       std::vector<Expression>{Attribute{"", "__agg0"}},
+                       std::make_shared<Operator>(Aggregation{
+                           {},
+                           std::vector<Expression>{revenue},
+                           std::make_shared<Operator>(Table{"lineorder"}),
+                       }),
+                       std::vector<std::optional<std::string>>{"revenue"},
+                   }));
+}
+
+TEST(ParserTest, SelectWithGroupByAndAggregate) {
+  std::stringstream s{
+      "SELECT date.d_year, SUM(lineorder.lo_revenue) AS revenue "
+      "FROM lineorder JOIN date ON lineorder.lo_orderdate = date.d_datekey "
+      "GROUP BY date.d_year;"};
+
+  Operator got = GetAST(s).value().op;
+
+  Expression year = Attribute{"date", "d_year"};
+  Expression revenue = AggregateExpression{
+      AggregateFunction::kSum,
+      std::make_shared<Expression>(Attribute{"lineorder", "lo_revenue"}),
+      false,
+  };
+  Expression join_qual = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"lineorder", "lo_orderdate"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(Attribute{"date", "d_datekey"}),
+  };
+
+  ASSERT_THAT(got, VariantWith<Projection>(Projection{
+                       std::vector<Expression>{year, Attribute{"", "__agg0"}},
+                       std::make_shared<Operator>(Aggregation{
+                           std::vector<Expression>{year},
+                           std::vector<Expression>{revenue},
+                           std::make_shared<Operator>(Join{
+                               JoinType::kInner,
+                               join_qual,
+                               std::make_shared<Operator>(Table{"lineorder"}),
+                               std::make_shared<Operator>(Table{"date"}),
+                           }),
+                       }),
+                       std::vector<std::optional<std::string>>{std::nullopt, "revenue"},
+                   }));
+}
+
+TEST(ParserTest, SelectWithCountStar) {
+  std::stringstream s{"SELECT COUNT(*) FROM lineorder;"};
+
+  Operator got = GetAST(s).value().op;
+
+  Expression count_star = AggregateExpression{
+      AggregateFunction::kCount,
+      nullptr,
+      true,
+  };
+  ASSERT_THAT(got, VariantWith<Projection>(Projection{
+                       std::vector<Expression>{Attribute{"", "__agg0"}},
+                       std::make_shared<Operator>(Aggregation{
+                           {},
+                           std::vector<Expression>{count_star},
+                           std::make_shared<Operator>(Table{"lineorder"}),
+                       }),
+                   }));
+}
+
+TEST(ParserTest, UnsupportedAggregateModifiersRejected) {
+  for (const char* sql : {
+           "SELECT SUM(DISTINCT lineorder.lo_revenue) FROM lineorder;",
+           "SELECT SUM(ALL lineorder.lo_revenue) FROM lineorder;",
+           "SELECT SUM(lineorder.lo_revenue ORDER BY lineorder.lo_revenue) FROM lineorder;",
+           "SELECT SUM(lineorder.lo_revenue) FILTER (WHERE lineorder.lo_discount > 0) FROM lineorder;",
+           "SELECT SUM(lineorder.lo_revenue) OVER () FROM lineorder;",
+       }) {
+    std::stringstream s{sql};
+
+    auto got = GetAST(s).error();
+
+    ASSERT_THAT(got.Wraps(ErrorType::kQueryNotSupported), IsTrue());
+  }
+}
+
+TEST(ParserTest, UnsupportedGroupByFormsRejected) {
+  std::stringstream s{
+      "SELECT date.d_year, SUM(lineorder.lo_revenue) FROM lineorder "
+      "GROUP BY ROLLUP(date.d_year);"};
+
+  auto got = GetAST(s).error();
+
+  ASSERT_THAT(got.Wraps(ErrorType::kQueryNotSupported), IsTrue());
+}
+
+TEST(ParserTest, HavingRejected) {
+  std::stringstream s{
+      "SELECT SUM(lineorder.lo_revenue) FROM lineorder "
+      "HAVING SUM(lineorder.lo_revenue) > 0;"};
+
+  auto got = GetAST(s).error();
+
+  ASSERT_THAT(got.Wraps(ErrorType::kQueryNotSupported), IsTrue());
+}
 
 }  // namespace stewkk::sql

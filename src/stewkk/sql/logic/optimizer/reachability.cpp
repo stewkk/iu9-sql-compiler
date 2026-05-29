@@ -105,6 +105,17 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             if (!child.ok) child.reason = "Sort.input: " + child.reason;
             return child;
         },
+        [&](const physical::Aggregation& op) -> InternalMatch {
+            const auto* t = std::get_if<PhysicalAggregation>(&target);
+            if (!t) return {false, depth, "type mismatch: expected HashAggregate"};
+            if (op.group_by != t->group_by)
+                return {false, depth + 1, "Aggregation group_by mismatch"};
+            if (op.aggregates != t->aggregates)
+                return {false, depth + 1, "Aggregation aggregates mismatch"};
+            auto child = MatchGroup(op.source.get(), *t->source, depth + 1);
+            if (!child.ok) child.reason = "Aggregation.source: " + child.reason;
+            return child;
+        },
     }, pe->root_operator);
 }
 

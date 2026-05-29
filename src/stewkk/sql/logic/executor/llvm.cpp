@@ -313,6 +313,9 @@ llvm::Function* JITCompiler::GenerateIR(
       llvm::Value* operator()(const InExpression&) {
         throw std::logic_error{"IN expressions are not supported by JIT"};
       }
+      llvm::Value* operator()(const AggregateExpression&) {
+        throw std::logic_error{"aggregate expressions are not supported by JIT"};
+      }
       llvm::Value* operator()(const Literal& expr) {
           switch (expr) {
             case Literal::kNull:

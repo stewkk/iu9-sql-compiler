@@ -21,8 +21,17 @@ struct Filter {
 struct Projection {
   utils::NotNull<Group*> source;
   std::vector<Expression> expressions;
+  std::vector<std::optional<std::string>> aliases;
 
   bool operator==(const Projection&) const = default;
+};
+
+struct Aggregation {
+  utils::NotNull<Group*> source;
+  std::vector<Expression> group_by;
+  std::vector<Expression> aggregates;
+
+  bool operator==(const Aggregation&) const = default;
 };
 
 struct CrossJoin {
@@ -45,7 +54,8 @@ struct Join {
 } // namespace logical
 
 struct LogicalExpr {
-    std::variant<logical::Table, logical::Filter, logical::Projection, logical::Join, logical::CrossJoin> root_operator;
+    std::variant<logical::Table, logical::Filter, logical::Projection, logical::Aggregation,
+                 logical::Join, logical::CrossJoin> root_operator;
     utils::NotNull<Group*> group;
 };
 

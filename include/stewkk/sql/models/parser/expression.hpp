@@ -59,9 +59,17 @@ std::string ToString(UnaryOp op);
 struct BinaryExpression;
 struct UnaryExpression;
 struct InExpression;
+struct AggregateExpression;
+
+enum class AggregateFunction {
+    kSum,
+    kCount,
+};
+
+std::string ToString(AggregateFunction function);
 
 using Expression = std::variant<BinaryExpression, Attribute, IntConst, StringConst, UnaryExpression,
-                                InExpression, Literal>;
+                                InExpression, AggregateExpression, Literal>;
 
 std::string ToString(const Expression& expr);
 
@@ -86,6 +94,14 @@ struct InExpression {
     bool negated = false;
 
     bool operator==(const InExpression& other) const;
+};
+
+struct AggregateExpression {
+    AggregateFunction function;
+    std::shared_ptr<Expression> argument;
+    bool is_star = false;
+
+    bool operator==(const AggregateExpression& other) const;
 };
 
 }  // namespace stewkk::sql

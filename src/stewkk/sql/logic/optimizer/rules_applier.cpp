@@ -30,7 +30,6 @@ utils::NotNull<PhysicalExpr*> RulesApplier<NTransformation, NImplementation>::Ap
     return rules_.implementation_rules[rule.value]->Apply(expr, memo);
 }
 
-template class RulesApplier<2, 0>;
-template class RulesApplier<6, 6>;
+template class RulesApplier<6, 7>;
 
 }  // namespace stewkk::sql

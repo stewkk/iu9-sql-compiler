@@ -48,6 +48,11 @@ void CollectAttrTables(const Expression& e, std::unordered_set<std::string>& out
           CollectAttrTables(value, out);
         }
       },
+      [&](const AggregateExpression& a) {
+        if (!a.is_star && a.argument) {
+          CollectAttrTables(*a.argument, out);
+        }
+      },
       [&](const IntConst&) {},
       [&](const StringConst&) {},
       [&](const Literal&) {},
@@ -73,6 +78,7 @@ void CollectGroupTables(utils::NotNull<Group*> g, std::unordered_set<std::string
       [&](const logical::Table& t) { out.insert(std::string{VisibleName(t)}); },
       [&](const logical::Filter& f) { CollectGroupTables(f.source, out, seen); },
       [&](const logical::Projection& p) { CollectGroupTables(p.source, out, seen); },
+      [&](const logical::Aggregation& a) { CollectGroupTables(a.source, out, seen); },
       [&](const logical::CrossJoin& j) {
         CollectGroupTables(j.lhs, out, seen);
         CollectGroupTables(j.rhs, out, seen);

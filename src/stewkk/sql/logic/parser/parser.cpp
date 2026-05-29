@@ -64,6 +64,9 @@ std::string GetDotRepresentation(const Expression& expr) {
     std::string operator()(const InExpression& expr) {
       return ToString(Expression{expr});
     }
+    std::string operator()(const AggregateExpression& expr) {
+      return ToString(Expression{expr});
+    }
     std::string operator()(const Attribute& expr) {
       return ToString(expr);
     }
@@ -93,6 +96,17 @@ std::string GetDotRepresentation(const Operator& op) {
         }
         std::pair<std::string, std::string> operator()(const Filter& op) {
           auto node = std::format("σ {}", GetDotRepresentation(op.expr));
+          auto [source_node, rest] = std::visit(DotFormatter{}, *op.source);
+          return {node, std::format("\"{}\"\n\"{}\" -> \"{}\"\n{}", node, source_node, node, rest)};
+        }
+        std::pair<std::string, std::string> operator()(const Aggregation& op) {
+          auto groups = op.group_by
+                        | std::views::transform([](const Expression& expr) { return ToString(expr); })
+                        | std::views::join_with(',') | std::ranges::to<std::string>();
+          auto aggregates = op.aggregates
+                            | std::views::transform([](const Expression& expr) { return ToString(expr); })
+                            | std::views::join_with(',') | std::ranges::to<std::string>();
+          auto node = std::format("γ group_by=[{}] aggregates=[{}]", groups, aggregates);
           auto [source_node, rest] = std::visit(DotFormatter{}, *op.source);
           return {node, std::format("\"{}\"\n\"{}\" -> \"{}\"\n{}", node, source_node, node, rest)};
         }

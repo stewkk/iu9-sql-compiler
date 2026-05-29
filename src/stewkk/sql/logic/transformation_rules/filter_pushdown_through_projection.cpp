@@ -25,6 +25,11 @@ void CollectAttributes(const Expression& e, std::vector<Attribute>& out) {
           CollectAttributes(value, out);
         }
       },
+      [&](const AggregateExpression& a) {
+        if (!a.is_star && a.argument) {
+          CollectAttributes(*a.argument, out);
+        }
+      },
       [&](const IntConst&) {},
       [&](const StringConst&) {},
       [&](const Literal&) {},
@@ -72,7 +77,7 @@ LogicalOperator FilterPushdownThroughProjection::ApplyImpl(utils::NotNull<Logica
   }
 
   auto new_filter_group = memo.AddGroup(logical::Filter{proj->source, f.predicate})->group;
-  return logical::Projection{new_filter_group, proj->expressions};
+  return logical::Projection{new_filter_group, proj->expressions, proj->aliases};
 }
 
 }  // namespace stewkk::sql

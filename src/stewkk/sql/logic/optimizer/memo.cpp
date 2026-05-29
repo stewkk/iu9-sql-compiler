@@ -18,7 +18,23 @@ std::string ToKey(const LogicalOperator& op) {
             for (const auto& e : p.expressions) {
                 exprs += ToString(e) + ",";
             }
-            return "Projection(" + exprs + std::to_string(p.source->GetId()) + ")";
+            std::string aliases;
+            for (const auto& alias : p.aliases) {
+                aliases += alias.value_or("") + ",";
+            }
+            return "Projection(" + exprs + aliases + std::to_string(p.source->GetId()) + ")";
+        },
+        [](const logical::Aggregation& a) {
+            std::string group_by;
+            for (const auto& e : a.group_by) {
+                group_by += ToString(e) + ",";
+            }
+            std::string aggregates;
+            for (const auto& e : a.aggregates) {
+                aggregates += ToString(e) + ",";
+            }
+            return "Aggregation(" + group_by + ";" + aggregates + ";"
+                   + std::to_string(a.source->GetId()) + ")";
         },
         [](const logical::CrossJoin& j) {
             return "CrossJoin(" + std::to_string(j.lhs->GetId()) + "," + std::to_string(j.rhs->GetId()) + ")";
@@ -82,7 +98,11 @@ utils::NotNull<LogicalExpr*> Memo::Populate(const Operator& op) {
         },
         [this](const Projection& p) {
             auto source = Populate(*p.source);
-            return AddGroup(logical::Projection{source->group, p.expressions});
+            return AddGroup(logical::Projection{source->group, p.expressions, p.aliases});
+        },
+        [this](const Aggregation& a) {
+            auto source = Populate(*a.source);
+            return AddGroup(logical::Aggregation{source->group, a.group_by, a.aggregates});
         },
         [this](const CrossJoin& j) {
             auto lhs = Populate(*j.lhs);

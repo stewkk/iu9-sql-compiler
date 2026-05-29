@@ -37,6 +37,13 @@ PhysicalPlanNode ToPhysicalPlan(const Operator& op) {
         .predicate = f.expr,
       };
     },
+    [](const Aggregation& a) -> PhysicalPlanNode {
+      return PhysicalAggregation{
+        .source = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*a.source)),
+        .group_by = a.group_by,
+        .aggregates = a.aggregates,
+      };
+    },
     [](const CrossJoin& j) -> PhysicalPlanNode {
       return NestedLoopCrossJoin{
         .lhs = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*j.lhs)),
@@ -571,5 +578,74 @@ TEST(ExecutorTest, InnerJoinLargeRhsBug) {
 REGISTER_TYPED_TEST_SUITE_P(ExecutorTest, Projection, Filter, FilterMany, CrossJoin, InnerJoin, LeftJoin, RightJoin, ComplexJoin);
 using ExecutorTypes = ::testing::Types<InterpretedExpressionExecutor, JitCompiledExpressionExecutor>;
 INSTANTIATE_TYPED_TEST_SUITE_P(TypedExecutorTest, ExecutorTest, ExecutorTypes);
+
+TEST(ExecutorTest, ScalarCountStar) {
+  boost::asio::io_context ctx;
+  boost::asio::co_spawn(
+      ctx,
+      []() -> boost::asio::awaitable<Result<Relation>> {
+        std::stringstream s{"SELECT COUNT(*) FROM users;"};
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
+        CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
+        Executor<InterpretedExpressionExecutor> executor(
+            std::move(seq_scan), co_await boost::asio::this_coro::executor);
+        auto got = co_await executor.Execute(op);
+        co_return got;
+      }(),
+      [](std::exception_ptr p, Result<Relation> got) {
+        if (p) std::rethrow_exception(p);
+        ASSERT_THAT(got.value().tuples.size(), Eq(1u));
+        ASSERT_THAT(got.value().tuples[0][0], Eq(Value{false, {.int_value = 17}}));
+      });
+  ctx.run();
+}
+
+TEST(ExecutorTest, ScalarSum) {
+  boost::asio::io_context ctx;
+  boost::asio::co_spawn(
+      ctx,
+      []() -> boost::asio::awaitable<Result<Relation>> {
+        std::stringstream s{"SELECT SUM(users.age) FROM users;"};
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
+        CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
+        Executor<InterpretedExpressionExecutor> executor(
+            std::move(seq_scan), co_await boost::asio::this_coro::executor);
+        auto got = co_await executor.Execute(op);
+        co_return got;
+      }(),
+      [](std::exception_ptr p, Result<Relation> got) {
+        if (p) std::rethrow_exception(p);
+        ASSERT_THAT(got.value().tuples.size(), Eq(1u));
+        ASSERT_THAT(got.value().tuples[0][0], Eq(Value{false, {.int_value = 1182}}));
+      });
+  ctx.run();
+}
+
+TEST(ExecutorTest, GroupByCountStar) {
+  boost::asio::io_context ctx;
+  boost::asio::co_spawn(
+      ctx,
+      []() -> boost::asio::awaitable<Result<Relation>> {
+        std::stringstream s{"SELECT users.age, COUNT(*) FROM users GROUP BY users.age;"};
+        PhysicalPlanNode op = ToPhysicalPlan(GetAST(s).value().op);
+        CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
+        Executor<InterpretedExpressionExecutor> executor(
+            std::move(seq_scan), co_await boost::asio::this_coro::executor);
+        auto got = co_await executor.Execute(op);
+        co_return got;
+      }(),
+      [](std::exception_ptr p, Result<Relation> got) {
+        if (p) std::rethrow_exception(p);
+        // 11 distinct age values in users.csv
+        ASSERT_THAT(got.value().tuples.size(), Eq(11u));
+        // Sum of counts must equal total rows (17)
+        int64_t total = 0;
+        for (const auto& t : got.value().tuples) {
+          total += t[1].value.int_value;
+        }
+        ASSERT_THAT(total, Eq(17));
+      });
+  ctx.run();
+}
 
 }  // namespace stewkk::sql

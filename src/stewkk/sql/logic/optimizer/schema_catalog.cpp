@@ -1,5 +1,7 @@
 #include <stewkk/sql/logic/optimizer/schema_catalog.hpp>
 
+#include <format>
+
 #include <stewkk/sql/utils/overloaded.hpp>
 
 namespace stewkk::sql {
@@ -42,6 +44,20 @@ std::optional<Schema> SchemaCatalog::Derive(const LogicalOperator& op) {
               if (const auto* a = std::get_if<Attribute>(&expr)) {
                   out.push_back(*a);
               }
+          }
+          return out;
+      },
+      [this](const logical::Aggregation& a) -> std::optional<Schema> {
+          auto input = GetSchema(a.source);
+          if (!input) return std::nullopt;
+          Schema out;
+          for (const auto& expr : a.group_by) {
+              if (const auto* attr = std::get_if<Attribute>(&expr)) {
+                  out.push_back(*attr);
+              }
+          }
+          for (size_t i = 0; i < a.aggregates.size(); ++i) {
+              out.push_back(Attribute{"", std::format("__agg{}", i)});
           }
           return out;
       },

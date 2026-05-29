@@ -40,6 +40,9 @@ PhysicalPlanNode ToPhysicalPlan(const Operator& op) {
         .predicate = f.expr,
       };
     },
+    [](const Aggregation&) -> PhysicalPlanNode {
+      throw std::runtime_error{"Aggregation execution is not implemented"};
+    },
     [](const CrossJoin& j) -> PhysicalPlanNode {
       return NestedLoopCrossJoin{
         .lhs = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*j.lhs)),

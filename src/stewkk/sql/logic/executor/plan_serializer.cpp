@@ -121,6 +121,12 @@ std::string SerializeExpr(const Expression& expr) {
             return std::format("({} {} (values {}))",
                                e.negated ? "notin" : "in", SerializeExpr(*e.lhs), values);
         }
+        std::string operator()(const AggregateExpression& e) const {
+            if (e.is_star) {
+                return std::format("({} *)", ToString(e.function));
+            }
+            return std::format("({} {})", ToString(e.function), SerializeExpr(*e.argument));
+        }
         std::string operator()(Literal l) const {
             switch (l) {
                 case Literal::kNull:    return "NULL";
@@ -186,6 +192,20 @@ std::string SerializeNode(const PhysicalPlanNode& node) {
                 keys += k.dir == Direction::kAsc ? " Asc" : " Desc";
             }
             return std::format("(Sort (keys {}) {})", keys, SerializeNode(*n.source));
+        }
+        std::string operator()(const PhysicalAggregation& n) const {
+            std::string group_by_str;
+            for (const auto& e : n.group_by) {
+                if (!group_by_str.empty()) group_by_str += ' ';
+                group_by_str += SerializeExpr(e);
+            }
+            std::string aggs_str;
+            for (const auto& e : n.aggregates) {
+                if (!aggs_str.empty()) aggs_str += ' ';
+                aggs_str += SerializeExpr(e);
+            }
+            return std::format("(HashAggregate (group_by {}) (aggs {}) {})",
+                               group_by_str, aggs_str, SerializeNode(*n.source));
         }
     };
     return std::visit(Visitor{}, node);
@@ -465,6 +485,32 @@ PhysicalPlanNode ParseNode(ParseState& s) {
         };
     }
 
+    if (head == "HashAggregate") {
+        s.ExpectLParen();
+        auto kw1 = s.ExpectAtom();
+        if (kw1 != "group_by")
+            throw std::runtime_error(std::format("expected 'group_by' but got '{}'", kw1));
+        std::vector<Expression> group_by;
+        while (s.Peek().kind != TokenKind::RParen)
+            group_by.push_back(ParseExpr(s));
+        s.ExpectRParen();
+        s.ExpectLParen();
+        auto kw2 = s.ExpectAtom();
+        if (kw2 != "aggs")
+            throw std::runtime_error(std::format("expected 'aggs' but got '{}'", kw2));
+        std::vector<Expression> aggregates;
+        while (s.Peek().kind != TokenKind::RParen)
+            aggregates.push_back(ParseExpr(s));
+        s.ExpectRParen();
+        auto source = ParseNode(s);
+        s.ExpectRParen();
+        return PhysicalAggregation{
+            std::make_shared<PhysicalPlanNode>(std::move(source)),
+            std::move(group_by),
+            std::move(aggregates),
+        };
+    }
+
     throw std::runtime_error(std::format("unknown plan node: '{}'", head));
 }
 
@@ -560,6 +606,22 @@ struct DotBuilder {
             keys += k.dir == Direction::kAsc ? " asc" : " desc";
         }
         int id = Emit(std::format("Sort\\n{}", keys));
+        EmitEdge(src, id);
+        return id;
+    }
+    int operator()(const PhysicalAggregation& n) {
+        int src = std::visit(*this, *n.source);
+        std::string aggs;
+        for (const auto& e : n.aggregates) {
+            if (!aggs.empty()) aggs += ", ";
+            aggs += ToString(e);
+        }
+        std::string group_by;
+        for (const auto& e : n.group_by) {
+            if (!group_by.empty()) group_by += ", ";
+            group_by += ToString(e);
+        }
+        int id = Emit(std::format("HashAgg\\nGROUP BY {}\\n{}", group_by, aggs));
         EmitEdge(src, id);
         return id;
     }

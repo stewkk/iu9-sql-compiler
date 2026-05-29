@@ -22,8 +22,9 @@ struct HashJoin;
 struct MergeJoin;
 struct IndexSeek;
 struct PhysicalSort;
+struct PhysicalAggregation;
 
-using PhysicalPlanNode = std::variant<SeqScan, PhysicalProjection, PhysicalFilter, NestedLoopCrossJoin, NestedLoopJoin, HashJoin, MergeJoin, IndexSeek, PhysicalSort>;
+using PhysicalPlanNode = std::variant<SeqScan, PhysicalProjection, PhysicalFilter, NestedLoopCrossJoin, NestedLoopJoin, HashJoin, MergeJoin, IndexSeek, PhysicalSort, PhysicalAggregation>;
 
 struct SeqScan {
   std::string table;
@@ -94,6 +95,14 @@ struct PhysicalSort {
   SortOrder keys;
 
   bool operator==(const PhysicalSort&) const;
+};
+
+struct PhysicalAggregation {
+  std::shared_ptr<PhysicalPlanNode> source;
+  std::vector<Expression> group_by;
+  std::vector<Expression> aggregates;
+
+  bool operator==(const PhysicalAggregation&) const;
 };
 
 } // namespace stewkk::sql

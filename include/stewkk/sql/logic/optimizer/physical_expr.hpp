@@ -68,12 +68,20 @@ struct Sort {
   bool operator==(const Sort&) const = default;
 };
 
+struct Aggregation {
+  utils::NotNull<Group*> source;
+  std::vector<Expression> group_by;
+  std::vector<Expression> aggregates;
+
+  bool operator==(const Aggregation&) const = default;
+};
+
 } // namespace physical
 
 struct PhysicalExpr {
     std::variant<physical::SeqScan, physical::Projection, physical::Filter,
                  physical::NestedLoopJoin, physical::NestedLoopCrossJoin,
-                 physical::HashJoin, physical::Sort> root_operator;
+                 physical::HashJoin, physical::Sort, physical::Aggregation> root_operator;
     utils::NotNull<Group*> group;
     bool is_enforcer = false;
 };

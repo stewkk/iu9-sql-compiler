@@ -54,6 +54,13 @@ int64_t CardinalityEstimates::GetCardinality(const LogicalOperator& op) {
       [this](const logical::Projection& p) -> int64_t {
           return GetCardinality(p.source);
       },
+      [this](const logical::Aggregation& a) -> int64_t {
+          auto source_cardinality = GetCardinality(a.source);
+          if (a.group_by.empty()) {
+              return 1;
+          }
+          return source_cardinality;
+      },
       [this](const logical::CrossJoin& j) -> int64_t {
           return GetCardinality(j.lhs) * GetCardinality(j.rhs);
       },

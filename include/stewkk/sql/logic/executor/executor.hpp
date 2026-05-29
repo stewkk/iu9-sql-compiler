@@ -66,6 +66,9 @@ private:
                                            TuplesChannel& tuples_chan);
   boost::asio::awaitable<void> ExecuteHashJoin(const HashJoin& join, AttributesInfoChannel& attr_chan,
                                                 TuplesChannel& tuples_chan);
+  boost::asio::awaitable<void> ExecuteHashAggregate(const PhysicalAggregation& agg,
+                                                     AttributesInfoChannel& attr_chan,
+                                                     TuplesChannel& tuples_chan);
   boost::asio::experimental::promise<void(std::exception_ptr)> SpawnExecutor(
       boost::asio::any_io_executor exec,
       const PhysicalPlanNode& op, AttributesInfoChannel& attr_chan, TuplesChannel& tuple_chan);

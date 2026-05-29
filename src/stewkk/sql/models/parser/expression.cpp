@@ -17,6 +17,25 @@ bool InExpression::operator==(const InExpression& other) const {
   return *lhs == *other.lhs && values == other.values && negated == other.negated;
 }
 
+bool AggregateExpression::operator==(const AggregateExpression& other) const {
+  if (function != other.function || is_star != other.is_star) {
+    return false;
+  }
+  if (is_star) {
+    return true;
+  }
+  return argument && other.argument && *argument == *other.argument;
+}
+
+std::string ToString(AggregateFunction function) {
+  switch (function) {
+    case AggregateFunction::kSum:
+      return "SUM";
+    case AggregateFunction::kCount:
+      return "COUNT";
+  }
+}
+
 std::string ToString(const Attribute& attr) {
   return std::format("{}.{}", attr.table, attr.name);
 }
@@ -108,6 +127,12 @@ std::string ToString(const Expression& expr) {
                           return ToString(v);
                         }) | std::views::join_with(',') | std::ranges::to<std::string>();
           return std::format("{} {}in ({})", ToString(*expr.lhs), expr.negated ? "not " : "", values);
+        }
+        std::string operator()(const AggregateExpression& expr) {
+          if (expr.is_star) {
+            return std::format("{}(*)", ToString(expr.function));
+          }
+          return std::format("{}({})", ToString(expr.function), ToString(*expr.argument));
         }
         std::string operator()(const Literal& expr) {
           return ToString(expr);

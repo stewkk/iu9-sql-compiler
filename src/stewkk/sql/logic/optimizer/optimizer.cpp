@@ -44,6 +44,7 @@ PropertySet RequiredInputProps(utils::NotNull<PhysicalExpr*> expr,
           return PropertySet::Any();
       },
       [&](const physical::Sort&) { return PropertySet::Any(); },
+      [&](const physical::Aggregation&) { return PropertySet::Any(); },
   }, expr->root_operator);
 }
 
@@ -60,6 +61,7 @@ PropertySet DeriveOutputProps(utils::NotNull<PhysicalExpr*> expr,
       [&](const physical::NestedLoopCrossJoin&) { return child_delivered[0]; },
       [&](const physical::HashJoin&) { return PropertySet::Any(); },
       [&](const physical::Sort& s) { return PropertySet{SortProperty{s.keys}}; },
+      [&](const physical::Aggregation&) { return PropertySet::Any(); },
   }, expr->root_operator);
 }
 
@@ -76,6 +78,9 @@ int64_t LowerBoundLocalCost(utils::NotNull<LogicalExpr*> expr, CardinalityEstima
           return cardinality.GetCardinality(expr->group);
       },
       [&](const logical::Projection&) -> int64_t {
+          return cardinality.GetCardinality(expr->group);
+      },
+      [&](const logical::Aggregation&) -> int64_t {
           return cardinality.GetCardinality(expr->group);
       },
       [&](const logical::CrossJoin& j) -> int64_t {
@@ -124,6 +129,9 @@ int64_t CalcCost(utils::NotNull<PhysicalExpr*> expr, CardinalityEstimates& cardi
           auto n = cardinality.GetCardinality(s.input);
           return n > 1 ? n * static_cast<int64_t>(std::bit_width(static_cast<uint64_t>(n))) : n;
       },
+      [&](const physical::Aggregation& a) -> int64_t {
+          return cardinality.GetCardinality(a.source);
+      },
   }, expr->root_operator);
 }
 
@@ -139,6 +147,9 @@ std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<LogicalExpr*> exp
       },
       [](const logical::Projection& p) -> std::vector<utils::NotNull<Group*>> {
           return {p.source};
+      },
+      [](const logical::Aggregation& a) -> std::vector<utils::NotNull<Group*>> {
+          return {a.source};
       },
       [](const logical::CrossJoin& j) -> std::vector<utils::NotNull<Group*>> {
           return {j.lhs, j.rhs};
@@ -171,6 +182,9 @@ std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<PhysicalExpr*> ex
       },
       [](const physical::Sort& s) -> std::vector<utils::NotNull<Group*>> {
           return {s.input};
+      },
+      [](const physical::Aggregation& a) -> std::vector<utils::NotNull<Group*>> {
+          return {a.source};
       },
   }, expr->root_operator);
 }
@@ -451,6 +465,14 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
                 .keys = op.keys,
             };
           },
+          [this, best_expr_nn, required](const physical::Aggregation& op) -> PhysicalPlanNode {
+            return PhysicalAggregation{
+                .source = std::make_shared<PhysicalPlanNode>(
+                    BuildOptimalPlan(op.source.get(), RequiredInputProps(best_expr_nn, required, 0))),
+                .group_by = op.group_by,
+                .aggregates = op.aggregates,
+            };
+          },
       },
       best_expr->root_operator);
 }
@@ -483,6 +505,6 @@ utils::NotNull<Group*> Optimizer<NTransformation, NImplementation>::GetRootGroup
   return root_->group;
 }
 
-template class Optimizer<6, 6>;
+template class Optimizer<6, 7>;
 
 }  // namespace stewkk::sql
