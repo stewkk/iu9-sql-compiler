@@ -41,9 +41,9 @@
                 ms-python.python
                 ms-python.vscode-pylance
                 ms-toolsai.jupyter
-		anthropic.claude-code
-		ms-vscode.cpptools
-		asvetliakov.vscode-neovim
+                anthropic.claude-code
+                ms-vscode.cpptools
+                asvetliakov.vscode-neovim
               ];
             })
             pythonEnv
@@ -59,8 +59,9 @@
             inkscape
             llvmPackages_21.llvm
             llvmPackages_21.llvm.dev
-            nodejs_20
+            nodejs_24
             graphviz
+            codex
           ];
 
           nativeBuildInputs = [

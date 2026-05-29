@@ -264,11 +264,15 @@ llvm::Function* JITCompiler::GenerateIR(
                 auto* logical_not
                     = builder.CreateZExt(is_zero, value->getType(), "logical_not_result");
 
+                llvm::Value* not_null_struct = llvm::UndefValue::get(value_type);
+                not_null_struct = builder.CreateInsertValue(not_null_struct, builder.getInt8(0), {0});
+                not_null_struct = builder.CreateInsertValue(not_null_struct, logical_not, {1});
+
                 auto* select = builder.CreateSelect(
                     is_null,
                     llvm::ConstantStruct::get(static_cast<llvm::StructType*>(value_type),
                                               {builder.getInt8(1), builder.getInt64(0)}),
-                    logical_not);
+                    not_null_struct);
                 return select;
               }
               case UnaryOp::kMinus: {
@@ -277,11 +281,15 @@ llvm::Function* JITCompiler::GenerateIR(
 
                 auto* negated = builder.CreateNeg(value);
 
+                llvm::Value* not_null_struct = llvm::UndefValue::get(value_type);
+                not_null_struct = builder.CreateInsertValue(not_null_struct, builder.getInt8(0), {0});
+                not_null_struct = builder.CreateInsertValue(not_null_struct, negated, {1});
+
                 auto* select = builder.CreateSelect(
                     is_null,
                     llvm::ConstantStruct::get(static_cast<llvm::StructType*>(value_type),
                                               {builder.getInt8(1), builder.getInt64(0)}),
-                    negated);
+                    not_null_struct);
                 return select;
               }
               case UnaryOp::kIsNull: {
