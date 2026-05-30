@@ -38,9 +38,6 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
         },
         [&](const physical::Filter& op) -> InternalMatch {
             const auto* t = std::get_if<PhysicalFilter>(&target);
-            // depth+1 once the operator type matches: a same-type partial
-            // mismatch is more informative than a foreign-type rejection, so
-            // it should outrank type-mismatch reports for the same group.
             if (!t) return {false, depth, "type mismatch: expected Filter"};
             if (op.predicate != t->predicate)
                 return {false, depth + 1,
@@ -61,9 +58,6 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
         },
         [&](const physical::NestedLoopJoin& op) -> InternalMatch {
             const auto* t = std::get_if<NestedLoopJoin>(&target);
-            // depth+1 once the operator type matches: a same-type partial
-            // mismatch is more informative than a foreign-type rejection, so
-            // it should outrank type-mismatch reports for the same group.
             if (!t) return {false, depth, "type mismatch: expected NestedLoopJoin"};
             if (op.type != t->type)
                 return {false, depth + 1, "NestedLoopJoin join type mismatch"};
@@ -146,10 +140,6 @@ MatchResult IsReachable(utils::NotNull<Group*> root, const PhysicalPlanNode& tar
 MatchResult IsPlanReachable(std::istream& sql, const PhysicalPlanNode& target,
                              CardinalityEstimates cardinality, SchemaCatalog schema) {
     auto parsed = GetAST(sql).value();
-    // Mirror main.cpp: a query ORDER BY becomes a required sort property so the
-    // exhaustive search enumerates Sort enforcers and the ordered plan MS SQL
-    // produced is actually reachable. Without it the root group never gets a
-    // Sort and every ORDER BY plan would spuriously read as unreachable.
     PropertySet required = parsed.required_order
         ? PropertySet{SortProperty{*parsed.required_order}}
         : PropertySet::Any();

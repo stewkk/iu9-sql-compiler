@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -256,8 +257,6 @@ int main(int argc, char** argv) {
     }
     MatchResult mr;
     try {
-      // The schema lets the Sort enforcer confirm the ORDER BY keys exist on
-      // the group it sits above; without --data-dir it stays permissive.
       SchemaCatalog schema = args.data_dir.empty() ? SchemaCatalog{}
                                                     : LoadSchema(args.data_dir);
       mr = IsPlanReachable(sql_stream, target, {}, std::move(schema));
@@ -295,6 +294,14 @@ int main(int argc, char** argv) {
   } catch (const std::exception& e) {
     std::cerr << "optimizer error: " << e.what() << "\n";
     return kOptimizerError;
+  }
+
+  {
+    std::filesystem::create_directories(".plans");
+    auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    std::ofstream dot_file{std::format(".plans/{}.dot", ts)};
+    dot_file << SerializeDot(plan);
   }
 
   if (args.print_plan) {

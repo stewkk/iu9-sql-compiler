@@ -30,10 +30,7 @@ public:
             PropertySet required = PropertySet::Any());
 
   PhysicalPlanNode Optimize();
-
-  // Runs exhaustive search, populating all physical_exprs_ in every reachable
-  // group.
-  void OptimizeExhaustive();
+  PhysicalPlanNode OptimizeExhaustive();
 
   utils::NotNull<Group*> GetRootGroup() const;
 
@@ -75,7 +72,7 @@ private:
   utils::NotNull<LogicalExpr*> root_;
   CardinalityEstimates cardinality_;
   SchemaCatalog schema_;
-  PropertySet required_;
+  PropertySet global_required_;
   std::unordered_map<PhysicalExpr*, int64_t> local_cost_;
   std::unordered_map<WinnerKey, WinnerEntry> winner_;
   std::unordered_set<WinnerKey> enforcers_added_;

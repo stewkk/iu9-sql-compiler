@@ -195,7 +195,7 @@ Optimizer<NTransformation, NImplementation>::Optimizer(
     CardinalityEstimates cardinality, SchemaCatalog schema, PropertySet required)
     : memo_(), rules_applier_(std::move(rules)), root_(memo_.Populate(expr)),
       cardinality_(std::move(cardinality)), schema_(std::move(schema)),
-      required_(std::move(required)) {
+      global_required_(std::move(required)) {
 }
 
 template<size_t NTransformation, size_t NImplementation>
@@ -481,7 +481,7 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
 template<size_t NTransformation, size_t NImplementation>
 void Optimizer<NTransformation, NImplementation>::RunSearch(Limit limit) {
   Log("Starting optimization");
-  tasks_.emplace([this, limit]() { OptimizeGroup(root_->group, required_, limit); });
+  tasks_.emplace([this, limit]() { OptimizeGroup(root_->group, global_required_, limit); });
   while (!tasks_.empty()) {
     auto next_task = std::move(tasks_.top());
     tasks_.pop();
@@ -493,12 +493,13 @@ template<size_t NTransformation, size_t NImplementation>
 PhysicalPlanNode Optimizer<NTransformation, NImplementation>::Optimize() {
   RunSearch(std::numeric_limits<int64_t>::max());
   Log("Optimization complete, building plan");
-  return BuildOptimalPlan(root_->group.get(), required_);
+  return BuildOptimalPlan(root_->group.get(), global_required_);
 }
 
 template<size_t NTransformation, size_t NImplementation>
-void Optimizer<NTransformation, NImplementation>::OptimizeExhaustive() {
+PhysicalPlanNode Optimizer<NTransformation, NImplementation>::OptimizeExhaustive() {
   RunSearch(std::nullopt);
+  return BuildOptimalPlan(root_->group.get(), global_required_);
 }
 
 template<size_t NTransformation, size_t NImplementation>
