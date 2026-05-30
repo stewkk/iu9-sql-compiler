@@ -17,9 +17,9 @@ void OutputDot(const PhysicalPlanNode& optimizer_plan, const std::optional<Physi
     std::ofstream dot_file{std::format(".plans/{}.dot", ts)};
     dot_file << SerializeDot(optimizer_plan);
   }
-  {
+  if (other_plan) {
     std::ofstream dot_file{std::format(".plans/{}.ref.dot", ts)};
-    dot_file << SerializeDot(optimizer_plan);
+    dot_file << SerializeDot(*other_plan);
   }
 }
 

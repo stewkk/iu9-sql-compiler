@@ -14,4 +14,7 @@ codegen:
 test-ssb-converter:
 	pytest benchmarks/datasets/ssb
 
+dot:
+	dot -T png -O .plans/*.dot
+
 .PHONY: codegen build sanitize test-ssb-converter
