@@ -27,6 +27,8 @@
           ps.notebook
           ps.pymssql
           ps.pytest
+	  ps.pandas
+	  ps.matplotlib
         ]);
         tex = (pkgs.texlive.combine {
             inherit (pkgs.texlive) scheme-full
