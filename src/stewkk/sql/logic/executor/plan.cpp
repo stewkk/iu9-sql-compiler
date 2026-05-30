@@ -31,7 +31,7 @@ bool MergeJoin::operator==(const MergeJoin& other) const {
 }
 
 bool IndexSeek::operator==(const IndexSeek& other) const {
-  return table == other.table && predicate == other.predicate;
+  return table == other.table && alias == other.alias && predicate == other.predicate;
 }
 
 bool PhysicalSort::operator==(const PhysicalSort& other) const {

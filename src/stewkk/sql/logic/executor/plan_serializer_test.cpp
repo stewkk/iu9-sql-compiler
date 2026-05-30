@@ -202,6 +202,7 @@ TEST(PlanSerializerTest, DeepNestedPlan) {
 TEST(PlanSerializerTest, IndexSeek) {
     PhysicalPlanNode plan = IndexSeek{
         "users",
+        std::nullopt,
         BinaryExpression{
             std::make_shared<Expression>(Attribute{"users", "id"}),
             BinaryOp::kGt,

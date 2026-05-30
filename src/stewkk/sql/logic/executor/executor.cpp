@@ -580,6 +580,10 @@ Executor<ExpressionExecutor>::Executor(SequentialScan seq_scan, boost::asio::any
     : sequential_scan_(std::move(seq_scan)), expression_executor_(executor) {}
 
 template <typename ExpressionExecutor>
+Executor<ExpressionExecutor>::Executor(SequentialScan seq_scan, IndexScan index_scan, boost::asio::any_io_executor executor)
+    : sequential_scan_(std::move(seq_scan)), index_scan_(std::move(index_scan)), expression_executor_(executor) {}
+
+template <typename ExpressionExecutor>
 boost::asio::awaitable<Result<Relation>> Executor<ExpressionExecutor>::Execute(const PhysicalPlanNode& op) {
   auto exec = co_await boost::asio::this_coro::executor;
   auto [attr_chan, tuples_chan] = co_await GetChannels();
@@ -619,6 +623,10 @@ boost::asio::awaitable<Result<Relation>> Executor<ExpressionExecutor>::Execute(c
 
 template <typename ExpressionExecutor>
 boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const PhysicalPlanNode& op, AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan) {
+  auto close_on_fail = boost::scope::make_scope_fail([&] {
+    attr_chan.close();
+    tuples_chan.close();
+  });
   struct ExecuteVisitor{
     boost::asio::awaitable<void> operator()(const SeqScan& seq_scan) {
       co_await executor.sequential_scan_(seq_scan.table, std::string{OutputTable(seq_scan)},
@@ -655,8 +663,12 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
       throw std::runtime_error("MergeJoin execution not implemented");
       co_return;
     }
-    boost::asio::awaitable<void> operator()(const IndexSeek&) {
-      throw std::runtime_error("IndexSeek execution not implemented");
+    boost::asio::awaitable<void> operator()(const IndexSeek& seek) {
+      if (!executor.index_scan_) {
+        throw std::runtime_error("IndexSeek execution requested, but no index scanner is configured");
+      }
+      co_await executor.index_scan_(seek.table, seek.alias ? *seek.alias : seek.table, seek.predicate,
+                                    attr_chan, tuples_chan);
       co_return;
     }
     // FIXME: that's in-memory sort

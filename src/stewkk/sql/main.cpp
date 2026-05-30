@@ -215,7 +215,8 @@ void PrintRelation(const Relation& rel, bool preserve_order) {
 boost::asio::awaitable<Result<Relation>> RunQuery(const std::string& data_dir,
                                                   const PhysicalPlanNode& plan) {
   CsvDirSequentialScanner seq_scan{data_dir};
-  Executor executor(std::move(seq_scan), co_await boost::asio::this_coro::executor);
+  CsvDirIndexedScanner index_scan{data_dir};
+  Executor executor(std::move(seq_scan), std::move(index_scan), co_await boost::asio::this_coro::executor);
   co_return co_await executor.Execute(plan);
 }
 

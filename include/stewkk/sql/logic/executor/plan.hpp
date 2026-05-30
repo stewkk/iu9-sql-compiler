@@ -86,6 +86,7 @@ struct MergeJoin {
 
 struct IndexSeek {
   std::string table;
+  std::optional<std::string> alias;
   Expression predicate;
 
   bool operator==(const IndexSeek&) const;

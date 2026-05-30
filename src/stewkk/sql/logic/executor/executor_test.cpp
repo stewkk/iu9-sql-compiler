@@ -75,6 +75,24 @@ std::string ReadFromFile(std::filesystem::path path) {
   return stream.str();
 }
 
+boost::asio::awaitable<Result<Relation>> RunIndexSeekTestQuery(std::string dir) {
+  PhysicalPlanNode op = IndexSeek{
+      "users",
+      std::nullopt,
+      BinaryExpression{
+          std::make_shared<Expression>(Attribute{"users", "id"}),
+          BinaryOp::kGe,
+          std::make_shared<Expression>(IntConst{8}),
+      },
+  };
+  CsvDirSequentialScanner seq_scan{dir};
+  CsvDirIndexedScanner index_scan{dir};
+  Executor executor(std::move(seq_scan), std::move(index_scan),
+                    co_await boost::asio::this_coro::executor);
+
+  co_return co_await executor.Execute(op);
+}
+
 } // namespace
 
 template <typename T>
@@ -132,6 +150,43 @@ TEST(ExecutorTest, SimpleSelectWithParallelism) {
       });
 
   pool.join();
+}
+
+TEST(ExecutorTest, IndexSeekBuildsAndUsesSortedIntIndex) {
+  auto dir = std::filesystem::temp_directory_path() / "iu9_sql_index_seek_test";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  {
+    std::ofstream csv{dir / "users.csv"};
+    csv << "id:int,age:int\n"
+        << "10,22\n"
+        << "1,33\n"
+        << "8,64\n"
+        << "8,70\n";
+    std::ofstream meta{dir / "indexes.meta"};
+    meta << "users id sorted users.id.sorted.idx\n";
+  }
+
+  boost::asio::io_context ctx;
+  boost::asio::co_spawn(
+      ctx,
+      RunIndexSeekTestQuery(dir.string()),
+      [dir](std::exception_ptr p, Result<Relation> got) {
+        if (p) std::rethrow_exception(p);
+
+        ASSERT_THAT(got.value().attributes,
+                    Eq(AttributesInfo{{"users", "id", Type::kInt}, {"users", "age", Type::kInt}}));
+        ASSERT_THAT(got.value().tuples,
+                    Eq(Tuples{
+                        Tuple{Value{false, 8}, Value{false, 64}},
+                        Tuple{Value{false, 8}, Value{false, 70}},
+                        Tuple{Value{false, 10}, Value{false, 22}},
+                    }));
+        ASSERT_TRUE(std::filesystem::exists(dir / "users.id.sorted.idx"));
+        std::filesystem::remove_all(dir);
+      });
+
+  ctx.run();
 }
 
 TEST(ExecutorTest, StringFilterProjectionAndCsvQuotes) {

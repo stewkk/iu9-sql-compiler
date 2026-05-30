@@ -49,7 +49,11 @@ public:
   using SequentialScan = std::function<boost::asio::awaitable<Result<>>(
       const std::string& table_name, const std::string& output_table_name,
       AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan)>;
+  using IndexScan = std::function<boost::asio::awaitable<Result<>>(
+      const std::string& table_name, const std::string& output_table_name,
+      const Expression& predicate, AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan)>;
   Executor(SequentialScan seq_scan, boost::asio::any_io_executor executor);
+  Executor(SequentialScan seq_scan, IndexScan index_scan, boost::asio::any_io_executor executor);
 
   boost::asio::awaitable<Result<Relation>> Execute(const PhysicalPlanNode& op);
 private:
@@ -75,6 +79,7 @@ private:
 
 private:
   SequentialScan sequential_scan_;
+  IndexScan index_scan_;
   ExpressionExecutor expression_executor_;
 };
 

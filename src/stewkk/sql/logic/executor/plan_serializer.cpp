@@ -185,6 +185,9 @@ std::string SerializeNode(const PhysicalPlanNode& node) {
                                SerializeNode(*n.lhs), SerializeNode(*n.rhs));
         }
         std::string operator()(const IndexSeek& n) const {
+            if (n.alias) {
+                return std::format("(IndexSeek {} {} {})", SerializeExpr(n.predicate), n.table, *n.alias);
+            }
             return std::format("(IndexSeek {} {})", SerializeExpr(n.predicate), n.table);
         }
         std::string operator()(const HashJoin& n) const {
@@ -507,8 +510,12 @@ PhysicalPlanNode ParseNode(ParseState& s) {
     if (head == "IndexSeek") {
         auto pred  = ParseExpr(s);
         auto table = s.ExpectAtom();
+        std::optional<std::string> alias;
+        if (s.Peek().kind != TokenKind::RParen) {
+            alias = s.ExpectAtom();
+        }
         s.ExpectRParen();
-        return IndexSeek{std::move(table), std::move(pred)};
+        return IndexSeek{std::move(table), std::move(alias), std::move(pred)};
     }
     if (head == "NestedLoopJoin") return ParseJoinNode.template operator()<NestedLoopJoin>();
     if (head == "HashJoin")       return ParseJoinNode.template operator()<HashJoin>();
