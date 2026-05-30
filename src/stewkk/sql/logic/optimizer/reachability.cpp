@@ -147,8 +147,11 @@ MatchResult IsPlanReachable(std::istream& sql, const PhysicalPlanNode& target,
     Optimizer optimizer(parsed.op, MakeMainRules(), std::move(cardinality),
                         std::move(schema), std::move(required));
     auto plan = optimizer.OptimizeExhaustive();
-    OutputDot(plan, target);
-    return IsReachable(optimizer.GetRootGroup(), target);
+    auto result = IsReachable(optimizer.GetRootGroup(), target);
+    if (!result.reachable) {
+        OutputDot(plan, target);
+    }
+    return result;
 }
 
 }  // namespace stewkk::sql
