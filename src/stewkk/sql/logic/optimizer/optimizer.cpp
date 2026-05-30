@@ -111,7 +111,6 @@ int64_t CalcCost(utils::NotNull<PhysicalExpr*> expr, CardinalityEstimates& cardi
           return cardinality.GetCardinality(expr->group);
       },
       [&](const physical::NestedLoopJoin& j) -> int64_t {
-          // Per-tuple work: each rhs tuple compared against every lhs tuple.
           auto n_l = cardinality.GetCardinality(j.lhs);
           auto n_r = cardinality.GetCardinality(j.rhs);
           return n_l * n_r;
@@ -122,7 +121,6 @@ int64_t CalcCost(utils::NotNull<PhysicalExpr*> expr, CardinalityEstimates& cardi
           return p_l * (1 + p_r);
       },
       [&](const physical::HashJoin& j) -> int64_t {
-          // Build hash on lhs (n_l inserts), probe with rhs (n_r O(1) lookups).
           return cardinality.GetCardinality(j.lhs) + cardinality.GetCardinality(j.rhs);
       },
       [&](const physical::Sort& s) -> int64_t {

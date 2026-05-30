@@ -1,6 +1,6 @@
 include(FetchGBenchmark)
 
-add_executable(benchmarks main.cpp)
+add_executable(benchmarks main.cpp operator_cost.cpp)
 target_compile_features(benchmarks PRIVATE cxx_std_23)
 set_target_properties(benchmarks PROPERTIES
   CXX_STANDART 23
