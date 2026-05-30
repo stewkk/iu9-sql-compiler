@@ -28,19 +28,22 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             const auto* t = std::get_if<SeqScan>(&target);
             if (!t) return {false, depth, "type mismatch: expected SeqScan"};
             if (op.table != t->table)
-                return {false, depth,
+                return {false, depth + 1,
                         std::format("SeqScan table '{}' != '{}'", op.table, t->table)};
             if (op.alias != t->alias)
-                return {false, depth,
+                return {false, depth + 1,
                         std::format("SeqScan alias '{}' != '{}'",
                                     op.alias.value_or(""), t->alias.value_or(""))};
             return {true, depth + 1, {}};
         },
         [&](const physical::Filter& op) -> InternalMatch {
             const auto* t = std::get_if<PhysicalFilter>(&target);
+            // depth+1 once the operator type matches: a same-type partial
+            // mismatch is more informative than a foreign-type rejection, so
+            // it should outrank type-mismatch reports for the same group.
             if (!t) return {false, depth, "type mismatch: expected Filter"};
             if (op.predicate != t->predicate)
-                return {false, depth,
+                return {false, depth + 1,
                         std::format("Filter predicate '{}' != '{}'",
                                     ToString(op.predicate), ToString(t->predicate))};
             auto child = MatchGroup(op.source.get(), *t->source, depth + 1);
@@ -51,7 +54,7 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             const auto* t = std::get_if<PhysicalProjection>(&target);
             if (!t) return {false, depth, "type mismatch: expected Projection"};
             if (op.expressions != t->expressions)
-                return {false, depth, "Projection expressions mismatch"};
+                return {false, depth + 1, "Projection expressions mismatch"};
             auto child = MatchGroup(op.source.get(), *t->source, depth + 1);
             if (!child.ok) child.reason = "Projection.source: " + child.reason;
             return child;
@@ -102,7 +105,7 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             const auto* t = std::get_if<PhysicalSort>(&target);
             if (!t) return {false, depth, "type mismatch: expected Sort"};
             if (op.keys != t->keys)
-                return {false, depth, "Sort keys mismatch"};
+                return {false, depth + 1, "Sort keys mismatch"};
             auto child = MatchGroup(op.input.get(), *t->source, depth + 1);
             if (!child.ok) child.reason = "Sort.input: " + child.reason;
             return child;

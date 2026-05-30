@@ -112,7 +112,7 @@ def _convert_sort(relop: ET.Element) -> str:
 
     keys = []
     for ob in sort.findall(f"{NS}OrderBy/{NS}OrderByColumn"):
-        ascending = (ob.get("Ascending", "true").lower() != "false")
+        ascending = ob.get("Ascending", "true").lower() not in ("false", "0")
         cr = ob.find(f"{NS}ColumnReference")
         if cr is None:
             continue
