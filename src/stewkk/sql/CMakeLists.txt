@@ -56,6 +56,7 @@ add_library(libsql
   logic/optimizer/properties/sort_order.cpp
   logic/optimizer/properties/sort_property.cpp
   logic/optimizer/properties/property_set.cpp
+  utils/output_dot_plans.cpp
 )
 add_library(stewkk::libsql ALIAS libsql)
 target_compile_features(libsql PUBLIC cxx_std_23)

@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <chrono>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -33,6 +32,7 @@
 #include <stewkk/sql/logic/result/result.hpp>
 #include <stewkk/sql/models/executor/tuple.hpp>
 #include <stewkk/sql/models/parser/expression.hpp>
+#include <stewkk/sql/utils/output_dot_plans.hpp>
 
 namespace stewkk::sql {
 
@@ -296,13 +296,7 @@ int main(int argc, char** argv) {
     return kOptimizerError;
   }
 
-  {
-    std::filesystem::create_directories(".plans");
-    auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    std::ofstream dot_file{std::format(".plans/{}.dot", ts)};
-    dot_file << SerializeDot(plan);
-  }
+  OutputDot(plan, std::nullopt);
 
   if (args.print_plan) {
     std::cerr << Serialize(plan) << "\n";

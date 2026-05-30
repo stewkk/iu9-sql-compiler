@@ -8,6 +8,7 @@
 #include <stewkk/sql/logic/optimizer/properties/property_set.hpp>
 #include <stewkk/sql/logic/optimizer/properties/sort_property.hpp>
 #include <stewkk/sql/logic/optimizer/rules.hpp>
+#include <stewkk/sql/utils/output_dot_plans.hpp>
 
 namespace stewkk::sql {
 
@@ -145,7 +146,8 @@ MatchResult IsPlanReachable(std::istream& sql, const PhysicalPlanNode& target,
         : PropertySet::Any();
     Optimizer optimizer(parsed.op, MakeMainRules(), std::move(cardinality),
                         std::move(schema), std::move(required));
-    optimizer.OptimizeExhaustive();
+    auto plan = optimizer.OptimizeExhaustive();
+    OutputDot(plan, target);
     return IsReachable(optimizer.GetRootGroup(), target);
 }
 

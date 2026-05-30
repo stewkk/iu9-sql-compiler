@@ -15,3 +15,4 @@ FlameGraph/
 /build-tsan/
 /benchmarks/datasets/ssb/generated/
 /benchmarks/datasets/ssb/raw/
+/.plans/
