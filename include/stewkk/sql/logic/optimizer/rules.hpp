@@ -10,6 +10,7 @@
 #include <stewkk/sql/logic/transformation_rules/filter_merge.hpp>
 #include <stewkk/sql/logic/transformation_rules/filter_pushdown_through_projection.hpp>
 #include <stewkk/sql/logic/transformation_rules/filter_pushdown_through_join.hpp>
+#include <stewkk/sql/logic/transformation_rules/in_to_or_chain.hpp>
 #include <stewkk/sql/logic/implementation_rules/implement_table.hpp>
 #include <stewkk/sql/logic/implementation_rules/implement_filter.hpp>
 #include <stewkk/sql/logic/implementation_rules/implement_projection.hpp>
@@ -26,6 +27,6 @@ struct Rules {
     std::array<std::unique_ptr<ImplementationRule>, NImplementation> implementation_rules;
 };
 
-Rules<6, 7> MakeMainRules();
+Rules<7, 7> MakeMainRules();
 
 }  // namespace stewkk::sql

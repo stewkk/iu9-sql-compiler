@@ -90,19 +90,30 @@ class MsSqlRunner:
                 continue
             self._create_and_load(cur, path)
 
+    _SQL_TYPE = {"int": "INT NULL", "string": "VARCHAR(255) NULL"}
+
     def _create_and_load(self, cur, path: Path) -> None:
         with path.open() as f:
             reader = csv.reader(f)
             header = next(reader)
             cols = []
+            types = []
             for h in header:
                 name, type_ = (s.strip() for s in h.split(":"))
-                if type_ != "int":
+                if type_ not in self._SQL_TYPE:
                     raise ValueError(f"{path}: unsupported column type {type_!r}")
                 cols.append(name)
-            rows = [tuple(None if v.strip() == "NULL" else int(v) for v in r) for r in reader]
+                types.append(type_)
 
-        col_defs = ", ".join(f"[{c}] INT NULL" for c in cols)
+            def conv(v: str, type_: str):
+                v = v.strip()
+                if v == "NULL":
+                    return None
+                return int(v) if type_ == "int" else v
+
+            rows = [tuple(conv(v, t) for v, t in zip(r, types)) for r in reader]
+
+        col_defs = ", ".join(f"[{c}] {self._SQL_TYPE[t]}" for c, t in zip(cols, types))
         cur.execute(f"CREATE TABLE [dbo].[{path.stem}] ({col_defs})")
 
         if rows:

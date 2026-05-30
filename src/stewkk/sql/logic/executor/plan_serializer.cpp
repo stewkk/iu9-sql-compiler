@@ -101,7 +101,9 @@ std::string SerializeExpr(const Expression& expr) {
                                SerializeExpr(*e.lhs), SerializeExpr(*e.rhs));
         }
         std::string operator()(const Attribute& a) const {
-            return std::format("(attr {} {})", a.table, a.name);
+            // Synthetic aggregate-output attributes have an empty table; emit
+            // "-" so the field stays a parseable atom on the deserialize side.
+            return std::format("(attr {} {})", a.table.empty() ? "-" : a.table, a.name);
         }
         std::string operator()(IntConst n) const {
             return std::to_string(n);
@@ -357,7 +359,7 @@ Expression ParseExpr(ParseState& s) {
             auto table = s.ExpectAtom();
             auto name  = s.ExpectAtom();
             s.ExpectRParen();
-            return Attribute{std::move(table), std::move(name)};
+            return Attribute{table == "-" ? "" : std::move(table), std::move(name)};
         }
         if (head == "str") {
             auto value = UnquoteString(s.ExpectAtom());

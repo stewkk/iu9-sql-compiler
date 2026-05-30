@@ -62,6 +62,7 @@
             nodejs_24
             graphviz
             codex
+	    claude-code
           ];
 
           nativeBuildInputs = [

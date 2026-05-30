@@ -45,6 +45,7 @@ add_library(libsql
   logic/transformation_rules/filter_merge.cpp
   logic/transformation_rules/filter_pushdown_through_projection.cpp
   logic/transformation_rules/filter_pushdown_through_join.cpp
+  logic/transformation_rules/in_to_or_chain.cpp
   logic/implementation_rules/implement_table.cpp
   logic/implementation_rules/implement_filter.cpp
   logic/implementation_rules/implement_projection.cpp

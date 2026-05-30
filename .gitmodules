@@ -4,3 +4,6 @@
 [submodule "research/imdb-sqlserver"]
 	path = research/imdb-sqlserver
 	url = git@github.com:sqlsunday/imdb-to-sqlserver.git
+[submodule "research/ssb-dbgen"]
+	path = research/ssb-dbgen
+	url = https://github.com/electrum/ssb-dbgen.git

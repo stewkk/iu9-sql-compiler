@@ -193,3 +193,159 @@ def test_join_compound_predicate(extractor):
     )
     result = convert(plan)
     assert result == "(HashJoin Inner (= (attr TitlePrincipals principalId) (attr Principals principalId)) (PhysicalFilter (= (attr TitlePrincipals ordinal) 1) (SeqScan TitlePrincipals)) (SeqScan Principals))"
+
+
+# ─── XML-driven tests for the new operators ──────────────────────────────────
+# The XML shapes below are inferred from the ShowPlanXML schema; they MUST be
+# re-validated against live MS SQL output and captured as ms-server-plans/*.xml
+# fixtures (see the plan's Verification step).
+
+def test_string_const_filter_from_xml():
+    plan = showplan("""
+      <RelOp PhysicalOp="Table Scan" LogicalOp="Table Scan">
+        <TableScan>
+          <Object Database="[fuzz]" Schema="[dbo]" Table="[markets]" Alias="[m]"/>
+          <Predicate>
+            <ScalarOperator>
+              <Compare CompareOp="EQ">
+                <ScalarOperator>
+                  <Identifier>
+                    <ColumnReference Table="[markets]" Alias="[m]" Column="region"/>
+                  </Identifier>
+                </ScalarOperator>
+                <ScalarOperator>
+                  <Const ConstValue="'AMERICA'"/>
+                </ScalarOperator>
+              </Compare>
+            </ScalarOperator>
+          </Predicate>
+        </TableScan>
+      </RelOp>
+    """)
+
+    result = convert(plan)
+
+    assert result == '(PhysicalFilter (= (attr m region) (str "AMERICA")) (SeqScan markets m))'
+
+
+def test_sort_from_xml():
+    plan = showplan("""
+      <RelOp PhysicalOp="Sort" LogicalOp="Sort">
+        <Sort>
+          <OrderBy>
+            <OrderByColumn Ascending="true">
+              <ColumnReference Table="[users]" Column="id"/>
+            </OrderByColumn>
+            <OrderByColumn Ascending="false">
+              <ColumnReference Table="[users]" Column="age"/>
+            </OrderByColumn>
+          </OrderBy>
+          <RelOp PhysicalOp="Table Scan" LogicalOp="Table Scan">
+            <TableScan><Object Table="[users]"/></TableScan>
+          </RelOp>
+        </Sort>
+      </RelOp>
+    """)
+
+    result = convert(plan)
+
+    assert result == "(Sort (keys users.id Asc users.age Desc) (SeqScan users))"
+
+
+def test_stream_aggregate_drops_enforcer_sort_from_xml():
+    plan = showplan("""
+      <RelOp PhysicalOp="Stream Aggregate" LogicalOp="Aggregate">
+        <StreamAggregate>
+          <DefinedValues>
+            <DefinedValue>
+              <ColumnReference Column="Expr1001"/>
+              <ScalarOperator>
+                <Aggregate AggType="SUM" Distinct="false">
+                  <ScalarOperator>
+                    <Identifier><ColumnReference Table="[users]" Column="age"/></Identifier>
+                  </ScalarOperator>
+                </Aggregate>
+              </ScalarOperator>
+            </DefinedValue>
+            <DefinedValue>
+              <ColumnReference Column="Expr1002"/>
+              <ScalarOperator>
+                <Aggregate AggType="countstar" Distinct="false"/>
+              </ScalarOperator>
+            </DefinedValue>
+          </DefinedValues>
+          <GroupBy>
+            <ColumnReference Table="[users]" Column="id"/>
+          </GroupBy>
+          <RelOp PhysicalOp="Sort" LogicalOp="Aggregate">
+            <Sort>
+              <OrderBy>
+                <OrderByColumn Ascending="true">
+                  <ColumnReference Table="[users]" Column="id"/>
+                </OrderByColumn>
+              </OrderBy>
+              <RelOp PhysicalOp="Table Scan" LogicalOp="Table Scan">
+                <TableScan><Object Table="[users]"/></TableScan>
+              </RelOp>
+            </Sort>
+          </RelOp>
+        </StreamAggregate>
+      </RelOp>
+    """)
+
+    result = convert(plan)
+
+    assert result == (
+        "(HashAggregate (group_by (attr users id))"
+        " (aggs (SUM (attr users age)) (COUNT *)) (SeqScan users))"
+    )
+
+
+def test_hash_aggregate_from_xml():
+    plan = showplan("""
+      <RelOp PhysicalOp="Hash Match" LogicalOp="Aggregate">
+        <Hash>
+          <DefinedValues>
+            <DefinedValue>
+              <ColumnReference Column="Expr1001"/>
+              <ScalarOperator>
+                <Aggregate AggType="COUNT" Distinct="false">
+                  <ScalarOperator>
+                    <Identifier><ColumnReference Table="[users]" Column="age"/></Identifier>
+                  </ScalarOperator>
+                </Aggregate>
+              </ScalarOperator>
+            </DefinedValue>
+          </DefinedValues>
+          <HashKeysBuild>
+            <ColumnReference Table="[users]" Column="id"/>
+          </HashKeysBuild>
+          <RelOp PhysicalOp="Table Scan" LogicalOp="Table Scan">
+            <TableScan><Object Table="[users]"/></TableScan>
+          </RelOp>
+        </Hash>
+      </RelOp>
+    """)
+
+    result = convert(plan)
+
+    assert result == (
+        "(HashAggregate (group_by (attr users id))"
+        " (aggs (COUNT (attr users age))) (SeqScan users))"
+    )
+
+
+def test_compute_scalar_passthrough_from_xml():
+    plan = showplan("""
+      <RelOp PhysicalOp="Compute Scalar" LogicalOp="Compute Scalar">
+        <ComputeScalar>
+          <RelOp PhysicalOp="Table Scan" LogicalOp="Table Scan">
+            <TableScan><Object Table="[users]"/></TableScan>
+          </RelOp>
+        </ComputeScalar>
+      </RelOp>
+    """)
+
+    result = convert(plan)
+
+    assert result == "(SeqScan users)"

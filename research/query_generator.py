@@ -2,8 +2,10 @@
 """
 Random SQL query generator.
 
-Builds queries in a strict SELECT-Project-Filter-Join (SPJ) subset that matches
-what the C++ parser accepts, then renders them in pluggable SQL dialects.
+Builds queries in the subset that the C++ parser accepts — SELECT-Project-
+Filter-Join plus table/column aliases, GROUP BY with SUM/COUNT aggregates,
+IN/NOT IN, BETWEEN, string columns/literals and ORDER BY — then renders them in
+pluggable SQL dialects.
 
 Currently supported dialects:
   - PostgresSubsetDialect  (the subset the C++ ANTLR visitor accepts)
@@ -20,7 +22,7 @@ import argparse
 import csv
 import re
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -32,14 +34,14 @@ from typing import Protocol
 @dataclass
 class Column:
     name: str
-    type: str  # "int" only in current C++ implementation
+    type: str  # "int" | "string"
 
 
 @dataclass
 class TableSchema:
     name: str
     columns: list[Column]
-    sample_values: dict[str, list[int]]  # col_name -> sampled actual values
+    sample_values: dict[str, list]  # col_name -> sampled actual values (typed)
 
 
 @dataclass
@@ -65,17 +67,22 @@ def load_schema(csv_dir: Path, max_sample: int = 200) -> Schema:
                 col_name, col_type = h.strip().split(":")
                 columns.append(Column(col_name.strip(), col_type.strip()))
 
-            sample_values: dict[str, list[int]] = {c.name: [] for c in columns}
+            by_name = {c.name: c for c in columns}
+            sample_values: dict[str, list] = {c.name: [] for c in columns}
             for i, row in enumerate(reader):
                 if i >= max_sample:
                     break
                 for col, val in zip(columns, row):
                     v = val.strip()
-                    if v != "NULL":
+                    if v == "NULL":
+                        continue
+                    if by_name[col.name].type == "int":
                         try:
                             sample_values[col.name].append(int(v))
                         except ValueError:
                             pass
+                    else:
+                        sample_values[col.name].append(v)
 
         tables[path.stem] = TableSchema(path.stem, columns, sample_values)
     return Schema(tables)
@@ -87,13 +94,18 @@ def load_schema(csv_dir: Path, max_sample: int = 200) -> Schema:
 
 @dataclass
 class Attr:
-    table: str
+    table: str   # visible name (alias if the scan is aliased, else table name)
     column: str
 
 
 @dataclass
 class IntLit:
     value: int
+
+
+@dataclass
+class StrLit:
+    value: str
 
 
 @dataclass
@@ -128,12 +140,37 @@ class IsNullExpr:
     negated: bool   # False -> IS NULL, True -> IS NOT NULL
 
 
-Expr = Attr | IntLit | NullLit | BoolLit | BinaryExpr | UnaryExpr | IsNullExpr
+@dataclass
+class InExpr:
+    attr: Attr
+    values: list["Expr"]   # IntLit / StrLit, emitted sorted ascending
+    negated: bool          # False -> IN, True -> NOT IN
+
+
+@dataclass
+class BetweenExpr:
+    attr: Attr             # int columns only
+    lo: "Expr"
+    hi: "Expr"
+    negated: bool          # False -> BETWEEN, True -> NOT BETWEEN
+
+
+@dataclass
+class Aggregate:
+    func: str              # "SUM" | "COUNT"
+    arg: "Expr | None"     # None -> COUNT(*)
+
+
+Expr = (
+    Attr | IntLit | StrLit | NullLit | BoolLit | BinaryExpr | UnaryExpr
+    | IsNullExpr | InExpr | BetweenExpr | Aggregate
+)
 
 
 @dataclass
 class TableScan:
-    name: str
+    name: str               # real table name
+    alias: str | None = None
 
 
 @dataclass
@@ -153,39 +190,40 @@ class CrossJoin:
 TableRef = TableScan | ExplicitJoin | CrossJoin
 
 
+# A projected output: an expression with an optional `AS alias`.
+@dataclass
+class Target:
+    expr: Expr
+    alias: str | None = None
+
+
 @dataclass
 class SelectQuery:
-    targets: list[Attr]
+    targets: list[Target]
     from_: TableRef
-    where: Expr | None
+    where: Expr | None = None
+    group_by: list[Attr] = field(default_factory=list)
+    order_by: list[tuple[Attr, str]] = field(default_factory=list)  # (key, "asc"|"desc")
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _tables_in_ref(ref: TableRef) -> list[str]:
+def _scan_bindings(ref: TableRef) -> list[tuple[str, str]]:
+    """List of (visible_name, real_table) for every scan in the ref tree."""
     if isinstance(ref, TableScan):
-        return [ref.name]
-    return _tables_in_ref(ref.lhs) + _tables_in_ref(ref.rhs)
-
-
-def _available_attrs(schema: Schema, ref: TableRef) -> list[Attr]:
-    return [
-        Attr(t, col.name)
-        for t in _tables_in_ref(ref)
-        if t in schema.tables
-        for col in schema.tables[t].columns
-    ]
+        return [(ref.alias or ref.name, ref.name)]
+    return _scan_bindings(ref.lhs) + _scan_bindings(ref.rhs)
 
 
 # ---------------------------------------------------------------------------
 # Random query builder
 # ---------------------------------------------------------------------------
 
-_COMPARISON_OPS = ["=", "!=", "<", ">", "<=", ">="]
+_INT_COMPARISON_OPS = ["=", "!=", "<", ">", "<=", ">="]
+_STR_COMPARISON_OPS = ["=", "!="]
 _LOGICAL_OPS = ["and", "or"]
-_ARITHMETIC_OPS = ["+", "-", "*"]
 _JOIN_TYPES = ["INNER", "LEFT", "RIGHT", "FULL"]
 
 
@@ -193,52 +231,133 @@ class QueryGenerator:
     def __init__(self, schema: Schema, rng: random.Random):
         self.schema = schema
         self.rng = rng
+        # Per-query map: visible table name -> real table name.
+        self._bindings: dict[str, str] = {}
+
+    # -- attribute / type helpers ------------------------------------------
+
+    def _real_table(self, visible: str) -> str:
+        return self._bindings[visible]
+
+    def _column_type(self, attr: Attr) -> str:
+        real = self._real_table(attr.table)
+        for c in self.schema.tables[real].columns:
+            if c.name == attr.column:
+                return c.type
+        return "int"
+
+    def _samples(self, attr: Attr) -> list:
+        real = self._real_table(attr.table)
+        return self.schema.tables[real].sample_values.get(attr.column, [])
+
+    def _available_attrs(self) -> list[Attr]:
+        attrs = []
+        for visible, real in self._bindings.items():
+            for col in self.schema.tables[real].columns:
+                attrs.append(Attr(visible, col.name))
+        return attrs
+
+    # -- top-level ---------------------------------------------------------
 
     def generate(self) -> SelectQuery:
         from_ = self._gen_from()
-        attrs = _available_attrs(self.schema, from_)
-
-        n_targets = self.rng.randint(1, min(3, len(attrs)))
-        targets = self.rng.sample(attrs, n_targets)
+        self._bindings = dict(_scan_bindings(from_))
+        attrs = self._available_attrs()
 
         where = self._gen_predicate(attrs) if self.rng.random() < 0.6 else None
-        return SelectQuery(targets, from_, where)
+
+        if self.rng.random() < 0.3 and attrs:
+            return self._gen_aggregated(from_, attrs, where)
+
+        n_targets = self.rng.randint(1, min(3, len(attrs)))
+        chosen = self.rng.sample(attrs, n_targets)
+        targets = [Target(a, self._maybe_alias()) for a in chosen]
+        order_by = self._gen_order_by(chosen)
+        return SelectQuery(targets, from_, where, [], order_by)
+
+    def _gen_aggregated(
+        self, from_: TableRef, attrs: list[Attr], where: Expr | None
+    ) -> SelectQuery:
+        n_group = self.rng.randint(1, min(2, len(attrs)))
+        group_by = self.rng.sample(attrs, n_group)
+
+        # Every non-aggregate target must be a group-by column (MS SQL rule).
+        targets = [Target(a, self._maybe_alias()) for a in group_by]
+
+        int_attrs = [a for a in attrs if self._column_type(a) == "int"]
+        for _ in range(self.rng.randint(0, 2)):
+            agg = self._gen_aggregate(int_attrs)
+            targets.append(Target(agg, self._maybe_alias()))
+
+        order_by = self._gen_order_by(group_by)
+        return SelectQuery(targets, from_, where, group_by, order_by)
+
+    def _gen_aggregate(self, int_attrs: list[Attr]) -> Aggregate:
+        choice = self.rng.random()
+        if choice < 0.34 and int_attrs:
+            return Aggregate("SUM", self.rng.choice(int_attrs))
+        if choice < 0.67:
+            return Aggregate("COUNT", None)  # COUNT(*)
+        return Aggregate("COUNT", self.rng.choice(int_attrs) if int_attrs else None)
+
+    def _maybe_alias(self) -> str | None:
+        if self.rng.random() < 0.3:
+            return f"c{self.rng.randint(0, 9999)}"
+        return None
+
+    def _gen_order_by(self, output_attrs: list[Attr]) -> list[tuple[Attr, str]]:
+        # ORDER BY keys restricted to projected output columns (C++ allows only
+        # column refs there).
+        if not output_attrs or self.rng.random() >= 0.3:
+            return []
+        n = self.rng.randint(1, len(output_attrs))
+        keys = self.rng.sample(output_attrs, n)
+        return [(k, self.rng.choice(["asc", "desc"])) for k in keys]
+
+    # -- FROM --------------------------------------------------------------
 
     def _gen_from(self) -> TableRef:
         names = list(self.schema.tables.keys())
         n = self.rng.randint(1, min(3, len(names)))
         chosen = self.rng.sample(names, n)
+        use_alias = self.rng.random() < 0.4
 
-        ref: TableRef = TableScan(chosen[0])
-        for table_name in chosen[1:]:
-            rhs: TableRef = TableScan(table_name)
+        def make_scan(table: str, idx: int) -> TableScan:
+            return TableScan(table, f"t{idx}" if use_alias else None)
 
-            # Try equi-join on a shared column name first.
-            lhs_col_names = {
-                c.name
-                for t in _tables_in_ref(ref)
-                for c in self.schema.tables[t].columns
-            }
-            rhs_col_names = {c.name for c in self.schema.tables[table_name].columns}
-            shared = sorted(lhs_col_names & rhs_col_names)
+        # Track visible name -> real table while building so joins can pick
+        # a valid lhs binding.
+        scans: list[TableScan] = [make_scan(chosen[0], 0)]
+        ref: TableRef = scans[0]
 
-            if shared and self.rng.random() < 0.7:
-                col = self.rng.choice(shared)
-                # Pick a LHS table that actually has this column.
-                lhs_candidate = self.rng.choice([
-                    t for t in _tables_in_ref(ref)
-                    if any(c.name == col for c in self.schema.tables[t].columns)
-                ])
-                on: Expr = BinaryExpr("=", Attr(lhs_candidate, col), Attr(table_name, col))
+        for i, table_name in enumerate(chosen[1:], start=1):
+            rhs_scan = make_scan(table_name, i)
+            scans.append(rhs_scan)
+
+            rhs_cols = {c.name for c in self.schema.tables[table_name].columns}
+            # Candidate lhs scans that share a column name with rhs.
+            candidates = [
+                (s, c.name)
+                for s in scans[:-1]
+                for c in self.schema.tables[s.name].columns
+                if c.name in rhs_cols
+            ]
+
+            if candidates and self.rng.random() < 0.7:
+                lhs_scan, col = self.rng.choice(candidates)
+                lhs_vis = lhs_scan.alias or lhs_scan.name
+                rhs_vis = rhs_scan.alias or rhs_scan.name
+                on: Expr = BinaryExpr("=", Attr(lhs_vis, col), Attr(rhs_vis, col))
                 jtype = self.rng.choice(_JOIN_TYPES)
-                ref = ExplicitJoin(jtype, ref, rhs, on)
+                ref = ExplicitJoin(jtype, ref, rhs_scan, on)
             else:
-                ref = CrossJoin(ref, rhs)
+                ref = CrossJoin(ref, rhs_scan)
 
         return ref
 
+    # -- WHERE -------------------------------------------------------------
+
     def _gen_predicate(self, attrs: list[Attr], depth: int = 0) -> Expr:
-        # Deeper recursion becomes a leaf comparison to avoid runaway trees.
         if depth >= 2 or self.rng.random() < 0.45:
             return self._gen_comparison(attrs)
 
@@ -249,16 +368,40 @@ class QueryGenerator:
 
     def _gen_comparison(self, attrs: list[Attr]) -> Expr:
         attr = self.rng.choice(attrs)
+        is_string = self._column_type(attr) == "string"
 
-        if self.rng.random() < 0.12:
+        roll = self.rng.random()
+        if roll < 0.1:
             return IsNullExpr(attr, negated=self.rng.random() < 0.5)
+        if roll < 0.3:
+            return self._gen_in(attr)
+        if roll < 0.4 and not is_string:
+            return self._gen_between(attr)
 
-        op = self.rng.choice(_COMPARISON_OPS)
-        rhs = self._gen_int_expr(attr)
-        return BinaryExpr(op, attr, rhs)
+        ops = _STR_COMPARISON_OPS if is_string else _INT_COMPARISON_OPS
+        op = self.rng.choice(ops)
+        return BinaryExpr(op, attr, self._gen_literal(attr))
 
-    def _gen_int_expr(self, hint_attr: Attr) -> Expr:
-        sample = self.schema.tables[hint_attr.table].sample_values.get(hint_attr.column, [])
+    def _gen_in(self, attr: Attr) -> InExpr:
+        n = self.rng.randint(1, 4)
+        values = [self._gen_literal(attr) for _ in range(n)]
+        # Emit sorted ascending so the OR-chain MS SQL expands matches ours.
+        values.sort(key=lambda v: v.value)
+        return InExpr(attr, values, negated=self.rng.random() < 0.3)
+
+    def _gen_between(self, attr: Attr) -> BetweenExpr:
+        lo = self._gen_literal(attr)
+        hi = self._gen_literal(attr)
+        if lo.value > hi.value:
+            lo, hi = hi, lo
+        return BetweenExpr(attr, lo, hi, negated=self.rng.random() < 0.3)
+
+    def _gen_literal(self, attr: Attr) -> Expr:
+        sample = self._samples(attr)
+        if self._column_type(attr) == "string":
+            if sample and self.rng.random() < 0.8:
+                return StrLit(self.rng.choice(sample))
+            return StrLit(self.rng.choice(["AMERICA", "EUROPE", "ASIA", "unknown"]))
         if sample and self.rng.random() < 0.75:
             return IntLit(self.rng.choice(sample))
         return IntLit(self.rng.randint(1, 100))
@@ -326,16 +469,33 @@ class MsSqlDialect:
 # Renderer
 # ---------------------------------------------------------------------------
 
+def _fmt_str_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
 def render_expr(expr: Expr, d: Dialect) -> str:
     match expr:
         case Attr(table, col):
             return d.fmt_col_ref(table, col)
         case IntLit(value):
             return str(value)
+        case StrLit(value):
+            return _fmt_str_literal(value)
         case NullLit():
             return "NULL"
         case BoolLit(value):
             return "TRUE" if value else "FALSE"
+        case Aggregate("COUNT", None):
+            return "COUNT(*)"
+        case Aggregate(func, arg):
+            return f"{func}({render_expr(arg, d)})"
+        case InExpr(attr, values, negated):
+            kw = "NOT IN" if negated else "IN"
+            vals = ", ".join(render_expr(v, d) for v in values)
+            return f"{render_expr(attr, d)} {kw} ({vals})"
+        case BetweenExpr(attr, lo, hi, negated):
+            kw = "NOT BETWEEN" if negated else "BETWEEN"
+            return f"{render_expr(attr, d)} {kw} {render_expr(lo, d)} AND {render_expr(hi, d)}"
         case BinaryExpr(op, lhs, rhs):
             l = render_expr(lhs, d)
             r = render_expr(rhs, d)
@@ -357,8 +517,9 @@ def render_expr(expr: Expr, d: Dialect) -> str:
 
 def render_table_ref(ref: TableRef, d: Dialect) -> str:
     match ref:
-        case TableScan(name):
-            return d.fmt_table(name)
+        case TableScan(name, alias):
+            base = d.fmt_table(name)
+            return f"{base} AS {alias}" if alias else base
         case CrossJoin(lhs, rhs):
             return f"{render_table_ref(lhs, d)} CROSS JOIN {render_table_ref(rhs, d)}"
         case ExplicitJoin(jtype, lhs, rhs, on):
@@ -372,11 +533,27 @@ def render_table_ref(ref: TableRef, d: Dialect) -> str:
 
 
 def render_query(query: SelectQuery, d: Dialect) -> str:
-    targets = ", ".join(d.fmt_col_ref(a.table, a.column) for a in query.targets)
+    target_parts = []
+    for t in query.targets:
+        rendered = render_expr(t.expr, d)
+        if t.alias:
+            rendered += f" AS {t.alias}"
+        target_parts.append(rendered)
+    targets = ", ".join(target_parts)
+
     from_clause = render_table_ref(query.from_, d)
     sql = f"SELECT {targets}\nFROM {from_clause}"
     if query.where is not None:
         sql += f"\nWHERE {render_expr(query.where, d)}"
+    if query.group_by:
+        cols = ", ".join(d.fmt_col_ref(a.table, a.column) for a in query.group_by)
+        sql += f"\nGROUP BY {cols}"
+    if query.order_by:
+        keys = ", ".join(
+            f"{d.fmt_col_ref(a.table, a.column)} {direction.upper()}"
+            for a, direction in query.order_by
+        )
+        sql += f"\nORDER BY {keys}"
     return sql
 
 

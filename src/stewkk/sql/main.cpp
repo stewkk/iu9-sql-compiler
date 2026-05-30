@@ -256,7 +256,11 @@ int main(int argc, char** argv) {
     }
     MatchResult mr;
     try {
-      mr = IsPlanReachable(sql_stream, target);
+      // The schema lets the Sort enforcer confirm the ORDER BY keys exist on
+      // the group it sits above; without --data-dir it stays permissive.
+      SchemaCatalog schema = args.data_dir.empty() ? SchemaCatalog{}
+                                                    : LoadSchema(args.data_dir);
+      mr = IsPlanReachable(sql_stream, target, {}, std::move(schema));
     } catch (const std::exception& e) {
       std::cerr << "reachability error: " << e.what() << "\n";
       return kOptimizerError;

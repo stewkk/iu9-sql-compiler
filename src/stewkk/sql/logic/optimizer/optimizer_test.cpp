@@ -195,4 +195,72 @@ TEST(ReachabilityTest, WrongJoinQual) {
   ASSERT_THAT(result.mismatch, HasSubstr("qual"));
 }
 
+TEST(ReachabilityTest, InExpandsToOrChain) {
+  std::stringstream s{"SELECT * FROM users WHERE users.id IN (1, 2, 3);"};
+  Expression eq1 = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(IntConst{1})};
+  Expression eq2 = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(IntConst{2})};
+  Expression eq3 = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(IntConst{3})};
+  Expression or_chain = BinaryExpression{
+      std::make_shared<Expression>(BinaryExpression{
+          std::make_shared<Expression>(std::move(eq1)),
+          BinaryOp::kOr,
+          std::make_shared<Expression>(std::move(eq2))}),
+      BinaryOp::kOr,
+      std::make_shared<Expression>(std::move(eq3))};
+  auto result = IsPlanReachable(s, PhysicalFilter{
+      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}), or_chain});
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
+// An ORDER BY query becomes a required sort property, so the search generates a
+// Sort enforcer on the root projection group and the ordered plan is reachable.
+TEST(ReachabilityTest, OrderByReachableViaSortEnforcer) {
+  std::stringstream s{"SELECT users.id FROM users ORDER BY users.id;"};
+  PhysicalSort target{
+      std::make_shared<PhysicalPlanNode>(PhysicalProjection{
+          std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
+          {Attribute{"users", "id"}},
+          {}}),
+      SortOrder{{SortKey{"users", "id", Direction::kAsc}}}};
+  auto result = IsPlanReachable(s, target);
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
+// The enforcer is generated for the ORDER BY direction the query asked for, so
+// a plan whose Sort runs the other way is not reachable.
+TEST(ReachabilityTest, OrderByWrongDirectionNotReachable) {
+  std::stringstream s{"SELECT users.id FROM users ORDER BY users.id ASC;"};
+  PhysicalSort target{
+      std::make_shared<PhysicalPlanNode>(PhysicalProjection{
+          std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
+          {Attribute{"users", "id"}},
+          {}}),
+      SortOrder{{SortKey{"users", "id", Direction::kDesc}}}};
+  auto result = IsPlanReachable(s, target);
+  ASSERT_THAT(result.reachable, IsFalse());
+}
+
+// Without an ORDER BY no required sort is propagated, so no Sort enforcer is
+// ever built and a plan that carries a Sort cannot be reached.
+TEST(ReachabilityTest, SortNotReachableWithoutOrderBy) {
+  std::stringstream s{"SELECT users.id FROM users;"};
+  PhysicalSort target{
+      std::make_shared<PhysicalPlanNode>(PhysicalProjection{
+          std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
+          {Attribute{"users", "id"}},
+          {}}),
+      SortOrder{{SortKey{"users", "id", Direction::kAsc}}}};
+  auto result = IsPlanReachable(s, target);
+  ASSERT_THAT(result.reachable, IsFalse());
+}
+
 }  // namespace stewkk::sql

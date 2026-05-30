@@ -9,14 +9,18 @@ Serialized format (s-expressions):
   (PhysicalProjection (exprs EXPR...) SOURCE)
   (NestedLoopCrossJoin LHS RHS)
   (NestedLoopJoin JoinType EXPR LHS RHS)   JoinType: Inner | Full | Left | Right
+  (Sort (keys table.col Asc|Desc ...) SOURCE)
+  (HashAggregate (group_by EXPR...) (aggs EXPR...) SOURCE)
 
 Expressions:
   42  NULL  TRUE  FALSE  UNKNOWN
+  (str "value")
   (attr table column)
   (OP LHS RHS)   OP: = != > < >= <= and or + - * / % ^
   (not EXPR)
   (uminus EXPR)
   (isnull EXPR)
+  (SUM EXPR)  (COUNT EXPR)  (COUNT *)
 """
 
 import xml.etree.ElementTree as ET
@@ -70,14 +74,118 @@ def _convert_relop(relop: ET.Element) -> str:
     if phys_op in ("Clustered Index Scan", "Index Scan", "Table Scan",
                    "Clustered Index Seek", "Index Seek"):
         return _convert_scan(relop)
+    if phys_op == "Compute Scalar":
+        return _convert_compute_scalar(relop)
+    if phys_op == "Sort":
+        return _convert_sort(relop)
+    if phys_op == "Stream Aggregate":
+        return _convert_aggregate(relop, "StreamAggregate", "GroupBy", drop_enforcer_sort=True)
     if phys_op == "Nested Loops":
         return _convert_nested_loops(relop, logical_op)
     if phys_op == "Hash Match":
+        if logical_op == "Aggregate":
+            return _convert_aggregate(relop, "Hash", "HashKeysBuild", drop_enforcer_sort=False)
         return _convert_hash_match(relop, logical_op)
     if phys_op == "Merge Join":
         return _convert_merge_join(relop, logical_op)
 
     raise NotImplementedError(f"unhandled PhysicalOp: {phys_op!r} (LogicalOp={logical_op!r})")
+
+
+def _convert_compute_scalar(relop: ET.Element) -> str:
+    # MS SQL wraps aggregate outputs, casts and computed projections in a
+    # Compute Scalar node. The serialized projection is re-added by
+    # reach_fuzz._wrap_projection, so pass straight through to the child.
+    child = relop.find(f"{NS}ComputeScalar/{NS}RelOp")
+    if child is None:
+        raise ValueError("Compute Scalar has no child RelOp")
+    return _convert_relop(child)
+
+
+def _convert_sort(relop: ET.Element) -> str:
+    sort = relop.find(f"{NS}Sort")
+    if sort is None:
+        raise ValueError("Sort element missing")
+    child = sort.find(f"{NS}RelOp")
+    if child is None:
+        raise ValueError("Sort has no child RelOp")
+
+    keys = []
+    for ob in sort.findall(f"{NS}OrderBy/{NS}OrderByColumn"):
+        ascending = (ob.get("Ascending", "true").lower() != "false")
+        cr = ob.find(f"{NS}ColumnReference")
+        if cr is None:
+            continue
+        table = _strip_sql_name(cr.get("Alias") or cr.get("Table"))
+        col = cr.get("Column", "").strip("[]")
+        keys.append(f"{table}.{col} {'Asc' if ascending else 'Desc'}")
+    if not keys:
+        raise ValueError("Sort node has no OrderByColumn entries")
+    return f"(Sort (keys {' '.join(keys)}) {_convert_relop(child)})"
+
+
+_AGG_TYPES = {
+    "SUM": "SUM",
+    "COUNT": "COUNT",
+    "COUNT_BIG": "COUNT",
+    "CNT": "COUNT",
+    "CNT_BIG": "COUNT",
+}
+
+
+def _convert_aggregate(
+    relop: ET.Element, container_tag: str, groupby_tag: str, drop_enforcer_sort: bool
+) -> str:
+    container = relop.find(f"{NS}{container_tag}")
+    if container is None:
+        raise ValueError(f"{container_tag} element missing from aggregate node")
+
+    child = container.find(f"{NS}RelOp")
+    if child is None:
+        raise ValueError("aggregate node has no child RelOp")
+    # A Sort directly under a Stream Aggregate is MS's enforcer for ordered
+    # stream aggregation; our model uses hash aggregation over unordered input,
+    # so drop it. A user ORDER BY sort lives above the aggregate/projection.
+    if drop_enforcer_sort and child.get("PhysicalOp", "") == "Sort":
+        inner_sort = child.find(f"{NS}Sort/{NS}RelOp")
+        if inner_sort is None:
+            raise ValueError("enforcer Sort has no child RelOp")
+        child_str = _convert_relop(inner_sort)
+    else:
+        child_str = _convert_relop(child)
+
+    group_by = [
+        _col_ref_to_attr(cr)
+        for cr in container.findall(f"{NS}{groupby_tag}/{NS}ColumnReference")
+    ]
+
+    aggs = []
+    for dv in container.findall(f"{NS}DefinedValues/{NS}DefinedValue"):
+        agg = dv.find(f".//{NS}Aggregate")
+        if agg is None:
+            continue
+        aggs.append(_convert_agg_func(agg))
+
+    return (
+        f"(HashAggregate (group_by {' '.join(group_by)})"
+        f" (aggs {' '.join(aggs)}) {child_str})"
+    )
+
+
+def _convert_agg_func(agg: ET.Element) -> str:
+    agg_type = agg.get("AggType", "")
+    if agg_type == "countstar":
+        return "(COUNT *)"
+
+    func = _AGG_TYPES.get(agg_type.upper())
+    if func is None:
+        raise NotImplementedError(f"unhandled AggType: {agg_type!r}")
+
+    inner = agg.find(f"{NS}ScalarOperator")
+    if inner is None:
+        # COUNT with no argument behaves like COUNT(*).
+        return f"({func} *)" if func == "COUNT" else f"({func})"
+    return f"({func} {_convert_scalar(inner)})"
 
 
 _SEEK_SCAN_TYPES = {"GT": ">", "GE": ">=", "LT": "<", "LE": "<=", "EQ": "="}
@@ -323,5 +431,28 @@ def _convert_identifier(identifier: ET.Element) -> str:
 
 
 def _convert_const(const: ET.Element) -> str:
-    value = const.get("ConstValue", "").strip("()")
-    return value
+    raw = const.get("ConstValue", "").strip()
+    # String literal: 'text' or N'text', with '' as an escaped single quote.
+    s = raw[1:] if raw.startswith("N'") else raw
+    if len(s) >= 2 and s.startswith("'") and s.endswith("'"):
+        inner = s[1:-1].replace("''", "'")
+        return f"(str {_quote_cpp_string(inner)})"
+    return raw.strip("()")
+
+
+def _quote_cpp_string(value: str) -> str:
+    """Re-quote a string into the C++ double-quoted form (plan_serializer.cpp)."""
+    out = ['"']
+    for c in value:
+        if c == "\\":
+            out.append("\\\\")
+        elif c == '"':
+            out.append('\\"')
+        elif c == "\n":
+            out.append("\\n")
+        elif c == "\t":
+            out.append("\\t")
+        else:
+            out.append(c)
+    out.append('"')
+    return "".join(out)

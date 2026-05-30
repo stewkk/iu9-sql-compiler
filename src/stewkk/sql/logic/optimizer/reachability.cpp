@@ -5,6 +5,8 @@
 #include <stewkk/sql/utils/overloaded.hpp>
 #include <stewkk/sql/logic/parser/parser.hpp>
 #include <stewkk/sql/logic/optimizer/optimizer.hpp>
+#include <stewkk/sql/logic/optimizer/properties/property_set.hpp>
+#include <stewkk/sql/logic/optimizer/properties/sort_property.hpp>
 #include <stewkk/sql/logic/optimizer/rules.hpp>
 
 namespace stewkk::sql {
@@ -139,9 +141,17 @@ MatchResult IsReachable(utils::NotNull<Group*> root, const PhysicalPlanNode& tar
 }
 
 MatchResult IsPlanReachable(std::istream& sql, const PhysicalPlanNode& target,
-                             CardinalityEstimates cardinality) {
+                             CardinalityEstimates cardinality, SchemaCatalog schema) {
     auto parsed = GetAST(sql).value();
-    Optimizer optimizer(parsed.op, MakeMainRules(), std::move(cardinality));
+    // Mirror main.cpp: a query ORDER BY becomes a required sort property so the
+    // exhaustive search enumerates Sort enforcers and the ordered plan MS SQL
+    // produced is actually reachable. Without it the root group never gets a
+    // Sort and every ORDER BY plan would spuriously read as unreachable.
+    PropertySet required = parsed.required_order
+        ? PropertySet{SortProperty{*parsed.required_order}}
+        : PropertySet::Any();
+    Optimizer optimizer(parsed.op, MakeMainRules(), std::move(cardinality),
+                        std::move(schema), std::move(required));
     optimizer.OptimizeExhaustive();
     return IsReachable(optimizer.GetRootGroup(), target);
 }

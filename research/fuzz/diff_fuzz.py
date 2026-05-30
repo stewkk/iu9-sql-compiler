@@ -24,6 +24,7 @@ from pathlib import Path
 from research.fuzz.mssql_runner import MsSqlRunner, RunResult
 from research.query_generator import (
     DIALECTS,
+    Attr,
     QueryGenerator,
     SelectQuery,
     load_schema,
@@ -66,6 +67,55 @@ def _run_ours(cli: str, data_dir: str, query: str, jit: bool) -> subprocess.Comp
     )
 
 
+def _typed(cell: str):
+    if cell == "NULL":
+        return None
+    try:
+        return int(cell)
+    except ValueError:
+        return cell
+
+
+def _order_by_indices(query: SelectQuery) -> list[tuple[int, str]]:
+    """Map each ORDER BY key to its column index in the projection order."""
+    out: list[tuple[int, str]] = []
+    for key_attr, direction in query.order_by:
+        for i, t in enumerate(query.targets):
+            e = t.expr
+            if isinstance(e, Attr) and e.table == key_attr.table and e.column == key_attr.column:
+                out.append((i, direction))
+                break
+    return out
+
+
+def _check_order(query: SelectQuery, our_rows: list[str]) -> str | None:
+    """
+    Verify the CLI's (order-preserved) output is monotonic in the ORDER BY keys.
+    NULL key values are skipped because the two engines disagree on NULL
+    ordering; this still catches gross ordering bugs without tie-break flakiness.
+    """
+    keys = _order_by_indices(query)
+    if not keys:
+        return None
+
+    prev: list | None = None
+    for row in our_rows:
+        cells = row.split("\t")
+        cur = [(_typed(cells[i]), direction) for i, direction in keys if i < len(cells)]
+        if prev is not None:
+            for (va, da), (vb, _) in zip(prev, cur):
+                if va is None or vb is None or va == vb:
+                    continue
+                less = va < vb
+                if da == "desc":
+                    less = not less
+                if not less:
+                    return "ORDER BY ordering violated in our output"
+                break
+        prev = cur
+    return None
+
+
 def _compare(
     query: SelectQuery,
     ours_proc: subprocess.CompletedProcess,
@@ -84,11 +134,12 @@ def _compare(
     if our_cols != their_cols:
         return f"column count: ours={our_cols} theirs={their_cols}"
 
-    # Generator does not emit ORDER BY, so always compare as multisets.
+    # Row correctness: compare as multisets regardless of ordering.
     if sorted(our_rows) != sorted(their_rows):
         return "row contents differ"
 
-    return None
+    # If the query asked for an order, additionally check our output respects it.
+    return _check_order(query, our_rows)
 
 
 def main() -> None:

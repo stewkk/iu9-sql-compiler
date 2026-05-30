@@ -2,7 +2,7 @@
 
 namespace stewkk::sql {
 
-Rules<6, 7> MakeMainRules() {
+Rules<7, 7> MakeMainRules() {
     return {
         .transformation_rules = {
             std::make_unique<JoinCommutativity>(),
@@ -11,6 +11,7 @@ Rules<6, 7> MakeMainRules() {
             std::make_unique<FilterMerge>(),
             std::make_unique<FilterPushdownThroughProjection>(),
             std::make_unique<FilterPushdownThroughJoin>(),
+            std::make_unique<InToOrChain>(),
         },
         .implementation_rules = {
             std::make_unique<ImplementTable>(),
