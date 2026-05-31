@@ -8,6 +8,7 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -99,6 +100,15 @@ std::shared_ptr<const BenchTables> MakeTables(int64_t rows_t, int64_t rows_u = 0
   return tables;
 }
 
+std::shared_ptr<const BenchTables> MakeSortTables(int64_t rows) {
+  auto tables = std::make_shared<BenchTables>();
+  auto table = MakeTable("t", rows);
+  std::mt19937 generator{0};
+  std::shuffle(table.tuples.begin(), table.tuples.end(), generator);
+  tables->emplace("t", std::move(table));
+  return tables;
+}
+
 class InMemorySequentialScanner {
 public:
   explicit InMemorySequentialScanner(std::shared_ptr<const BenchTables> tables)
@@ -157,26 +167,44 @@ Relation RunPlan(const PhysicalPlanNode& plan, std::shared_ptr<const BenchTables
   return std::move(result).value();
 }
 
-int64_t CeilPages(int64_t rows) {
-  return (rows + static_cast<int64_t>(kBufSize) - 1) / static_cast<int64_t>(kBufSize);
+int64_t SortModelCost(int64_t rows) {
+  return 11 * (rows > 1 ? rows * static_cast<int64_t>(std::bit_width(static_cast<uint64_t>(rows))) : rows);
 }
 
-int64_t SortModelCost(int64_t rows) {
-  return rows > 1 ? rows * static_cast<int64_t>(std::bit_width(static_cast<uint64_t>(rows))) : rows;
+int64_t FindSortRowsForTargetCost(int64_t target_cost) {
+  int64_t best_rows = 1;
+  for (int64_t rows = 2; SortModelCost(rows) <= 2 * target_cost; ++rows) {
+    if (std::abs(SortModelCost(rows) - target_cost)
+        < std::abs(SortModelCost(best_rows) - target_cost)) {
+      best_rows = rows;
+    }
+  }
+  return best_rows;
+}
+
+int64_t DivideRounded(int64_t value, int64_t divisor) {
+  return std::max<int64_t>(1, (value + divisor / 2) / divisor);
+}
+
+int64_t SqrtRounded(int64_t value) {
+  const auto floor = static_cast<int64_t>(std::sqrt(value));
+  return value - floor * floor < (floor + 1) * (floor + 1) - value ? floor : floor + 1;
 }
 
 void SetUnaryCounters(benchmark::State& state, int64_t rows, int64_t model_cost,
-                      int64_t output_rows) {
+                      int64_t plan_cost, int64_t output_rows) {
   state.counters["rows"] = static_cast<double>(rows);
   state.counters["model_cost"] = static_cast<double>(model_cost);
+  state.counters["plan_cost"] = static_cast<double>(plan_cost);
   state.counters["output_rows"] = static_cast<double>(output_rows);
 }
 
 void SetBinaryCounters(benchmark::State& state, int64_t lhs_rows, int64_t rhs_rows,
-                       int64_t model_cost, int64_t output_rows) {
+                       int64_t model_cost, int64_t plan_cost, int64_t output_rows) {
   state.counters["lhs_rows"] = static_cast<double>(lhs_rows);
   state.counters["rhs_rows"] = static_cast<double>(rhs_rows);
   state.counters["model_cost"] = static_cast<double>(model_cost);
+  state.counters["plan_cost"] = static_cast<double>(plan_cost);
   state.counters["output_rows"] = static_cast<double>(output_rows);
 }
 
@@ -196,7 +224,7 @@ void BM_OperatorSeqScan(benchmark::State& state) {
   for (auto _ : state) {
     benchmark::DoNotOptimize(RunPlan(plan, tables));
   }
-  SetUnaryCounters(state, rows, rows, rows);
+  SetUnaryCounters(state, rows, 100 * rows, 100 * rows, rows);
 }
 
 void BM_OperatorFilter(benchmark::State& state) {
@@ -217,7 +245,7 @@ void BM_OperatorFilter(benchmark::State& state) {
   const int64_t full_cycles = rows / 1024;
   const int64_t tail = rows % 1024;
   const int64_t output_rows = full_cycles * kThreshold + std::min<int64_t>(tail, kThreshold);
-  SetUnaryCounters(state, rows, rows, output_rows);
+  SetUnaryCounters(state, rows, 100 * rows, 200 * rows, output_rows);
 }
 
 void BM_OperatorProjection(benchmark::State& state) {
@@ -238,15 +266,15 @@ void BM_OperatorProjection(benchmark::State& state) {
   for (auto _ : state) {
     benchmark::DoNotOptimize(RunPlan(plan, tables));
   }
-  SetUnaryCounters(state, rows, rows, rows);
+  SetUnaryCounters(state, rows, 22 * rows, 122 * rows, rows);
 }
 
 void BM_OperatorSort(benchmark::State& state) {
   const int64_t rows = state.range(0);
-  auto tables = MakeTables(rows);
+  auto tables = MakeSortTables(rows);
   auto plan = PhysicalPlanNode{PhysicalSort{
       .source = PlanPtr(Scan("t")),
-      .keys = SortOrder{{SortKey{.table = "t", .column = "v", .dir = Direction::kAsc}}},
+      .keys = SortOrder{{SortKey{.table = "t", .column = "id", .dir = Direction::kAsc}}},
   }};
 
   SuppressClog();
@@ -255,7 +283,7 @@ void BM_OperatorSort(benchmark::State& state) {
   for (auto _ : state) {
     benchmark::DoNotOptimize(RunPlan(plan, tables));
   }
-  SetUnaryCounters(state, rows, SortModelCost(rows), rows);
+  SetUnaryCounters(state, rows, SortModelCost(rows), SortModelCost(rows) + 100 * rows, rows);
 }
 
 void BM_OperatorAggregation(benchmark::State& state) {
@@ -273,7 +301,7 @@ void BM_OperatorAggregation(benchmark::State& state) {
   for (auto _ : state) {
     benchmark::DoNotOptimize(RunPlan(plan, tables));
   }
-  SetUnaryCounters(state, rows, rows, rows);
+  SetUnaryCounters(state, rows, 510 * rows, 610 * rows, rows);
 }
 
 void BM_OperatorNestedLoopJoin(benchmark::State& state) {
@@ -293,7 +321,8 @@ void BM_OperatorNestedLoopJoin(benchmark::State& state) {
   for (auto _ : state) {
     benchmark::DoNotOptimize(RunPlan(plan, tables));
   }
-  SetBinaryCounters(state, lhs_rows, rhs_rows, lhs_rows * rhs_rows,
+  SetBinaryCounters(state, lhs_rows, rhs_rows, 70 * lhs_rows * rhs_rows,
+                    70 * lhs_rows * rhs_rows + 100 * (lhs_rows + rhs_rows),
                     std::min(lhs_rows, rhs_rows));
 }
 
@@ -312,7 +341,8 @@ void BM_OperatorNestedLoopCrossJoin(benchmark::State& state) {
   for (auto _ : state) {
     benchmark::DoNotOptimize(RunPlan(plan, tables));
   }
-  SetBinaryCounters(state, lhs_rows, rhs_rows, CeilPages(lhs_rows) * (1 + CeilPages(rhs_rows)),
+  SetBinaryCounters(state, lhs_rows, rhs_rows, 104 * lhs_rows * rhs_rows,
+                    104 * lhs_rows * rhs_rows + 100 * (lhs_rows + rhs_rows),
                     lhs_rows * rhs_rows);
 }
 
@@ -333,14 +363,40 @@ void BM_OperatorHashJoin(benchmark::State& state) {
   for (auto _ : state) {
     benchmark::DoNotOptimize(RunPlan(plan, tables));
   }
-  SetBinaryCounters(state, lhs_rows, rhs_rows, lhs_rows + rhs_rows,
+  SetBinaryCounters(state, lhs_rows, rhs_rows, 69 * (lhs_rows + rhs_rows),
+                    169 * (lhs_rows + rhs_rows),
                     std::min(lhs_rows, rhs_rows));
 }
 
 void RegisterUnary(void (*benchmark_fn)(benchmark::State&), const char* name) {
-  for (int64_t rows : {1024, 4096, 16384, 65536, 262144}) {
+  for (int64_t rows : {1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144}) {
     benchmark::RegisterBenchmark(name, benchmark_fn)->Arg(rows)->UseRealTime();
   }
+}
+
+void RegisterCostMatched(int64_t target_cost) {
+  const auto prefix = "OperatorCostMatched/target_cost:" + std::to_string(target_cost) + "/";
+  const auto register_unary = [&](const char* name, void (*benchmark_fn)(benchmark::State&),
+                                  int64_t rows) {
+    benchmark::RegisterBenchmark((prefix + name).c_str(), benchmark_fn)->Arg(rows)->UseRealTime();
+  };
+  const auto register_binary = [&](const char* name, void (*benchmark_fn)(benchmark::State&),
+                                   int64_t rows) {
+    benchmark::RegisterBenchmark((prefix + name).c_str(), benchmark_fn)
+        ->Args({rows, rows})
+        ->UseRealTime();
+  };
+
+  register_unary("SeqScan", BM_OperatorSeqScan, DivideRounded(target_cost, 100));
+  register_unary("Filter", BM_OperatorFilter, DivideRounded(target_cost, 100));
+  register_unary("Projection", BM_OperatorProjection, DivideRounded(target_cost, 22));
+  register_unary("Sort", BM_OperatorSort, FindSortRowsForTargetCost(target_cost));
+  register_unary("Aggregation", BM_OperatorAggregation, DivideRounded(target_cost, 510));
+  register_binary("HashJoin", BM_OperatorHashJoin, DivideRounded(target_cost, 2 * 69));
+  register_binary("NestedLoopJoin", BM_OperatorNestedLoopJoin,
+                  SqrtRounded(DivideRounded(target_cost, 70)));
+  register_binary("NestedLoopCrossJoin", BM_OperatorNestedLoopCrossJoin,
+                  SqrtRounded(DivideRounded(target_cost, 104)));
 }
 
 struct OperatorCostRegistration {
@@ -351,21 +407,25 @@ struct OperatorCostRegistration {
     RegisterUnary(BM_OperatorSort, "OperatorCost/Sort");
     RegisterUnary(BM_OperatorAggregation, "OperatorCost/Aggregation");
 
-    for (auto size : {1024, 4096, 16384, 65536}) {
+    for (auto size : {1024, 2048, 4096, 8192, 16384, 32768, 65536}) {
       benchmark::RegisterBenchmark("OperatorCost/HashJoin", BM_OperatorHashJoin)
           ->Args({size, size})
           ->UseRealTime();
     }
-    for (auto size : {128, 256, 512, 1024}) {
+    for (auto size : {64, 128, 256, 512, 1024, 2048}) {
       benchmark::RegisterBenchmark("OperatorCost/NestedLoopJoin", BM_OperatorNestedLoopJoin)
           ->Args({size, size})
           ->UseRealTime();
     }
-    for (auto size : {64, 128, 256, 512}) {
+    for (auto size : {32, 64, 128, 256, 512, 1024}) {
       benchmark::RegisterBenchmark("OperatorCost/NestedLoopCrossJoin",
                                    BM_OperatorNestedLoopCrossJoin)
           ->Args({size, size})
           ->UseRealTime();
+    }
+
+    for (auto target_cost : {640000, 1000000, 3240000, 6760000, 12250000, 26010000}) {
+      RegisterCostMatched(target_cost);
     }
   }
 };

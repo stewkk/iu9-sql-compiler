@@ -72,21 +72,19 @@ PropertySet DeriveOutputProps(utils::NotNull<PhysicalExpr*> expr,
 int64_t LowerBoundLocalCost(utils::NotNull<LogicalExpr*> expr, CardinalityEstimates& cardinality) {
   return std::visit(utils::Overloaded{
       [&](const logical::Table&) -> int64_t {
-          return cardinality.GetCardinality(expr->group);
+          return 100 * cardinality.GetCardinality(expr->group);
       },
       [&](const logical::Filter&) -> int64_t {
-          return cardinality.GetCardinality(expr->group);
+          return 100 * cardinality.GetCardinality(expr->group);
       },
       [&](const logical::Projection&) -> int64_t {
-          return cardinality.GetCardinality(expr->group);
+          return 22 * cardinality.GetCardinality(expr->group);
       },
-      [&](const logical::Aggregation&) -> int64_t {
-          return cardinality.GetCardinality(expr->group);
+      [&](const logical::Aggregation& a) -> int64_t {
+          return 510 * cardinality.GetCardinality(a.source);
       },
       [&](const logical::CrossJoin& j) -> int64_t {
-          auto p_l = (cardinality.GetCardinality(j.lhs) + kBufSize - 1) / kBufSize;
-          auto p_r = (cardinality.GetCardinality(j.rhs) + kBufSize - 1) / kBufSize;
-          return p_l * (1 + p_r);
+          return 104 * cardinality.GetCardinality(j.lhs) * cardinality.GetCardinality(j.rhs);
       },
       [&](const logical::Join& j) -> int64_t {
           // Must stay ≤ every physical impl. NLJ ~ n_l*n_r, HJ ~ n_l+n_r
@@ -94,7 +92,7 @@ int64_t LowerBoundLocalCost(utils::NotNull<LogicalExpr*> expr, CardinalityEstima
           // take the min so the bound is safe for both alternatives.
           auto n_l = cardinality.GetCardinality(j.lhs);
           auto n_r = cardinality.GetCardinality(j.rhs);
-          return std::min(n_l + n_r, n_l * n_r);
+          return std::min(69 * (n_l + n_r), 70 * n_l * n_r);
       },
   }, expr->root_operator);
 }
@@ -102,33 +100,33 @@ int64_t LowerBoundLocalCost(utils::NotNull<LogicalExpr*> expr, CardinalityEstima
 int64_t CalcCost(utils::NotNull<PhysicalExpr*> expr, CardinalityEstimates& cardinality) {
   return std::visit(utils::Overloaded{
       [&](const physical::SeqScan&) -> int64_t {
-          return cardinality.GetCardinality(expr->group);
+          return 100 * cardinality.GetCardinality(expr->group);
       },
       [&](const physical::Filter&) -> int64_t {
-          return cardinality.GetCardinality(expr->group);
+          return 100 * cardinality.GetCardinality(expr->group);
       },
       [&](const physical::Projection&) -> int64_t {
-          return cardinality.GetCardinality(expr->group);
+          return 22 * cardinality.GetCardinality(expr->group);
       },
       [&](const physical::NestedLoopJoin& j) -> int64_t {
           auto n_l = cardinality.GetCardinality(j.lhs);
           auto n_r = cardinality.GetCardinality(j.rhs);
-          return n_l * n_r;
+          return 70 * n_l * n_r;
       },
       [&](const physical::NestedLoopCrossJoin& j) -> int64_t {
-          auto p_l = (cardinality.GetCardinality(j.lhs) + kBufSize - 1) / kBufSize;
-          auto p_r = (cardinality.GetCardinality(j.rhs) + kBufSize - 1) / kBufSize;
-          return p_l * (1 + p_r);
+          auto n_l = cardinality.GetCardinality(j.lhs);
+          auto n_r = cardinality.GetCardinality(j.rhs);
+          return 104 * n_l * n_r;
       },
       [&](const physical::HashJoin& j) -> int64_t {
-          return cardinality.GetCardinality(j.lhs) + cardinality.GetCardinality(j.rhs);
+          return 69 * (cardinality.GetCardinality(j.lhs) + cardinality.GetCardinality(j.rhs));
       },
       [&](const physical::Sort& s) -> int64_t {
           auto n = cardinality.GetCardinality(s.input);
-          return n > 1 ? n * static_cast<int64_t>(std::bit_width(static_cast<uint64_t>(n))) : n;
+          return 11 * (n > 1 ? n * static_cast<int64_t>(std::bit_width(static_cast<uint64_t>(n))) : n);
       },
       [&](const physical::Aggregation& a) -> int64_t {
-          return cardinality.GetCardinality(a.source);
+          return 510 * cardinality.GetCardinality(a.source);
       },
   }, expr->root_operator);
 }
