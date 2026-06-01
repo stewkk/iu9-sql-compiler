@@ -113,4 +113,30 @@ SchemaCatalog LoadSchemaFromCsvDir(const std::filesystem::path& dir) {
   return SchemaCatalog{std::move(tables)};
 }
 
+std::unordered_map<std::string, std::int64_t> LoadTableSizesFromCsvDir(
+    const std::filesystem::path& dir) {
+  std::unordered_map<std::string, std::int64_t> sizes;
+  if (!std::filesystem::is_directory(dir)) {
+    return sizes;
+  }
+
+  static const std::regex kBench{R"(_\d+$)"};
+  for (const auto& entry : std::filesystem::directory_iterator{dir}) {
+    if (entry.path().extension() != ".csv") continue;
+    auto stem = entry.path().stem().string();
+    if (std::regex_search(stem, kBench)) continue;
+
+    std::ifstream in{entry.path()};
+    std::string line;
+    if (!std::getline(in, line)) continue;  // skip header
+
+    std::int64_t rows = 0;
+    while (std::getline(in, line)) {
+      if (!line.empty()) ++rows;
+    }
+    sizes.emplace(std::move(stem), rows);
+  }
+  return sizes;
+}
+
 }  // namespace stewkk::sql

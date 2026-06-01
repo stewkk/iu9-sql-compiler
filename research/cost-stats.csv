@@ -1,1304 +1,1304 @@
 seed,plan_cost,exec_us,rows,query
-0,9220,262,3,"SELECT t1.price AS c2289
+0,3466,255,3,"SELECT t1.price AS c2289
 FROM regions AS t0 RIGHT JOIN books AS t1 ON t0.id = t1.id;"
-1,1122,249,55,"SELECT t0.region_id AS c3748
+1,56100,240,55,"SELECT t0.region_id AS c3748
 FROM customers AS t0
 WHERE t0.region_id = 7;"
-2,1660,248,500,"SELECT t0.region_id, t0.id
+2,110500,250,500,"SELECT t0.region_id, t0.id
 FROM customers AS t0
 ORDER BY t0.id DESC, t0.region_id DESC;"
-3,1220,129,5,"SELECT t0.id
+3,610,122,5,"SELECT t0.id
 FROM departments AS t0;"
-4,4325,164,0,"SELECT t0.id, SUM(t0.id)
+4,943,172,0,"SELECT t0.id, SUM(t0.id)
 FROM markets AS t0
 WHERE t0.id IS NULL
 GROUP BY t0.id
 ORDER BY t0.id DESC;"
-5,649400,20979,3,"SELECT markets.region, markets.id AS c7685
+5,49760800,22867,3,"SELECT markets.region, markets.id AS c7685
 FROM markets CROSS JOIN orders CROSS JOIN departments
 GROUP BY markets.region, markets.id;"
-6,17610,722,4,"SELECT t1.id, t0.id AS c6716, t0.region_id
+6,230694,628,4,"SELECT t1.id, t0.id AS c6716, t0.region_id
 FROM customers AS t0 RIGHT JOIN employees AS t1 ON t0.id = t1.id RIGHT JOIN departments AS t2 ON t0.id = t2.id
 WHERE t1.department_id <= 11;"
-7,3343,282,1,"SELECT departments.id
+7,2593,293,1,"SELECT departments.id
 FROM departments RIGHT JOIN employees ON departments.id = employees.id
 WHERE (employees.id != 33 AND employees.department_id IN (34, 74))
 GROUP BY departments.id
 ORDER BY departments.id DESC;"
-8,1133,1113,1,"SELECT orders.customer_id, orders.id
+8,552500,1154,1,"SELECT orders.customer_id, orders.id
 FROM orders
 WHERE (orders.id = 117 AND orders.id > 60)
 ORDER BY orders.customer_id DESC, orders.id DESC;"
-9,15694,7696,2,"SELECT t0.customer_id AS c3674
+9,3939128,8455,2,"SELECT t0.customer_id AS c3674
 FROM orders AS t0 CROSS JOIN departments AS t1
 WHERE (t1.id >= 4 AND (t0.id IN (130) OR t1.id IS NULL));"
-10,12035,296,3,"SELECT regions.id
+10,5532,325,3,"SELECT regions.id
 FROM books RIGHT JOIN employees ON books.id = employees.id JOIN regions ON books.id = regions.id
 WHERE books.price >= 6;"
-11,9660,335,22,"SELECT employees.department_id
+11,16616,301,22,"SELECT employees.department_id
 FROM users FULL JOIN employees ON users.id = employees.id
 ORDER BY employees.department_id DESC;"
-12,5070,1115,3,"SELECT orders.id AS c2380, markets.region, markets.note
+12,676416,975,3,"SELECT orders.id AS c2380, markets.region, markets.note
 FROM markets JOIN orders ON markets.id = orders.id;"
-13,14600,2984,15000,"SELECT markets.region, orders.customer_id AS c8705, markets.note
+13,2390300,2814,15000,"SELECT markets.region, orders.customer_id AS c8705, markets.note
 FROM markets CROSS JOIN orders;"
-14,1854,132,10,"SELECT t0.department_id, t0.id AS c1827
+14,2076,143,10,"SELECT t0.department_id, t0.id AS c1827
 FROM employees AS t0
 WHERE (t0.department_id BETWEEN 5 AND 34 OR t0.id NOT IN (2, 68, 69));"
-15,1488,140,0,"SELECT books.price
+15,422,142,0,"SELECT books.price
 FROM books
 WHERE (books.id < 2 AND (books.price NOT BETWEEN 41 AND 55 OR books.price IN (57, 63, 77, 77)));"
-16,9220,308,22,"SELECT t0.age AS c4948
+16,16132,334,22,"SELECT t0.age AS c4948
 FROM users AS t0 FULL JOIN employees AS t1 ON t0.id = t1.id;"
-17,52970,336,4,"SELECT users.age, COUNT(departments.id), COUNT(*)
+17,29255,307,4,"SELECT users.age, COUNT(departments.id), COUNT(*)
 FROM regions JOIN users ON regions.id = users.id CROSS JOIN departments
 WHERE (users.age >= 52 OR regions.id IN (4, 9))
 GROUP BY users.age;"
-18,1775,283,436,"SELECT customers.region_id
+18,102500,273,436,"SELECT customers.region_id
 FROM customers
 WHERE customers.region_id != 8
 ORDER BY customers.region_id ASC;"
-19,8275,321,3,"SELECT t0.id
+19,3393,359,2,"SELECT t0.id
 FROM books AS t0 RIGHT JOIN regions AS t1 ON t0.id = t1.id JOIN markets AS t2 ON t1.id = t2.id
 WHERE t1.id < 3
 ORDER BY t0.id ASC;"
-20,129600,28568,85,"SELECT orders.id AS c5497, orders.customer_id, departments.id AS c8484
+20,49896040,29612,85,"SELECT orders.id AS c5497, orders.customer_id, departments.id AS c8484
 FROM departments CROSS JOIN users CROSS JOIN orders
 WHERE orders.id = 82;"
-21,1220,126,10,"SELECT regions.id
+21,1220,146,10,"SELECT regions.id
 FROM regions;"
-22,6760,146,11,"SELECT t0.department_id
+22,7436,167,11,"SELECT t0.department_id
 FROM employees AS t0
 GROUP BY t0.department_id
 ORDER BY t0.department_id ASC;"
-23,14760,484,10,"SELECT customers.region_id
+23,156962,489,10,"SELECT customers.region_id
 FROM customers LEFT JOIN books ON customers.id = books.id
 GROUP BY customers.region_id
 ORDER BY customers.region_id ASC;"
-24,88720,418,4,"SELECT t2.id, COUNT(t0.id) AS c2763, COUNT(t2.id)
+24,57976,440,4,"SELECT t2.id, COUNT(t0.id) AS c2763, COUNT(t2.id)
 FROM regions AS t0 CROSS JOIN users AS t1 LEFT JOIN markets AS t2 ON t0.id = t2.id
 GROUP BY t2.id;"
-25,5410,250,3,"SELECT customers.id
+25,68652,240,3,"SELECT customers.id
 FROM books JOIN customers ON books.id = customers.id
 ORDER BY customers.id DESC;"
-26,17660,144888,5489,"SELECT customers.region_id, employees.department_id
+26,4786826,149982,5489,"SELECT customers.region_id, employees.department_id
 FROM employees FULL JOIN orders ON employees.id = orders.id FULL JOIN customers ON employees.id = customers.id
 ORDER BY customers.region_id ASC;"
-27,33040,11022,2,"SELECT orders.customer_id, users.id
+27,6471784,12004,2,"SELECT orders.customer_id, users.id
 FROM users RIGHT JOIN orders ON users.id = orders.id CROSS JOIN departments
 WHERE orders.customer_id IN (34, 321)
 GROUP BY orders.customer_id, users.id;"
-28,6760,158,5,"SELECT departments.id AS c2364, SUM(departments.id)
+28,3325,150,5,"SELECT departments.id AS c2364, SUM(departments.id)
 FROM departments
 GROUP BY departments.id
 ORDER BY departments.id ASC;"
-29,11870,375,5,"SELECT customers.id, markets.id
+29,70066,376,5,"SELECT customers.id, markets.id
 FROM customers FULL JOIN departments ON customers.id = departments.id JOIN markets ON customers.id = markets.id;"
-30,178400,391,51,"SELECT markets.id AS c2619
+30,32788,427,51,"SELECT markets.id AS c2619
 FROM markets CROSS JOIN users CROSS JOIN books
 WHERE markets.region != 'AMERICA';"
-31,2896,155,8,"SELECT t0.id, SUM(t0.id)
+31,4860,223,8,"SELECT t0.id, SUM(t0.id)
 FROM users AS t0
 WHERE ((t0.id NOT IN (5) AND t0.age != 12) AND t0.age NOT BETWEEN 33 AND 64)
 GROUP BY t0.id;"
-32,6760,163,11,"SELECT t0.id AS c8338, COUNT(t0.department_id)
+32,7436,190,11,"SELECT t0.id AS c8338, COUNT(t0.department_id)
 FROM employees AS t0
 GROUP BY t0.id
 ORDER BY t0.id DESC;"
-33,24825,209075,1000,"SELECT orders.customer_id, customers.region_id
+33,2705500,201810,1000,"SELECT orders.customer_id, customers.region_id
 FROM departments RIGHT JOIN orders ON departments.id = orders.id CROSS JOIN customers
 WHERE departments.id BETWEEN 4 AND 96
 ORDER BY customers.region_id DESC;"
-34,687256,33154,3,"SELECT markets.note AS c1833, markets.region, SUM(books.id) AS c1917, COUNT(*)
+34,34691744,33226,3,"SELECT markets.note AS c1833, markets.region, SUM(books.id) AS c1917, COUNT(*)
 FROM orders CROSS JOIN markets CROSS JOIN books
 WHERE ((orders.id != 89 OR markets.note IS NOT NULL) OR (markets.id IN (22) AND books.id NOT BETWEEN 1 AND 3))
 GROUP BY markets.note, markets.region
 ORDER BY markets.region DESC;"
-35,20060,18309,50000,"SELECT regions.id, orders.id
+35,7686500,17925,50000,"SELECT regions.id, orders.id
 FROM orders CROSS JOIN regions JOIN customers ON regions.id = customers.id
 ORDER BY orders.id DESC, regions.id DESC;"
-36,14600,405,51,"SELECT books.price AS c7084
+36,8426,254,51,"SELECT books.price AS c7084
 FROM books CROSS JOIN users;"
-37,84010,424140,1591,"SELECT orders.customer_id
+37,525797800,426043,1591,"SELECT orders.customer_id
 FROM customers CROSS JOIN markets FULL JOIN orders ON markets.id = orders.id
 WHERE orders.id < 95;"
-38,18962,5240,2,"SELECT t1.department_id, COUNT(*)
+38,4011762,5469,2,"SELECT t1.department_id, COUNT(*)
 FROM regions AS t0 RIGHT JOIN employees AS t1 ON t0.id = t1.id RIGHT JOIN orders AS t2 ON t0.id = t2.id
 WHERE ((t1.id = 3 OR t2.id = 185) OR (t1.id < 3 AND t2.id IS NULL))
 GROUP BY t1.department_id
 ORDER BY t1.department_id DESC;"
-39,1775,139,0,"SELECT t0.id, t0.note, t0.region
+39,433,153,0,"SELECT t0.id, t0.note, t0.region
 FROM markets AS t0
 WHERE t0.note IS NULL
 ORDER BY t0.note DESC, t0.id DESC;"
-40,65600,615,500,"SELECT t1.id, t1.region_id AS c2127
+40,1004300,621,500,"SELECT t1.id, t1.region_id AS c2127
 FROM books AS t0 CROSS JOIN customers AS t1
 GROUP BY t1.id, t1.region_id;"
-41,61064,491931,50000,"SELECT customers.region_id, orders.id AS c1616
+41,1485049368,499192,50000,"SELECT customers.region_id, orders.id AS c1616
 FROM orders CROSS JOIN customers
 WHERE ((orders.id >= 3 OR customers.region_id != 41) OR orders.id IN (73))
 GROUP BY customers.region_id, orders.id;"
-42,7635,1383,3,"SELECT t1.price, t0.region_id, t2.customer_id AS c2615
+42,745022,1089,3,"SELECT t1.price, t0.region_id, t2.customer_id AS c2615
 FROM customers AS t0 JOIN books AS t1 ON t0.id = t1.id JOIN orders AS t2 ON t0.id = t2.id
 WHERE t2.id IS NOT NULL;"
-43,1122,162,0,"SELECT markets.region, markets.id AS c9574
+43,422,148,0,"SELECT markets.region, markets.id AS c9574
 FROM markets
 WHERE ((markets.note IS NOT NULL OR markets.region != 'AMERICA') AND (markets.region IN ('EUROPE', 'EUROPE') AND markets.note IN ('North, South', 'North, South')));"
-44,4325,271,6,"SELECT t1.id AS c8372, t1.age AS c1550
+44,72448,263,6,"SELECT t1.id AS c8372, t1.age AS c1550
 FROM customers AS t0 JOIN users AS t1 ON t0.id = t1.id
 WHERE t1.id > 11
 ORDER BY t1.id ASC, t1.age DESC;"
-45,6160,184,0,"SELECT t1.department_id AS c7018, t0.id AS c6686
+45,6295,178,0,"SELECT t1.department_id AS c7018, t0.id AS c6686
 FROM regions AS t0 JOIN employees AS t1 ON t0.id = t1.id
 WHERE t0.id >= 10
 GROUP BY t1.department_id, t0.id;"
-46,1122,130,1,"SELECT t0.id
+46,1122,156,1,"SELECT t0.id
 FROM regions AS t0
 WHERE ((t0.id IS NOT NULL AND t0.id != 5) AND (t0.id > 8 AND t0.id > 9));"
-47,9133,1124,1,"SELECT employees.id
+47,436233,1138,1,"SELECT employees.id
 FROM customers FULL JOIN employees ON customers.id = employees.id
 WHERE employees.department_id = 32
 ORDER BY employees.id ASC;"
-48,22320,125403,11,"SELECT customers.region_id AS c1201, SUM(customers.region_id)
+48,1706896,142344,11,"SELECT customers.region_id AS c1201, SUM(customers.region_id)
 FROM orders FULL JOIN customers ON orders.id = customers.id FULL JOIN markets ON orders.id = markets.id
 GROUP BY customers.region_id;"
-49,1133,1222,0,"SELECT orders.customer_id, orders.id
+49,560554,1150,0,"SELECT orders.customer_id, orders.id
 FROM orders
 WHERE ((orders.id = 130 OR orders.id <= 96) AND orders.id = 97)
 ORDER BY orders.customer_id DESC, orders.id DESC;"
-50,9610,263,3,"SELECT markets.id
+50,1972,259,3,"SELECT markets.id
 FROM markets RIGHT JOIN departments ON markets.id = departments.id
 WHERE markets.id < 45;"
-51,1220,127,5,"SELECT t0.id
+51,610,133,5,"SELECT t0.id
 FROM departments AS t0;"
-52,50320,5259,5000,"SELECT orders.id, COUNT(*)
+52,7748300,4738,5000,"SELECT orders.id, COUNT(*)
 FROM books CROSS JOIN orders
 WHERE books.price NOT IN (45, 55, 55, 66)
 GROUP BY orders.id;"
-53,26360,331,3,"SELECT users.id, COUNT(employees.id) AS c5902
+53,31865,316,3,"SELECT users.id, COUNT(employees.id) AS c5902
 FROM employees CROSS JOIN users JOIN markets ON users.id = markets.id
 GROUP BY users.id
 ORDER BY users.id ASC;"
-54,4990,179,15,"SELECT users.age, users.id AS c207, SUM(users.id)
+54,8460,165,15,"SELECT users.age, users.id AS c207, SUM(users.id)
 FROM users
 WHERE (users.age > 27 OR (users.age <= 123 AND users.age > 1))
 GROUP BY users.age, users.id
 ORDER BY users.id ASC;"
-55,1220,121,11,"SELECT t0.department_id AS c7732
+55,1342,142,11,"SELECT t0.department_id AS c7732
 FROM employees AS t0;"
-56,433400,17179,3,"SELECT books.id, SUM(orders.customer_id) AS c2549, COUNT(*) AS c1539
+56,69804832,17366,3,"SELECT books.id, SUM(orders.customer_id) AS c2549, COUNT(*) AS c1539
 FROM books CROSS JOIN employees CROSS JOIN orders
 WHERE employees.id < 68
 GROUP BY books.id;"
-57,1732,1401,3001,"SELECT orders.id AS c9114
+57,881250,1435,3001,"SELECT orders.id AS c9114
 FROM orders
 WHERE (orders.customer_id > 214 OR orders.customer_id BETWEEN 75 AND 84);"
-58,86560,1627742,110,"SELECT employees.department_id, customers.region_id, COUNT(*), SUM(orders.customer_id)
+58,1927703100,1595702,110,"SELECT employees.department_id, customers.region_id, COUNT(*), SUM(orders.customer_id)
 FROM employees CROSS JOIN customers FULL JOIN orders ON customers.id = orders.id
 WHERE customers.id <= 149
 GROUP BY employees.department_id, customers.region_id;"
-59,6320,383,500,"SELECT customers.id, customers.region_id, COUNT(customers.region_id)
+59,316000,390,500,"SELECT customers.id, customers.region_id, COUNT(customers.region_id)
 FROM customers
 GROUP BY customers.id, customers.region_id;"
-60,9660,265,17,"SELECT t0.id
+60,5702,286,17,"SELECT t0.id
 FROM markets AS t0 FULL JOIN users AS t1 ON t0.id = t1.id
 ORDER BY t0.id ASC;"
-61,13485,287,5,"SELECT t1.region, t1.id, t1.note
+61,2493,292,5,"SELECT t1.region, t1.id, t1.note
 FROM departments AS t0 CROSS JOIN markets AS t1
 WHERE ((t0.id < 43 OR t0.id >= 2) AND t1.note = 'Old World')
 ORDER BY t1.note DESC, t1.id ASC, t1.region ASC;"
-62,11870,487,3,"SELECT departments.id AS c7718
+62,70066,363,3,"SELECT departments.id AS c7718
 FROM departments LEFT JOIN books ON departments.id = books.id JOIN customers ON departments.id = customers.id;"
-63,14760,300,11,"SELECT users.age AS c5029, COUNT(*) AS c2096, SUM(users.age)
+63,10975,294,11,"SELECT users.age AS c5029, COUNT(*) AS c2096, SUM(users.age)
 FROM users FULL JOIN departments ON users.id = departments.id
 GROUP BY users.age
 ORDER BY users.age ASC;"
-64,9660,116327,500,"SELECT customers.region_id AS c6827, orders.id, customers.id
+64,175610500,116231,500,"SELECT customers.region_id AS c6827, orders.id, customers.id
 FROM customers LEFT JOIN orders ON customers.id = orders.id
 ORDER BY customers.region_id ASC, customers.id ASC, orders.id DESC;"
-65,9632,280,0,"SELECT markets.id AS c8656, markets.region
+65,2482,255,0,"SELECT markets.id AS c8656, markets.region
 FROM markets FULL JOIN departments ON markets.id = departments.id
 WHERE departments.id = 60
 GROUP BY markets.id, markets.region;"
-66,1632,162,1,"SELECT markets.note AS c5953, SUM(markets.id), SUM(markets.id)
+66,932,166,1,"SELECT markets.note AS c5953, SUM(markets.id), SUM(markets.id)
 FROM markets
 WHERE markets.region = 'EUROPE'
 GROUP BY markets.note;"
-67,1220,236,500,"SELECT customers.region_id, customers.id AS c651
+67,61000,234,500,"SELECT customers.region_id, customers.id AS c651
 FROM customers;"
-68,17660,9937,5001,"SELECT users.id, regions.id AS c5610, orders.id AS c9918
+68,4015260,20935,5001,"SELECT users.id, regions.id AS c5610, orders.id AS c9918
 FROM users FULL JOIN orders ON users.id = orders.id FULL JOIN regions ON orders.id = regions.id
 ORDER BY users.id DESC;"
-69,32064,2232,2380,"SELECT t0.id AS c499
+69,380850,2234,2380,"SELECT t0.id AS c499
 FROM books AS t0 FULL JOIN users AS t1 ON t0.id = t1.id CROSS JOIN customers AS t2
 WHERE ((t0.price > 66 OR t0.price NOT IN (55, 77, 93)) OR t2.id < 93)
 ORDER BY t0.id ASC;"
-70,2308,161,1,"SELECT markets.region, markets.note
+70,943,192,1,"SELECT markets.region, markets.note
 FROM markets
 WHERE markets.id IN (2, 31)
 GROUP BY markets.region, markets.note
 ORDER BY markets.note ASC, markets.region ASC;"
-71,65600,379,5,"SELECT departments.id AS c3175, SUM(departments.id), COUNT(books.price)
+71,10340,246,5,"SELECT departments.id AS c3175, SUM(departments.id), COUNT(books.price)
 FROM books CROSS JOIN departments
 GROUP BY departments.id;"
-72,1775,166,4,"SELECT t0.id
+72,788,169,4,"SELECT t0.id
 FROM departments AS t0
 WHERE t0.id >= 2
 ORDER BY t0.id ASC;"
-73,2462,320,0,"SELECT customers.id, customers.region_id
+73,67647,262,0,"SELECT customers.id, customers.region_id
 FROM customers JOIN markets ON customers.id = markets.id
 WHERE ((markets.id = 3 AND markets.region != 'AMERICA') AND (customers.id < 17 AND customers.region_id IS NULL));"
-74,10610,621,3,"SELECT books.id AS c9785
+74,86272,601,3,"SELECT books.id AS c9785
 FROM customers RIGHT JOIN departments ON customers.id = departments.id RIGHT JOIN books ON departments.id = books.id
 WHERE books.price >= 55;"
-75,14600,296,110,"SELECT t1.department_id AS c5193, t1.id
+75,15960,274,110,"SELECT t1.department_id AS c5193, t1.id
 FROM regions AS t0 CROSS JOIN employees AS t1;"
-76,10098,282,17,"SELECT t0.id AS c3431
+76,16988,294,17,"SELECT t0.id AS c3431
 FROM users AS t0 LEFT JOIN employees AS t1 ON t0.id = t1.id
 WHERE ((t1.id != 67 AND t0.id IS NOT NULL) OR (t0.age NOT BETWEEN 33 AND 123 OR t0.age >= 22));"
-77,15560,209476,0,"SELECT t1.region_id AS c1177, t0.id AS c3278, COUNT(*), COUNT(t0.id) AS c3474
+77,339550000,200988,0,"SELECT t1.region_id AS c1177, t0.id AS c3278, COUNT(*), COUNT(t0.id) AS c3474
 FROM orders AS t0 CROSS JOIN customers AS t1
 WHERE (t0.id = 64 AND t0.customer_id > 397)
 GROUP BY t1.region_id, t0.id;"
-78,1220,243,500,"SELECT t0.id, t0.region_id
+78,61000,244,500,"SELECT t0.id, t0.region_id
 FROM customers AS t0;"
-79,1366,146,2,"SELECT t0.id AS c7963, t0.age AS c5437
+79,2310,135,2,"SELECT t0.id AS c7963, t0.age AS c5437
 FROM users AS t0
 WHERE t0.age IN (5, 11, 63);"
-80,18500,267,30,"SELECT regions.id AS c2137
+80,6250,265,30,"SELECT regions.id AS c2137
 FROM regions CROSS JOIN markets
 WHERE markets.note != 'AMERICA';"
-81,14110,329,5,"SELECT markets.region AS c3832, users.age, departments.id
+81,7242,334,5,"SELECT markets.region AS c3832, users.age, departments.id
 FROM users LEFT JOIN departments ON users.id = departments.id RIGHT JOIN markets ON users.id = markets.id
 WHERE departments.id <= 5;"
-82,1133,138,0,"SELECT users.age AS c4898, users.id AS c4014
+82,1833,174,0,"SELECT users.age AS c4898, users.id AS c4014
 FROM users
 WHERE ((users.id = 4 OR users.id BETWEEN 11 AND 16) AND (users.age = 22 AND users.id <= 57))
 ORDER BY users.age DESC;"
-83,6110,265,6,"SELECT t0.age AS c499, t1.price AS c7644, t0.id
+83,4502,282,6,"SELECT t0.age AS c499, t1.price AS c7644, t0.id
 FROM users AS t0 LEFT JOIN books AS t1 ON t0.id = t1.id
 WHERE t0.id < 7;"
-84,18098,330,3,"SELECT books.price, regions.id, markets.id AS c8988
+84,4574,324,3,"SELECT books.price, regions.id, markets.id AS c8988
 FROM markets LEFT JOIN regions ON markets.id = regions.id LEFT JOIN books ON regions.id = books.id
 WHERE ((books.price BETWEEN 6 AND 77 OR markets.id NOT IN (1, 2, 2, 3)) OR books.price NOT IN (55));"
-85,6320,334,500,"SELECT t0.id, t0.region_id
+85,316000,330,500,"SELECT t0.id, t0.region_id
 FROM customers AS t0
 GROUP BY t0.id, t0.region_id;"
-86,1220,1184,5000,"SELECT orders.customer_id, orders.id
+86,610000,1168,5000,"SELECT orders.customer_id, orders.id
 FROM orders;"
-87,6320,141,11,"SELECT employees.department_id, employees.id AS c6314
+87,6952,133,11,"SELECT employees.department_id, employees.id AS c6314
 FROM employees
 GROUP BY employees.department_id, employees.id;"
-88,14760,297,5,"SELECT departments.id AS c2839, COUNT(*)
+88,8275,273,5,"SELECT departments.id AS c2839, COUNT(*)
 FROM employees RIGHT JOIN departments ON employees.id = departments.id
 GROUP BY departments.id
 ORDER BY departments.id DESC;"
-89,6320,148,3,"SELECT t0.region AS c5477, t0.id AS c2794, COUNT(*) AS c9570
+89,1896,151,3,"SELECT t0.region AS c5477, t0.id AS c2794, COUNT(*) AS c9570
 FROM markets AS t0
 GROUP BY t0.region, t0.id;"
-90,4160,436,500,"SELECT customers.region_id, customers.id AS c6247, COUNT(*) AS c8943
+90,208000,409,500,"SELECT customers.region_id, customers.id AS c6247, COUNT(*) AS c8943
 FROM customers
 WHERE customers.region_id <= 40
 GROUP BY customers.region_id, customers.id;"
-91,1220,142,5,"SELECT departments.id
+91,610,132,5,"SELECT departments.id
 FROM departments;"
-92,73300,291,3,"SELECT markets.region, markets.id
+92,22030,249,3,"SELECT markets.region, markets.id
 FROM markets CROSS JOIN regions
 GROUP BY markets.region, markets.id
 ORDER BY markets.region ASC;"
-93,4970,933,3,"SELECT t0.id, t1.id AS c1156, t0.customer_id
+93,676086,907,3,"SELECT t0.id, t1.id AS c1156, t0.customer_id
 FROM orders AS t0 JOIN books AS t1 ON t0.id = t1.id;"
-94,27722,329,0,"SELECT t1.price
+94,8782,324,0,"SELECT t1.price
 FROM departments AS t0 CROSS JOIN books AS t1 RIGHT JOIN users AS t2 ON t1.id = t2.id
 WHERE (t2.id BETWEEN 45 AND 86 AND t1.id IN (2));"
-95,20644,350,0,"SELECT t2.id
+95,7432,344,0,"SELECT t2.id
 FROM departments AS t0 RIGHT JOIN employees AS t1 ON t0.id = t1.id CROSS JOIN books AS t2
 WHERE ((t1.department_id IN (1, 5, 12, 34) AND t1.id IN (69)) AND t1.department_id <= 1);"
-96,10070,948,16,"SELECT t1.id AS c5555, t0.id
+96,689824,912,16,"SELECT t1.id AS c5555, t0.id
 FROM orders AS t0 JOIN users AS t1 ON t0.id = t1.id
 GROUP BY t1.id, t0.id;"
-97,1643,163,0,"SELECT regions.id, SUM(regions.id), COUNT(regions.id) AS c9550
+97,1643,148,0,"SELECT regions.id, SUM(regions.id), COUNT(regions.id) AS c9550
 FROM regions
 WHERE ((regions.id < 2 AND regions.id = 32) AND (regions.id <= 2 AND regions.id != 3))
 GROUP BY regions.id
 ORDER BY regions.id ASC;"
-98,12888,254,0,"SELECT books.id
+98,2482,253,0,"SELECT books.id
 FROM books CROSS JOIN departments
 WHERE ((books.price IS NULL AND departments.id = 1) AND (books.price IS NULL OR books.price NOT IN (55, 77)));"
-99,3212,258,0,"SELECT customers.id, SUM(customers.id), COUNT(customers.id) AS c8662
+99,59312,262,0,"SELECT customers.id, SUM(customers.id), COUNT(customers.id) AS c8662
 FROM regions JOIN customers ON regions.id = customers.id
 WHERE customers.region_id = 63
 GROUP BY customers.id;"
-100,1660,132,17,"SELECT users.age, users.id AS c7470
+100,3009,165,17,"SELECT users.age, users.id AS c7470
 FROM users
 ORDER BY users.id ASC;"
-101,26500,369,50,"SELECT markets.id, departments.id AS c1258, markets.region
+101,6624,358,50,"SELECT markets.id, departments.id AS c1258, markets.region
 FROM employees LEFT JOIN markets ON employees.id = markets.id CROSS JOIN departments
 WHERE ((markets.id IN (3) AND markets.region = 'EUROPE') OR employees.id < 69);"
-102,1220,1173,5000,"SELECT t0.customer_id, t0.id AS c8685
+102,610000,1114,5000,"SELECT t0.customer_id, t0.id AS c8685
 FROM orders AS t0;"
-103,17410,1080,11,"SELECT users.age AS c405
+103,696660,1089,11,"SELECT users.age AS c405
 FROM users JOIN orders ON users.id = orders.id RIGHT JOIN regions ON orders.id = regions.id
 GROUP BY users.age
 ORDER BY users.age DESC;"
-104,1122,135,0,"SELECT employees.id
+104,1222,134,0,"SELECT employees.id
 FROM employees
 WHERE employees.id = 14;"
-105,22320,2174,3,"SELECT markets.id, orders.customer_id, COUNT(*)
+105,1552826,2164,3,"SELECT markets.id, orders.customer_id, COUNT(*)
 FROM orders RIGHT JOIN markets ON orders.id = markets.id LEFT JOIN books ON markets.id = books.id
 GROUP BY markets.id, orders.customer_id;"
-106,21032,333,25,"SELECT books.price AS c2329, markets.note
+106,10632,340,25,"SELECT books.price AS c2329, markets.note
 FROM users CROSS JOIN books JOIN markets ON books.id = markets.id
 WHERE (markets.region = 'EUROPE' OR (users.age NOT IN (5, 22, 64, 123) AND users.age < 22))
 ORDER BY markets.note ASC;"
-107,1643,160,1,"SELECT regions.id
+107,1643,176,1,"SELECT regions.id
 FROM regions
 WHERE regions.id IN (5)
 GROUP BY regions.id
 ORDER BY regions.id ASC;"
-108,1775,242,51,"SELECT customers.id AS c9166, customers.region_id
+108,102500,228,51,"SELECT customers.id AS c9166, customers.region_id
 FROM customers
 WHERE customers.id < 52
 ORDER BY customers.region_id ASC, customers.id DESC;"
-109,9220,297,22,"SELECT employees.id, users.age, employees.department_id
+109,16132,273,22,"SELECT employees.id, users.age, employees.department_id
 FROM employees FULL JOIN users ON employees.id = users.id;"
-110,9632,285,0,"SELECT employees.department_id, employees.id, COUNT(users.id) AS c6401, COUNT(*)
+110,16522,270,0,"SELECT employees.department_id, employees.id, COUNT(users.id) AS c6401, COUNT(*)
 FROM employees FULL JOIN users ON employees.id = users.id
 WHERE ((employees.department_id = 31 AND employees.department_id NOT IN (6, 59, 72)) AND (employees.department_id NOT IN (1, 5, 6, 32) AND users.id = 5))
 GROUP BY employees.department_id, employees.id;"
-111,1122,2084,28,"SELECT orders.customer_id, orders.id
+111,541846,1998,28,"SELECT orders.customer_id, orders.id
 FROM orders
 WHERE ((orders.id IN (97, 99, 184, 198) OR orders.id BETWEEN 31 AND 58) AND (orders.customer_id IS NOT NULL AND orders.id BETWEEN 3 AND 65));"
-112,11660,2819,2,"SELECT markets.id, markets.note, COUNT(orders.id), SUM(orders.customer_id)
+112,1550943,2924,2,"SELECT markets.id, markets.note, COUNT(orders.id), SUM(orders.customer_id)
 FROM markets RIGHT JOIN orders ON markets.id = orders.id
 WHERE ((orders.id < 188 AND orders.customer_id >= 193) OR (orders.customer_id BETWEEN 239 AND 436 OR markets.id = 1))
 GROUP BY markets.id, markets.note
 ORDER BY markets.id DESC, markets.note DESC;"
-113,1610,157,1,"SELECT t0.region, t0.note AS c6295
+113,422,154,1,"SELECT t0.region, t0.note AS c6295
 FROM markets AS t0
 WHERE t0.id < 2;"
-114,1220,218,500,"SELECT t0.id
+114,61000,219,500,"SELECT t0.id
 FROM customers AS t0;"
-115,9220,276,10,"SELECT t1.id AS c2831, t0.id, t0.department_id
+115,10020,278,10,"SELECT t1.id AS c2831, t0.id, t0.department_id
 FROM employees AS t0 RIGHT JOIN regions AS t1 ON t0.id = t1.id;"
-116,8825,1378,3,"SELECT t2.customer_id
+116,677083,1090,1,"SELECT t2.customer_id
 FROM markets AS t0 LEFT JOIN books AS t1 ON t0.id = t1.id JOIN orders AS t2 ON t1.id = t2.id
 WHERE t2.customer_id > 244
 ORDER BY t2.customer_id DESC;"
-117,1610,156,1,"SELECT t0.id AS c6139
+117,744,141,1,"SELECT t0.id AS c6139
 FROM departments AS t0
 WHERE t0.id >= 5;"
-118,12132,344,0,"SELECT books.id AS c118
+118,7052,335,0,"SELECT books.id AS c118
 FROM departments RIGHT JOIN users ON departments.id = users.id FULL JOIN books ON departments.id = books.id
 WHERE ((users.id > 3 AND books.price = 77) AND users.age > 443)
 GROUP BY books.id;"
-119,6160,979,5,"SELECT orders.id, COUNT(departments.id)
+119,677024,1010,5,"SELECT orders.id, COUNT(departments.id)
 FROM departments JOIN orders ON departments.id = orders.id
 WHERE departments.id < 36
 GROUP BY orders.id;"
-120,12970,4674,11,"SELECT orders.customer_id, employees.department_id
+120,1113982,1453,500,"SELECT orders.customer_id, employees.department_id
 FROM employees JOIN customers ON employees.id = customers.id LEFT JOIN orders ON employees.id = orders.id;"
-121,1122,136,0,"SELECT employees.id
+121,1222,133,0,"SELECT employees.id
 FROM employees
 WHERE ((employees.id > 68 OR employees.department_id = 5) AND (employees.id BETWEEN 2 AND 4 AND employees.department_id IN (3, 5, 5)));"
-122,4402,297,0,"SELECT markets.note, employees.id
+122,2847,295,0,"SELECT markets.note, employees.id
 FROM employees LEFT JOIN markets ON employees.id = markets.id JOIN departments ON employees.id = departments.id
 WHERE ((departments.id != 36 OR markets.region IS NULL) AND departments.id = 4);"
-123,1854,157,1,"SELECT t0.id, t0.note, t0.region
+123,544,147,1,"SELECT t0.id, t0.note, t0.region
 FROM markets AS t0
 WHERE t0.id NOT BETWEEN 2 AND 21;"
-124,2833,342,1,"SELECT books.price AS c5178
+124,65833,353,1,"SELECT books.price AS c5178
 FROM books RIGHT JOIN customers ON books.id = customers.id
 WHERE customers.id = 158
 ORDER BY books.price DESC;"
-125,1122,153,0,"SELECT employees.id AS c9929, employees.department_id
+125,1222,145,0,"SELECT employees.id AS c9929, employees.department_id
 FROM employees
 WHERE (employees.department_id = 35 AND employees.department_id < 32);"
-126,17632,351,0,"SELECT books.price, books.id
+126,4962,342,0,"SELECT books.price, books.id
 FROM books FULL JOIN markets ON books.id = markets.id FULL JOIN regions ON books.id = regions.id
 WHERE (markets.region != 'EUROPE' AND (regions.id IS NULL AND books.price > 66))
 GROUP BY books.price, books.id;"
-127,1432,254,3,"SELECT t0.region_id
+127,81500,262,3,"SELECT t0.region_id
 FROM customers AS t0
 WHERE t0.id IN (16, 32, 137)
 ORDER BY t0.region_id DESC;"
-128,1288,144,2,"SELECT regions.id
+128,1288,159,2,"SELECT regions.id
 FROM regions
 WHERE regions.id BETWEEN 9 AND 10
 ORDER BY regions.id DESC;"
-129,22760,3072,3,"SELECT orders.customer_id, COUNT(orders.id) AS c1702
+129,1552892,3046,3,"SELECT orders.customer_id, COUNT(orders.id) AS c1702
 FROM markets LEFT JOIN books ON markets.id = books.id LEFT JOIN orders ON markets.id = orders.id
 GROUP BY orders.customer_id
 ORDER BY orders.customer_id DESC;"
-130,11770,2770,5,"SELECT regions.id, orders.id AS c452, orders.customer_id
+130,680760,1036,5,"SELECT regions.id, orders.id AS c452, orders.customer_id
 FROM regions JOIN departments ON regions.id = departments.id LEFT JOIN orders ON departments.id = orders.id;"
-131,14320,7939,11,"SELECT regions.id AS c9060, COUNT(orders.customer_id), COUNT(orders.id)
+131,4006320,8008,11,"SELECT regions.id AS c9060, COUNT(orders.customer_id), COUNT(orders.id)
 FROM orders FULL JOIN regions ON orders.id = regions.id
 GROUP BY regions.id;"
-132,3666,248,0,"SELECT t0.id AS c4692, t1.department_id AS c2149, t1.id
+132,2522,247,0,"SELECT t0.id AS c4692, t1.department_id AS c2149, t1.id
 FROM departments AS t0 RIGHT JOIN employees AS t1 ON t0.id = t1.id
 WHERE (t1.id IN (32, 66, 68, 80) AND (t1.id <= 26 OR t1.department_id <= 5));"
-133,4970,923,11,"SELECT t1.id AS c8251, t0.customer_id, t0.id AS c2451
+133,678982,931,11,"SELECT t1.id AS c8251, t0.customer_id, t0.id AS c2451
 FROM orders AS t0 JOIN employees AS t1 ON t0.id = t1.id;"
-134,22300,15759,55000,"SELECT orders.customer_id AS c6356
+134,17111100,16205,55000,"SELECT orders.customer_id AS c6356
 FROM employees CROSS JOIN orders
 ORDER BY orders.customer_id ASC;"
-135,17660,12773,11,"SELECT users.id, regions.id AS c3154
+135,4015260,8754,5001,"SELECT users.id, regions.id AS c3154
 FROM orders FULL JOIN users ON orders.id = users.id RIGHT JOIN regions ON orders.id = regions.id
 ORDER BY users.id DESC, regions.id DESC;"
-136,89160,385,4,"SELECT books.price
+136,12682,387,4,"SELECT books.price
 FROM regions CROSS JOIN markets LEFT JOIN books ON regions.id = books.id
 GROUP BY books.price
 ORDER BY books.price DESC;"
-137,6320,148,5,"SELECT departments.id, SUM(departments.id), COUNT(*) AS c6998
+137,3160,137,5,"SELECT departments.id, SUM(departments.id), COUNT(*) AS c6998
 FROM departments
 GROUP BY departments.id;"
-138,6320,136,10,"SELECT regions.id AS c7258
+138,6320,137,10,"SELECT regions.id AS c7258
 FROM regions
 GROUP BY regions.id;"
-139,4160,154,2,"SELECT markets.id
+139,932,178,2,"SELECT markets.id
 FROM markets
 WHERE ((markets.note = 'Old World' OR markets.id >= 2) OR (markets.region = 'AMERICA' AND markets.region = 'EUROPE'))
 GROUP BY markets.id;"
-140,1610,151,3,"SELECT t0.price, t0.id AS c3105
+140,422,152,3,"SELECT t0.price, t0.id AS c3105
 FROM books AS t0
 WHERE t0.id IS NOT NULL;"
-141,20160,323,0,"SELECT t1.id AS c8895, t1.note AS c8854, SUM(t1.id)
+141,5272,358,0,"SELECT t1.id AS c8895, t1.note AS c8854, SUM(t1.id)
 FROM books AS t0 RIGHT JOIN markets AS t1 ON t0.id = t1.id RIGHT JOIN employees AS t2 ON t0.id = t2.id
 WHERE t1.id > 24
 GROUP BY t1.id, t1.note;"
-142,12970,374,17,"SELECT t1.region_id AS c1630
+142,87712,367,17,"SELECT t1.region_id AS c1630
 FROM users AS t0 JOIN customers AS t1 ON t0.id = t1.id LEFT JOIN employees AS t2 ON t0.id = t2.id;"
-143,1610,159,1,"SELECT t0.id, t0.price
+143,422,158,1,"SELECT t0.id, t0.price
 FROM books AS t0
 WHERE t0.price <= 55;"
-144,44000,291,10,"SELECT t1.department_id AS c3966, SUM(t1.id) AS c1392, COUNT(*) AS c3892
+144,14944,273,10,"SELECT t1.department_id AS c3966, SUM(t1.id) AS c1392, COUNT(*) AS c3892
 FROM books AS t0 CROSS JOIN employees AS t1
 WHERE t1.department_id != 12
 GROUP BY t1.department_id;"
-145,6122,270,2,"SELECT t1.department_id AS c6376, t1.id AS c3596
+145,3072,283,2,"SELECT t1.department_id AS c6376, t1.id AS c3596
 FROM books AS t0 RIGHT JOIN employees AS t1 ON t0.id = t1.id
 WHERE ((t0.id < 1 OR t1.id IS NOT NULL) AND (t0.id != 3 AND t1.department_id <= 35));"
-146,6760,157,5,"SELECT departments.id
+146,3325,163,5,"SELECT departments.id
 FROM departments
 GROUP BY departments.id
 ORDER BY departments.id DESC;"
-147,22600,351,110,"SELECT regions.id
+147,12750,343,110,"SELECT regions.id
 FROM departments FULL JOIN employees ON departments.id = employees.id CROSS JOIN regions;"
-148,18500,255,20,"SELECT books.id, books.price AS c5525, regions.id
+148,6250,268,20,"SELECT books.id, books.price AS c5525, regions.id
 FROM books CROSS JOIN regions
 WHERE books.price < 69;"
-149,1775,283,422,"SELECT t0.region_id AS c6318
+149,102500,278,422,"SELECT t0.region_id AS c6318
 FROM customers AS t0
 WHERE t0.id > 78
 ORDER BY t0.region_id DESC;"
-150,31360,1154,1040,"SELECT t0.id, t1.id AS c921
+150,1519000,1214,1040,"SELECT t0.id, t1.id AS c921
 FROM regions AS t0 CROSS JOIN customers AS t1
 WHERE t1.region_id IN (5, 9, 51)
 GROUP BY t0.id, t1.id;"
-151,11688,6072,0,"SELECT regions.id, users.age, orders.id
+151,4014888,11011,0,"SELECT regions.id, users.age, orders.id
 FROM regions RIGHT JOIN users ON regions.id = users.id FULL JOIN orders ON users.id = orders.id
 WHERE ((orders.customer_id BETWEEN 283 AND 359 AND users.id IN (10, 17, 17, 39)) OR (users.id IN (14, 16, 64, 75) AND users.id >= 81))
 ORDER BY orders.id ASC, regions.id DESC, users.age ASC;"
-152,22300,262,55,"SELECT departments.id, employees.department_id, employees.id
+152,12160,277,55,"SELECT departments.id, employees.department_id, employees.id
 FROM departments CROSS JOIN employees
 ORDER BY employees.id ASC;"
-153,14600,1238,1500,"SELECT t1.id, t0.region_id, t0.id
+153,239300,1323,1500,"SELECT t1.id, t0.region_id, t0.id
 FROM customers AS t0 CROSS JOIN books AS t1;"
-154,5655,182,10,"SELECT regions.id, SUM(regions.id) AS c8443
+154,5655,174,10,"SELECT regions.id, SUM(regions.id) AS c8443
 FROM regions
 WHERE (regions.id >= 1 OR (regions.id >= 8 OR regions.id = 5))
 GROUP BY regions.id
 ORDER BY regions.id ASC;"
-155,18170,1267,2,"SELECT markets.region
+155,681356,1097,2,"SELECT markets.region
 FROM markets LEFT JOIN orders ON markets.id = orders.id JOIN employees ON markets.id = employees.id
 GROUP BY markets.region;"
-156,9220,3877,10,"SELECT t1.customer_id, t1.id AS c2544, t0.id AS c7170
+156,4001220,3942,10,"SELECT t1.customer_id, t1.id AS c2544, t0.id AS c7170
 FROM regions AS t0 LEFT JOIN orders AS t1 ON t0.id = t1.id;"
-157,26500,1949,4840,"SELECT t1.region_id, t2.id
+157,675750,1912,4840,"SELECT t1.region_id, t2.id
 FROM users AS t0 RIGHT JOIN customers AS t1 ON t0.id = t1.id CROSS JOIN regions AS t2
 WHERE t0.id IS NULL;"
-158,12260,290,0,"SELECT t1.id, t0.id AS c3888, t2.id AS c5161
+158,5727,298,7,"SELECT t1.id, t0.id AS c3888, t2.id AS c5161
 FROM employees AS t0 FULL JOIN regions AS t1 ON t0.id = t1.id JOIN books AS t2 ON t0.id = t2.id
 WHERE t0.id IS NULL;"
-159,14056,2677,3,"SELECT orders.customer_id AS c3770, departments.id AS c4567, COUNT(*) AS c2771
+159,2253028,2641,3,"SELECT orders.customer_id AS c3770, departments.id AS c4567, COUNT(*) AS c2771
 FROM departments LEFT JOIN orders ON departments.id = orders.id
 WHERE ((orders.customer_id NOT BETWEEN 115 AND 380 OR departments.id IS NULL) OR orders.id = 174)
 GROUP BY orders.customer_id, departments.id;"
-160,1220,1139,5000,"SELECT t0.id, t0.customer_id AS c1926
+160,610000,1128,5000,"SELECT t0.id, t0.customer_id AS c1926
 FROM orders AS t0;"
-161,19820,395,33,"SELECT t1.region AS c961, t2.id
+161,91868,354,33,"SELECT t1.region AS c961, t2.id
 FROM employees AS t0 CROSS JOIN markets AS t1 JOIN customers AS t2 ON t1.id = t2.id;"
-162,1366,155,3,"SELECT employees.id, employees.department_id
+162,1466,157,3,"SELECT employees.id, employees.department_id
 FROM employees
 WHERE ((employees.id NOT IN (5, 67, 68) AND employees.department_id = 28) OR (employees.id > 4 AND employees.department_id > 32));"
-163,56060,1836,2,"SELECT markets.region, COUNT(*), COUNT(*)
+163,948104,1813,2,"SELECT markets.region, COUNT(*), COUNT(*)
 FROM users CROSS JOIN markets LEFT JOIN customers ON markets.id = customers.id
 WHERE users.age >= 1
 GROUP BY markets.region;"
-164,1775,171,3,"SELECT markets.id, markets.note AS c529, markets.region
+164,433,184,3,"SELECT markets.id, markets.note AS c529, markets.region
 FROM markets
 WHERE (markets.region = 'EUROPE' OR markets.id <= 91)
 ORDER BY markets.region ASC, markets.id ASC, markets.note ASC;"
-165,6320,155,3,"SELECT books.id, COUNT(books.price), SUM(books.id)
+165,1896,151,3,"SELECT books.id, COUNT(books.price), SUM(books.id)
 FROM books
 GROUP BY books.id;"
-166,2328,151,9,"SELECT regions.id
+166,2328,149,9,"SELECT regions.id
 FROM regions
 WHERE regions.id NOT IN (2, 95)
 ORDER BY regions.id ASC;"
-167,1122,265,0,"SELECT t0.id
+167,52196,252,0,"SELECT t0.id
 FROM customers AS t0
 WHERE ((t0.region_id > 32 AND t0.id = 78) AND (t0.id >= 20 OR t0.id IS NULL));"
-168,31392,1276,1,"SELECT t1.region AS c6909, t1.note, SUM(t2.id)
+168,158668,1265,1,"SELECT t1.region AS c6909, t1.note, SUM(t2.id)
 FROM customers AS t0 LEFT JOIN markets AS t1 ON t0.id = t1.id CROSS JOIN departments AS t2
 WHERE ((t0.id = 89 OR t1.id BETWEEN 49 AND 71) AND t0.id IS NOT NULL)
 GROUP BY t1.region, t1.note
 ORDER BY t1.region ASC;"
-169,12160,272,2,"SELECT departments.id
+169,2482,273,2,"SELECT departments.id
 FROM departments RIGHT JOIN markets ON departments.id = markets.id
 WHERE departments.id != 1
 GROUP BY departments.id;"
-170,14760,2948,505,"SELECT t1.id AS c5737, t0.customer_id
+170,2253325,2928,505,"SELECT t1.id AS c5737, t0.customer_id
 FROM orders AS t0 LEFT JOIN departments AS t1 ON t0.id = t1.id
 GROUP BY t1.id, t0.customer_id
 ORDER BY t0.customer_id DESC, t1.id ASC;"
-171,83620,525,110,"SELECT employees.id AS c3715
+171,37006,538,110,"SELECT employees.id AS c3715
 FROM regions CROSS JOIN employees FULL JOIN books ON regions.id = books.id;"
-172,9775,683,0,"SELECT t0.id, t0.department_id AS c3676, t1.region_id
+172,436875,673,0,"SELECT t0.id, t0.department_id AS c3676, t1.region_id
 FROM employees AS t0 FULL JOIN customers AS t1 ON t0.id = t1.id
 WHERE t0.department_id >= 57
 ORDER BY t0.id DESC, t1.region_id ASC;"
-173,22300,20218,85000,"SELECT orders.customer_id
+173,27106700,19617,85000,"SELECT orders.customer_id
 FROM users CROSS JOIN orders
 ORDER BY orders.customer_id DESC;"
-174,1432,152,3,"SELECT users.id, users.age
+174,2475,163,3,"SELECT users.id, users.age
 FROM users
 WHERE users.id IN (3, 11, 12)
 ORDER BY users.age DESC, users.id DESC;"
-175,2822,250,1,"SELECT books.id, employees.id, employees.department_id
+175,2292,433,1,"SELECT books.id, employees.id, employees.department_id
 FROM employees RIGHT JOIN books ON employees.id = books.id
 WHERE books.price = 77;"
-176,4160,169,2,"SELECT books.price, SUM(books.price) AS c5357
+176,932,152,2,"SELECT books.price, SUM(books.price) AS c5357
 FROM books
 WHERE books.price >= 66
 GROUP BY books.price;"
-177,2085,150,14,"SELECT users.id, users.age AS c4847
+177,3692,162,14,"SELECT users.id, users.age AS c4847
 FROM users
 WHERE (users.age < 16 OR users.age < 71)
 ORDER BY users.id ASC, users.age DESC;"
-178,1660,133,17,"SELECT users.age AS c7380, users.id
+178,3009,140,17,"SELECT users.age AS c7380, users.id
 FROM users
 ORDER BY users.id DESC;"
-179,6688,415,500,"SELECT customers.id, customers.region_id
+179,358416,524,500,"SELECT customers.id, customers.region_id
 FROM customers
 WHERE ((customers.id != 141 OR customers.region_id != 10) OR (customers.id NOT IN (197) OR customers.region_id IN (8)))
 GROUP BY customers.id, customers.region_id;"
-180,6760,402,500,"SELECT customers.id AS c95, customers.region_id
+180,365500,614,500,"SELECT customers.id AS c95, customers.region_id
 FROM customers
 GROUP BY customers.id, customers.region_id
 ORDER BY customers.region_id DESC;"
-181,649400,2991,500,"SELECT customers.region_id AS c397, customers.id AS c5003, SUM(books.id)
+181,4976800,3138,500,"SELECT customers.region_id AS c397, customers.id AS c5003, SUM(books.id)
 FROM customers CROSS JOIN books CROSS JOIN departments
 GROUP BY customers.region_id, customers.id;"
-182,10070,1156,500,"SELECT t1.id AS c6022, t0.id
+182,1111000,1136,500,"SELECT t1.id AS c6022, t0.id
 FROM orders AS t0 JOIN customers AS t1 ON t0.id = t1.id
 GROUP BY t1.id, t0.id;"
-183,1632,229,1,"SELECT customers.id, COUNT(customers.id), COUNT(customers.id)
+183,81600,287,1,"SELECT customers.id, COUNT(customers.id), COUNT(customers.id)
 FROM customers
 WHERE customers.id = 24
 GROUP BY customers.id;"
-184,18500,494,500,"SELECT books.price AS c5308, customers.region_id AS c1694
+184,297800,441,500,"SELECT books.price AS c5308, customers.region_id AS c1694
 FROM books CROSS JOIN customers
 WHERE books.price <= 55;"
-185,1220,134,5,"SELECT t0.id AS c9527
+185,610,134,5,"SELECT t0.id AS c9527
 FROM departments AS t0;"
-186,9220,284,18,"SELECT users.id
+186,14820,282,18,"SELECT users.id
 FROM regions FULL JOIN users ON regions.id = users.id;"
-187,9930,306,8,"SELECT users.id, regions.id, users.age AS c4755
+187,15530,290,8,"SELECT users.id, regions.id, users.age AS c4755
 FROM users LEFT JOIN regions ON users.id = regions.id
 WHERE ((regions.id != 31 AND users.age <= 64) OR users.id >= 66)
 ORDER BY users.age DESC;"
-188,27984,334,0,"SELECT t2.price AS c5573, COUNT(*)
+188,7942,327,0,"SELECT t2.price AS c5573, COUNT(*)
 FROM employees AS t0 RIGHT JOIN departments AS t1 ON t0.id = t1.id CROSS JOIN books AS t2
 WHERE (t2.price > 55 AND t0.id BETWEEN 66 AND 69)
 GROUP BY t2.price;"
-189,2292,319,0,"SELECT markets.id AS c7660
+189,57522,266,0,"SELECT markets.id AS c7660
 FROM markets JOIN customers ON markets.id = customers.id
 WHERE (markets.note IS NULL AND (customers.id = 198 AND markets.region IN ('AMERICA', 'EUROPE')));"
-190,6760,164,5,"SELECT departments.id
+190,3325,146,5,"SELECT departments.id
 FROM departments
 GROUP BY departments.id
 ORDER BY departments.id DESC;"
-191,49850,319,55,"SELECT departments.id, employees.id
+191,27819,351,55,"SELECT departments.id, employees.id
 FROM departments JOIN regions ON departments.id = regions.id CROSS JOIN employees
 WHERE employees.id IS NOT NULL
 GROUP BY departments.id, employees.id
 ORDER BY departments.id DESC, employees.id ASC;"
-192,13620,267,3,"SELECT books.id, markets.region
+192,1658,507,3,"SELECT books.id, markets.region
 FROM markets CROSS JOIN books
 WHERE markets.region = 'EUROPE';"
-193,11870,661,10,"SELECT customers.region_id, regions.id
+193,83620,1178,11,"SELECT customers.region_id, regions.id
 FROM users JOIN regions ON users.id = regions.id LEFT JOIN customers ON regions.id = customers.id;"
-194,225614,8292,25000,"SELECT t2.id
+194,5620982,10404,25000,"SELECT t2.id
 FROM customers AS t0 CROSS JOIN markets AS t1 CROSS JOIN users AS t2
 WHERE ((t1.id IN (3) OR t2.age != 1) OR (t1.id != 2 OR t2.id > 61));"
-195,17220,7112,10,"SELECT t0.id
+195,1553466,8004,10,"SELECT t0.id
 FROM regions AS t0 FULL JOIN books AS t1 ON t0.id = t1.id LEFT JOIN orders AS t2 ON t1.id = t2.id;"
-196,68250,595,30,"SELECT customers.region_id, books.id, SUM(regions.id), SUM(customers.region_id)
+196,1006340,585,30,"SELECT customers.region_id, books.id, SUM(regions.id), SUM(customers.region_id)
 FROM books JOIN regions ON books.id = regions.id CROSS JOIN customers
 GROUP BY customers.region_id, books.id;"
-197,7720,252,3,"SELECT t0.price AS c8028, t2.id
+197,70841,337,3,"SELECT t0.price AS c8028, t2.id
 FROM books AS t0 JOIN customers AS t1 ON t0.id = t1.id JOIN regions AS t2 ON t1.id = t2.id;"
-198,1220,134,17,"SELECT t0.age AS c2991
+198,2074,129,17,"SELECT t0.age AS c2991
 FROM users AS t0;"
-199,18134,295,30,"SELECT t1.id, t0.id
+199,30140,292,30,"SELECT t1.id, t0.id
 FROM regions AS t0 CROSS JOIN users AS t1
 WHERE (t1.age BETWEEN 33 AND 33 OR t1.id IN (12, 49, 95));"
-200,2085,145,6,"SELECT employees.department_id
+200,2428,163,6,"SELECT employees.department_id
 FROM employees
 WHERE ((employees.id > 66 OR employees.id IN (33)) OR employees.department_id IN (6, 12, 12, 50))
 ORDER BY employees.department_id DESC;"
-201,1220,1137,5000,"SELECT orders.customer_id, orders.id
+201,610000,1297,5000,"SELECT orders.customer_id, orders.id
 FROM orders;"
-202,4666,206,6,"SELECT employees.id AS c3304, users.id AS c2088
+202,6401,205,6,"SELECT employees.id AS c3304, users.id AS c2088
 FROM users JOIN employees ON users.id = employees.id
 WHERE ((users.age IN (42, 64) OR users.id < 16) AND users.id != 99)
 GROUP BY employees.id, users.id;"
-203,6320,150,3,"SELECT books.id, books.price
+203,1896,159,3,"SELECT books.id, books.price
 FROM books
 GROUP BY books.id, books.price;"
-204,10170,272,3,"SELECT t0.id AS c8592, t1.region
+204,70446,345,3,"SELECT t0.id AS c8592, t1.region
 FROM customers AS t0 JOIN markets AS t1 ON t0.id = t1.id
 GROUP BY t0.id, t1.region;"
-205,13664,12314,1,"SELECT t1.id AS c8725, SUM(t1.id), COUNT(*)
+205,10416100,12344,1,"SELECT t1.id AS c8725, SUM(t1.id), COUNT(*)
 FROM users AS t0 CROSS JOIN orders AS t1
 WHERE (t0.age IN (33, 64) AND t1.id = 156)
 GROUP BY t1.id;"
-206,1220,250,500,"SELECT t0.id AS c4257
+206,61000,229,500,"SELECT t0.id AS c4257
 FROM customers AS t0;"
-207,20110,4160,0,"SELECT t1.customer_id, t0.department_id
+207,8356600,3939,0,"SELECT t1.customer_id, t0.department_id
 FROM employees AS t0 CROSS JOIN orders AS t1 JOIN customers AS t2 ON t1.id = t2.id
 WHERE t0.department_id IS NULL;"
-208,9220,264,3,"SELECT books.price AS c3720, employees.department_id, books.id
+208,3776,263,3,"SELECT books.price AS c3720, employees.department_id, books.id
 FROM employees RIGHT JOIN books ON employees.id = books.id;"
-209,11210,449,2,"SELECT t2.region, t1.id, COUNT(t2.id)
+209,69182,369,2,"SELECT t2.region, t1.id, COUNT(t2.id)
 FROM books AS t0 JOIN customers AS t1 ON t0.id = t1.id FULL JOIN markets AS t2 ON t0.id = t2.id
 WHERE t0.id < 1
 GROUP BY t2.region, t1.id;"
-210,14600,3063,15000,"SELECT orders.id, books.id AS c7933, orders.customer_id
+210,2390300,2862,15000,"SELECT orders.id, books.id AS c7933, orders.customer_id
 FROM books CROSS JOIN orders;"
-211,84010,3085577,0,"SELECT t2.region_id, t2.id, t0.customer_id
+211,2984422200,2956573,0,"SELECT t2.region_id, t2.id, t0.customer_id
 FROM orders AS t0 CROSS JOIN users AS t1 LEFT JOIN customers AS t2 ON t1.id = t2.id
 WHERE t2.region_id >= 23;"
-212,14320,2182,3,"SELECT orders.id
+212,1551896,2851,3,"SELECT orders.id
 FROM books LEFT JOIN orders ON books.id = orders.id
 GROUP BY orders.id;"
-213,1620,141,2,"SELECT t0.id
+213,1620,151,2,"SELECT t0.id
 FROM regions AS t0
 WHERE t0.id IN (4, 4, 9, 88)
 ORDER BY t0.id ASC;"
-214,178400,91814,247665,"SELECT orders.id, orders.customer_id, employees.id
+214,51596600,97240,247665,"SELECT orders.id, orders.customer_id, employees.id
 FROM orders CROSS JOIN employees CROSS JOIN departments
 WHERE orders.customer_id >= 52;"
-215,1610,966,29,"SELECT t0.customer_id
+215,805000,985,29,"SELECT t0.customer_id
 FROM orders AS t0
 WHERE t0.id < 30;"
-216,1488,142,3,"SELECT departments.id
+216,744,129,3,"SELECT departments.id
 FROM departments
 WHERE departments.id IN (1, 3, 4, 60);"
-217,12160,683,3,"SELECT t0.id, t1.region_id
+217,439260,709,3,"SELECT t0.id, t1.region_id
 FROM employees AS t0 LEFT JOIN customers AS t1 ON t0.id = t1.id
 WHERE t1.region_id >= 8
 GROUP BY t0.id, t1.region_id;"
-218,9220,241,5,"SELECT books.price AS c5412, books.id, departments.id AS c9618
+218,1916,288,5,"SELECT books.price AS c5412, books.id, departments.id AS c9618
 FROM departments LEFT JOIN books ON departments.id = books.id;"
-219,178400,23808,45000,"SELECT t1.note, t0.customer_id AS c4395
+219,9485600,25795,45000,"SELECT t1.note, t0.customer_id AS c4395
 FROM orders AS t0 CROSS JOIN markets AS t1 CROSS JOIN books AS t2
 WHERE t1.region IS NOT NULL;"
-220,83832,1508595,45001,"SELECT customers.region_id, orders.id, employees.id
+220,1931305120,1531952,45001,"SELECT customers.region_id, orders.id, employees.id
 FROM employees CROSS JOIN orders RIGHT JOIN customers ON employees.id = customers.id
 WHERE (customers.id IN (181) OR employees.id BETWEEN 3 AND 92)
 ORDER BY customers.region_id ASC;"
-221,1133,144,0,"SELECT t0.id AS c9777
+221,1133,157,0,"SELECT t0.id AS c9777
 FROM regions AS t0
 WHERE ((t0.id <= 5 OR t0.id IN (4, 12)) AND (t0.id = 9 AND t0.id NOT IN (2, 4, 5, 89)))
 ORDER BY t0.id ASC;"
-222,6056,174,11,"SELECT t0.id, t0.department_id AS c2878, COUNT(t0.id), COUNT(*) AS c2633
+222,6788,169,11,"SELECT t0.id, t0.department_id AS c2878, COUNT(t0.id), COUNT(*) AS c2633
 FROM employees AS t0
 WHERE ((t0.department_id IS NOT NULL OR t0.department_id IS NOT NULL) OR (t0.id > 26 OR t0.id = 52))
 GROUP BY t0.id, t0.department_id;"
-223,14600,13517,55000,"SELECT t0.id
+223,7431100,14977,55000,"SELECT t0.id
 FROM orders AS t0 CROSS JOIN employees AS t1;"
-224,1220,136,11,"SELECT employees.department_id
+224,1342,148,11,"SELECT employees.department_id
 FROM employees;"
-225,12970,4690,11,"SELECT orders.customer_id, customers.id AS c4775, employees.department_id AS c6986
+225,1113982,1738,500,"SELECT orders.customer_id, customers.id AS c4775, employees.department_id AS c6986
 FROM employees LEFT JOIN customers ON employees.id = customers.id JOIN orders ON employees.id = orders.id;"
-226,9854,279,3,"SELECT books.id, regions.id, books.price AS c1520
+226,3644,270,3,"SELECT books.id, regions.id, books.price AS c1520
 FROM books LEFT JOIN regions ON books.id = regions.id
 WHERE ((regions.id < 10 OR books.price = 77) OR books.price > 60);"
-227,9122,5911,9,"SELECT orders.id, books.price, orders.customer_id AS c7568
+227,1550422,6413,9,"SELECT orders.id, books.price, orders.customer_id AS c7568
 FROM orders FULL JOIN books ON orders.id = books.id
 WHERE orders.customer_id = 63;"
-228,25402,1409,1000,"SELECT t1.id AS c1443, t2.region_id AS c2237
+228,285106,1546,1000,"SELECT t1.id AS c1443, t2.region_id AS c2237
 FROM employees AS t0 LEFT JOIN markets AS t1 ON t0.id = t1.id CROSS JOIN customers AS t2
 WHERE ((t1.id < 3 OR t1.region = 'AMERICA') AND (t2.region_id IS NULL OR t1.note != 'North, South'));"
-229,26940,545,0,"SELECT departments.id
+229,228379,592,0,"SELECT departments.id
 FROM departments LEFT JOIN customers ON departments.id = customers.id CROSS JOIN markets
 WHERE markets.region IS NULL
 ORDER BY departments.id ASC;"
-230,11870,10874,5000,"SELECT departments.id, users.age AS c5139, orders.id
+230,685010,1055,17,"SELECT departments.id, users.age AS c5139, orders.id
 FROM departments JOIN users ON departments.id = users.id FULL JOIN orders ON users.id = orders.id;"
-231,1220,123,5,"SELECT departments.id
+231,610,158,5,"SELECT departments.id
 FROM departments;"
-232,14760,765,16,"SELECT customers.id, COUNT(*) AS c3789
+232,656679,819,16,"SELECT customers.id, COUNT(*) AS c3789
 FROM customers RIGHT JOIN users ON customers.id = users.id
 GROUP BY customers.id
 ORDER BY customers.id DESC;"
-233,22470,746,1353,"SELECT departments.id
+233,317325,812,1353,"SELECT departments.id
 FROM departments JOIN markets ON departments.id = markets.id CROSS JOIN customers
 WHERE (customers.region_id NOT IN (10, 10) AND (customers.id <= 80 OR departments.id >= 1));"
-234,9220,256,10,"SELECT t0.note
+234,3466,261,10,"SELECT t0.note
 FROM markets AS t0 FULL JOIN regions AS t1 ON t0.id = t1.id;"
-235,5604,255,1,"SELECT t1.region_id AS c5511
+235,68764,248,1,"SELECT t1.region_id AS c5511
 FROM books AS t0 JOIN customers AS t1 ON t0.id = t1.id
 WHERE (t0.price NOT BETWEEN 66 AND 94 OR (t0.id > 3 AND t1.region_id = 10));"
-236,17660,4310,17,"SELECT t1.department_id AS c2338, t0.customer_id
+236,4366616,4378,17,"SELECT t1.department_id AS c2338, t0.customer_id
 FROM orders AS t0 RIGHT JOIN employees AS t1 ON t0.id = t1.id RIGHT JOIN users AS t2 ON t1.id = t2.id
 ORDER BY t1.department_id ASC;"
-237,22600,2092,5010,"SELECT regions.id
+237,669120,2379,5010,"SELECT regions.id
 FROM users FULL JOIN customers ON users.id = customers.id CROSS JOIN regions;"
-238,6122,652,0,"SELECT customers.region_id
+238,268722,690,0,"SELECT customers.region_id
 FROM customers LEFT JOIN employees ON customers.id = employees.id
 WHERE (employees.id IN (38) AND customers.region_id != 5);"
-239,4325,176,6,"SELECT employees.id
+239,4425,166,6,"SELECT employees.id
 FROM employees
 WHERE employees.id > 5
 GROUP BY employees.id
 ORDER BY employees.id DESC;"
-240,649400,379,3,"SELECT t0.price AS c6143, SUM(t2.id)
+240,169984,385,3,"SELECT t0.price AS c6143, SUM(t2.id)
 FROM books AS t0 CROSS JOIN users AS t1 CROSS JOIN departments AS t2
 GROUP BY t0.price;"
-241,22600,3857,25000,"SELECT customers.id, customers.region_id, departments.id
+241,3875500,5272,25000,"SELECT customers.id, customers.region_id, departments.id
 FROM customers RIGHT JOIN departments ON customers.id = departments.id CROSS JOIN orders;"
-242,13864,236,0,"SELECT books.id
+242,5320,321,0,"SELECT books.id
 FROM books CROSS JOIN employees
 WHERE (employees.id != 33 AND (employees.id < 1 AND employees.department_id < 12));"
-243,7730,1760,5,"SELECT employees.department_id, books.price AS c4475, books.id AS c4655
+243,680223,1097,5,"SELECT employees.department_id, books.price AS c4475, books.id AS c4655
 FROM orders JOIN employees ON orders.id = employees.id RIGHT JOIN books ON employees.id = books.id
 WHERE ((orders.id >= 13 AND orders.customer_id != 233) OR (orders.id > 39 AND orders.customer_id <= 359))
 ORDER BY books.id DESC;"
-244,10922,333,0,"SELECT regions.id
+244,5632,333,0,"SELECT regions.id
 FROM regions RIGHT JOIN employees ON regions.id = employees.id LEFT JOIN markets ON employees.id = markets.id
 WHERE (regions.id NOT BETWEEN 2 AND 8 AND markets.note = 'Fast lane');"
-245,1775,142,1,"SELECT markets.note, markets.region, markets.id
+245,433,172,1,"SELECT markets.note, markets.region, markets.id
 FROM markets
 WHERE ((markets.region != 'AMERICA' AND markets.region = 'AMERICA') OR markets.id < 2)
 ORDER BY markets.note DESC, markets.id ASC, markets.region DESC;"
-246,1244,154,9,"SELECT regions.id AS c713
+246,1244,145,9,"SELECT regions.id AS c713
 FROM regions
 WHERE regions.id BETWEEN 2 AND 45;"
-247,14408,2095,3,"SELECT t0.id AS c7208
+247,1551608,2262,3,"SELECT t0.id AS c7208
 FROM orders AS t0 RIGHT JOIN books AS t1 ON t0.id = t1.id
 WHERE t0.customer_id NOT IN (244, 365)
 GROUP BY t0.id
 ORDER BY t0.id ASC;"
-248,13424,7694,5000,"SELECT t1.id, COUNT(*), SUM(t0.id) AS c7387
+248,6459284,8849,5000,"SELECT t1.id, COUNT(*), SUM(t0.id) AS c7387
 FROM users AS t0 RIGHT JOIN orders AS t1 ON t0.id = t1.id
 WHERE ((t1.customer_id = 494 AND t1.customer_id != 145) OR (t0.age > 53 OR t1.customer_id IS NOT NULL))
 GROUP BY t1.id;"
-249,9610,256,3,"SELECT markets.region, users.age
+249,5692,274,3,"SELECT markets.region, users.age
 FROM markets LEFT JOIN users ON markets.id = users.id
 WHERE users.id < 17;"
-250,9220,591,10,"SELECT customers.id, customers.region_id
+250,401220,748,10,"SELECT customers.id, customers.region_id
 FROM regions LEFT JOIN customers ON regions.id = customers.id;"
-251,9775,4003,42,"SELECT orders.customer_id, regions.id, orders.id AS c3346
+251,4001775,4600,42,"SELECT orders.customer_id, regions.id, orders.id AS c3346
 FROM regions FULL JOIN orders ON regions.id = orders.id
 WHERE orders.id <= 42
 ORDER BY regions.id ASC;"
-252,83533,19602,39,"SELECT orders.id AS c8852, orders.customer_id, books.price AS c8813
+252,7310933,21711,39,"SELECT orders.id AS c8852, orders.customer_id, books.price AS c8813
 FROM books CROSS JOIN orders FULL JOIN departments ON orders.id = departments.id
 WHERE ((orders.customer_id = 163 OR orders.id IN (69, 96, 152)) AND (orders.id IS NOT NULL AND books.id IS NOT NULL))
 ORDER BY orders.id DESC;"
-253,18894,439,40,"SELECT customers.id
+253,121234,453,40,"SELECT customers.id
 FROM regions CROSS JOIN employees JOIN customers ON employees.id = customers.id
 WHERE (employees.id IS NOT NULL AND customers.id >= 65);"
-254,9220,246,11,"SELECT markets.id AS c3977, employees.department_id
+254,3776,262,11,"SELECT markets.id AS c3977, employees.department_id
 FROM markets FULL JOIN employees ON markets.id = employees.id;"
-255,6320,2350,5000,"SELECT orders.id, orders.customer_id AS c7286
+255,3160000,2415,5000,"SELECT orders.id, orders.customer_id AS c7286
 FROM orders
 GROUP BY orders.id, orders.customer_id;"
-256,31360,277,9,"SELECT t0.id, t1.id AS c9218
+256,10520,274,9,"SELECT t0.id, t1.id AS c9218
 FROM markets AS t0 CROSS JOIN employees AS t1
 WHERE t1.department_id IN (5, 12, 33)
 GROUP BY t0.id, t1.id;"
-257,8970,178,3,"SELECT t1.price, t0.id AS c7828
+257,3936,183,3,"SELECT t1.price, t0.id AS c7828
 FROM regions AS t0 JOIN books AS t1 ON t0.id = t1.id
 GROUP BY t1.price, t0.id;"
-258,18510,378,3,"SELECT customers.region_id
+258,75782,410,3,"SELECT customers.region_id
 FROM customers JOIN users ON customers.id = users.id RIGHT JOIN markets ON customers.id = markets.id
 GROUP BY customers.region_id
 ORDER BY customers.region_id DESC;"
-259,1660,255,500,"SELECT customers.id
+259,110500,255,500,"SELECT customers.id
 FROM customers
 ORDER BY customers.id ASC;"
-260,1366,237,118,"SELECT customers.region_id, customers.id
+260,72814,282,118,"SELECT customers.region_id, customers.id
 FROM customers
 WHERE ((customers.region_id IS NULL OR customers.id >= 198) AND customers.region_id <= 4);"
-261,14760,449,3,"SELECT customers.region_id AS c4278, books.id
+261,156962,566,3,"SELECT customers.region_id AS c4278, books.id
 FROM books LEFT JOIN customers ON books.id = customers.id
 GROUP BY customers.region_id, books.id
 ORDER BY books.id ASC;"
-262,14600,277,110,"SELECT t1.department_id AS c5186, t0.id, t1.id
+262,15960,322,110,"SELECT t1.department_id AS c5186, t0.id, t1.id
 FROM regions AS t0 CROSS JOIN employees AS t1;"
-263,8650,330,5,"SELECT markets.id, departments.id, regions.id
+263,2973,330,5,"SELECT markets.id, departments.id, regions.id
 FROM regions LEFT JOIN departments ON regions.id = departments.id JOIN markets ON regions.id = markets.id
 WHERE markets.note != 'Old World'
 ORDER BY markets.id ASC, regions.id DESC;"
-264,17220,885,500,"SELECT users.id AS c6920, markets.region AS c5238, users.age AS c1104
+264,160636,939,500,"SELECT users.id AS c6920, markets.region AS c5238, users.age AS c1104
 FROM markets RIGHT JOIN users ON markets.id = users.id RIGHT JOIN customers ON markets.id = customers.id;"
-265,9220,277,17,"SELECT t1.id, t0.id AS c2693
+265,14820,312,17,"SELECT t1.id, t0.id AS c2693
 FROM users AS t0 LEFT JOIN regions AS t1 ON t0.id = t1.id;"
-266,1133,239,1,"SELECT customers.id AS c604, customers.region_id
+266,59400,248,1,"SELECT customers.id AS c604, customers.region_id
 FROM customers
 WHERE customers.id = 135
 ORDER BY customers.id DESC, customers.region_id DESC;"
-267,1610,140,0,"SELECT books.id
+267,422,139,0,"SELECT books.id
 FROM books
 WHERE books.price IS NULL;"
-268,649400,33743,11,"SELECT employees.department_id, SUM(orders.customer_id)
+268,107001400,33265,11,"SELECT employees.department_id, SUM(orders.customer_id)
 FROM orders CROSS JOIN books CROSS JOIN employees
 GROUP BY employees.department_id;"
-269,1220,121,3,"SELECT books.price AS c8205
+269,366,135,3,"SELECT books.price AS c8205
 FROM books;"
-270,1220,1113,5000,"SELECT orders.id AS c7922
+270,610000,1139,5000,"SELECT orders.id AS c7922
 FROM orders;"
-271,2972,1247,0,"SELECT orders.id AS c8902, departments.id AS c4368, orders.customer_id
+271,534702,1221,0,"SELECT orders.id AS c8902, departments.id AS c4368, orders.customer_id
 FROM orders JOIN departments ON orders.id = departments.id
 WHERE ((orders.customer_id = 483 AND departments.id > 4) AND orders.id != 24);"
-272,8660,1918,2,"SELECT orders.customer_id, orders.id, COUNT(*), COUNT(*)
+272,850932,2012,2,"SELECT orders.customer_id, orders.id, COUNT(*), COUNT(*)
 FROM orders RIGHT JOIN books ON orders.id = books.id
 WHERE books.id != 1
 GROUP BY orders.customer_id, orders.id;"
-273,6320,156,11,"SELECT t0.id, SUM(t0.department_id), COUNT(t0.department_id)
+273,6952,177,11,"SELECT t0.id, SUM(t0.department_id), COUNT(t0.department_id)
 FROM employees AS t0
 GROUP BY t0.id;"
-274,1244,152,2,"SELECT t0.id AS c7269, t0.age
+274,2066,148,2,"SELECT t0.id AS c7269, t0.age
 FROM users AS t0
 WHERE t0.age IN (33, 33);"
-275,1122,1452,0,"SELECT orders.id AS c6877
+275,545750,1512,0,"SELECT orders.id AS c6877
 FROM orders
 WHERE ((orders.customer_id <= 56 OR orders.customer_id != 343) AND (orders.customer_id IN (52, 86) AND orders.customer_id >= 224));"
-276,73300,1476,11,"SELECT users.age AS c7960, SUM(users.id)
+276,6766700,1560,11,"SELECT users.age AS c7960, SUM(users.id)
 FROM customers CROSS JOIN users
 GROUP BY users.age
 ORDER BY users.age ASC;"
-277,1643,169,1,"SELECT t0.id
+277,1143,182,1,"SELECT t0.id
 FROM departments AS t0
 WHERE ((t0.id IN (2, 10, 59) OR t0.id IS NULL) AND (t0.id != 5 AND t0.id IS NOT NULL))
 GROUP BY t0.id
 ORDER BY t0.id DESC;"
-278,9976,278,5,"SELECT t1.id AS c8751
+278,8638,307,5,"SELECT t1.id AS c8751
 FROM users AS t0 RIGHT JOIN departments AS t1 ON t0.id = t1.id
 WHERE (t0.age IS NULL OR (t1.id != 5 OR t1.id < 14));"
-279,3432,1033,0,"SELECT regions.id, orders.id, COUNT(*), SUM(orders.customer_id)
+279,851732,1199,0,"SELECT regions.id, orders.id, COUNT(*), SUM(orders.customer_id)
 FROM orders RIGHT JOIN regions ON orders.id = regions.id
 WHERE ((regions.id IN (8, 9, 22) AND regions.id <= 6) AND orders.id IN (39, 49, 104, 106))
 GROUP BY regions.id, orders.id;"
-280,9122,6240,0,"SELECT orders.customer_id
+280,6451822,7192,0,"SELECT orders.customer_id
 FROM users FULL JOIN orders ON users.id = orders.id
 WHERE ((users.age > 33 AND orders.customer_id < 84) AND (users.id = 15 OR orders.id IN (68, 128, 128, 198)));"
-281,1133,155,0,"SELECT t0.id, t0.note, t0.region
+281,433,170,0,"SELECT t0.id, t0.note, t0.region
 FROM markets AS t0
 WHERE ((t0.note = 'unknown' AND t0.id != 1) AND t0.id > 67)
 ORDER BY t0.id ASC, t0.note DESC;"
-282,84010,11429,9,"SELECT employees.id, orders.customer_id AS c5471, books.price
+282,13612010,12919,9,"SELECT employees.id, orders.customer_id AS c5471, books.price
 FROM books CROSS JOIN orders LEFT JOIN employees ON orders.id = employees.id
 WHERE employees.id > 66;"
-283,83533,2140,0,"SELECT books.id, markets.id, books.price AS c2723
+283,521733,2237,0,"SELECT books.id, markets.id, books.price AS c2723
 FROM books CROSS JOIN customers FULL JOIN markets ON customers.id = markets.id
 WHERE ((markets.id > 55 AND customers.region_id NOT IN (8, 9, 10)) AND markets.region IN ('AMERICA', 'EUROPE'))
 ORDER BY books.id DESC, markets.id ASC;"
-284,6760,178,2,"SELECT t0.region AS c1153, SUM(t0.id) AS c3569
+284,1962,176,2,"SELECT t0.region AS c1153, SUM(t0.id) AS c3569
 FROM markets AS t0
 GROUP BY t0.region
 ORDER BY t0.region ASC;"
-285,20522,379,0,"SELECT employees.id AS c5654, users.id
+285,10836,413,0,"SELECT employees.id AS c5654, users.id
 FROM markets FULL JOIN employees ON markets.id = employees.id CROSS JOIN users
 WHERE ((markets.note = 'Fast lane' AND employees.department_id NOT BETWEEN 11 AND 37) AND (users.id != 4 AND users.age <= 443));"
-286,10308,882,3,"SELECT customers.id, COUNT(customers.id) AS c434, COUNT(*)
+286,226143,997,3,"SELECT customers.id, COUNT(customers.id) AS c434, COUNT(*)
 FROM customers FULL JOIN departments ON customers.id = departments.id
 WHERE departments.id BETWEEN 2 AND 4
 GROUP BY customers.id
 ORDER BY customers.id DESC;"
-287,8435,270,0,"SELECT t2.id, t1.id, t0.id
+287,2962,263,5,"SELECT t2.id, t1.id, t0.id
 FROM books AS t0 JOIN departments AS t1 ON t0.id = t1.id RIGHT JOIN regions AS t2 ON t1.id = t2.id
 WHERE t0.id IS NULL;"
-288,4122,173,1,"SELECT regions.id AS c1673
+288,5327,193,1,"SELECT regions.id AS c1673
 FROM users JOIN regions ON users.id = regions.id
 WHERE (users.age IN (33, 47, 98) OR users.id > 54);"
-289,14060,267,3,"SELECT departments.id, books.price AS c551
+289,2493,286,3,"SELECT departments.id, books.price AS c551
 FROM departments CROSS JOIN books
 WHERE departments.id = 5
 ORDER BY departments.id DESC;"
-290,8660,1278,6,"SELECT t2.region, t1.department_id, t0.customer_id AS c8493
+290,680542,1100,6,"SELECT t2.region, t1.department_id, t0.customer_id AS c8493
 FROM orders AS t0 JOIN employees AS t1 ON t0.id = t1.id RIGHT JOIN markets AS t2 ON t1.id = t2.id
 WHERE t0.customer_id < 239;"
-291,23720,4263,10,"SELECT orders.id, COUNT(orders.id), SUM(regions.id)
+291,12324520,4720,10,"SELECT orders.id, COUNT(orders.id), SUM(regions.id)
 FROM users CROSS JOIN orders JOIN regions ON orders.id = regions.id
 GROUP BY orders.id;"
-292,6760,174,3,"SELECT t0.region, t0.id, SUM(t0.id), COUNT(*)
+292,1962,172,3,"SELECT t0.region, t0.id, SUM(t0.id), COUNT(*)
 FROM markets AS t0
 GROUP BY t0.region, t0.id
 ORDER BY t0.region ASC, t0.id DESC;"
-293,9122,273,0,"SELECT t0.age, t1.id
+293,5692,311,0,"SELECT t0.age, t1.id
 FROM users AS t0 FULL JOIN books AS t1 ON t0.id = t1.id
 WHERE (t0.age = 18 AND (t0.age != 123 AND t1.id <= 89));"
-294,6688,160,3,"SELECT books.price AS c6589, books.id, COUNT(*)
+294,1564,165,3,"SELECT books.price AS c6589, books.id, COUNT(*)
 FROM books
 WHERE ((books.price > 77 OR books.id < 3) OR (books.price IN (49, 55, 55, 77) OR books.price IN (26, 66, 66, 68)))
 GROUP BY books.price, books.id;"
-295,8970,187,5,"SELECT users.id, SUM(users.age), COUNT(users.id)
+295,6105,182,5,"SELECT users.id, SUM(users.age), COUNT(users.id)
 FROM users JOIN departments ON users.id = departments.id
 GROUP BY users.id;"
-296,1660,154,3,"SELECT t0.region, t0.id AS c2775, t0.note
+296,432,162,3,"SELECT t0.region, t0.id AS c2775, t0.note
 FROM markets AS t0
 ORDER BY t0.id DESC;"
-297,13848,1207,22,"SELECT t2.department_id
+297,694750,1166,21,"SELECT t2.department_id
 FROM orders AS t0 JOIN users AS t1 ON t0.id = t1.id FULL JOIN employees AS t2 ON t0.id = t2.id
 WHERE ((t2.id NOT BETWEEN 4 AND 6 OR t1.age != 21) OR t0.id <= 61);"
-298,2098,152,4,"SELECT departments.id
+298,988,157,4,"SELECT departments.id
 FROM departments
 WHERE ((departments.id NOT IN (4, 4, 5, 7) OR departments.id NOT IN (2, 5)) OR (departments.id NOT BETWEEN 3 AND 27 OR departments.id IS NULL));"
-299,8375,263,0,"SELECT books.price, employees.id AS c7128
+299,3273,295,0,"SELECT books.price, employees.id AS c7128
 FROM employees RIGHT JOIN books ON employees.id = books.id
 WHERE ((books.id > 68 OR books.id >= 52) AND (employees.department_id < 6 OR employees.department_id != 1))
 ORDER BY books.price DESC;"
-300,10775,4138,4965,"SELECT orders.id AS c9121
+300,1276883,3244,4965,"SELECT orders.id AS c9121
 FROM orders LEFT JOIN departments ON orders.id = departments.id RIGHT JOIN books ON departments.id = books.id
 WHERE orders.customer_id <= 497
 ORDER BY orders.id ASC;"
-301,10170,180,3,"SELECT users.id, COUNT(markets.id), SUM(markets.id)
+301,5241,175,3,"SELECT users.id, COUNT(markets.id), SUM(markets.id)
 FROM users JOIN markets ON users.id = markets.id
 GROUP BY users.id;"
-302,12310,647,500,"SELECT regions.id, customers.region_id, employees.id
+302,79260,419,15,"SELECT regions.id, customers.region_id, employees.id
 FROM regions FULL JOIN employees ON regions.id = employees.id JOIN customers ON regions.id = customers.id
 ORDER BY customers.region_id ASC, employees.id ASC, regions.id ASC;"
-303,1610,151,8,"SELECT employees.id, employees.department_id
+303,1832,150,8,"SELECT employees.id, employees.department_id
 FROM employees
 WHERE ((employees.id <= 33 OR employees.id = 3) OR (employees.department_id NOT IN (5) AND employees.id = 67));"
-304,1220,128,11,"SELECT employees.department_id AS c3770
+304,1342,135,11,"SELECT employees.department_id AS c3770
 FROM employees;"
-305,2896,164,2,"SELECT regions.id AS c2143, COUNT(*), COUNT(*)
+305,2896,173,2,"SELECT regions.id AS c2143, COUNT(*), COUNT(*)
 FROM regions
 WHERE regions.id IN (3, 10, 89)
 GROUP BY regions.id;"
-306,8074,195,5,"SELECT employees.id, employees.department_id, SUM(employees.id), SUM(employees.department_id) AS c8963
+306,4531,199,5,"SELECT employees.id, employees.department_id, SUM(employees.id), SUM(employees.department_id) AS c8963
 FROM employees JOIN departments ON employees.id = departments.id
 WHERE (departments.id <= 3 OR (employees.id = 68 OR employees.id <= 6))
 GROUP BY employees.id, employees.department_id;"
-307,12510,1269,3,"SELECT t0.note AS c4138
+307,678682,1225,3,"SELECT t0.note AS c4138
 FROM markets AS t0 JOIN regions AS t1 ON t0.id = t1.id RIGHT JOIN orders AS t2 ON t0.id = t2.id
 WHERE ((t2.customer_id = 298 OR t0.region = 'AMERICA') OR t0.region != 'AMERICA')
 GROUP BY t0.note;"
-308,4325,166,1,"SELECT departments.id, COUNT(*) AS c9125
+308,1808,156,1,"SELECT departments.id, COUNT(*) AS c9125
 FROM departments
 WHERE (departments.id > 56 OR departments.id = 4)
 GROUP BY departments.id
 ORDER BY departments.id DESC;"
-309,1632,153,1,"SELECT t0.id AS c7541, COUNT(t0.id)
+309,932,163,1,"SELECT t0.id AS c7541, COUNT(t0.id)
 FROM markets AS t0
 WHERE (t0.note != 'Fast lane' AND (t0.id = 3 OR t0.note = 'Old World'))
 GROUP BY t0.id;"
-310,20325,11529,7,"SELECT t1.id, t2.id, SUM(t2.id)
+310,7102108,12990,7,"SELECT t1.id, t2.id, SUM(t2.id)
 FROM customers AS t0 RIGHT JOIN users AS t1 ON t0.id = t1.id LEFT JOIN orders AS t2 ON t0.id = t2.id
 WHERE (t2.customer_id < 243 OR (t2.id >= 38 AND t2.customer_id = 302))
 GROUP BY t1.id, t2.id
 ORDER BY t2.id ASC;"
-311,9432,2641,2,"SELECT t0.region, t1.customer_id AS c7183
+311,1550433,2827,2,"SELECT t0.region, t1.customer_id AS c7183
 FROM markets AS t0 RIGHT JOIN orders AS t1 ON t0.id = t1.id
 WHERE ((t0.id <= 3 OR t0.note = 'Fast lane') AND (t0.note != 'North, South' OR t0.note = 'Fast lane'))
 ORDER BY t0.region ASC;"
-312,11870,1089,5,"SELECT t1.id, t0.id
+312,681210,1215,5,"SELECT t1.id, t0.id
 FROM departments AS t0 LEFT JOIN orders AS t1 ON t0.id = t1.id JOIN employees AS t2 ON t1.id = t2.id;"
-313,12504,1024,2,"SELECT employees.id, orders.id AS c4699, orders.customer_id
+313,681466,1112,2,"SELECT employees.id, orders.id AS c4699, orders.customer_id
 FROM departments JOIN orders ON departments.id = orders.id LEFT JOIN employees ON departments.id = employees.id
 WHERE employees.department_id NOT BETWEEN 5 AND 33;"
-314,2264,168,13,"SELECT t0.age, t0.id
+314,4228,179,13,"SELECT t0.age, t0.id
 FROM users AS t0
 WHERE (t0.age > 5 AND t0.id != 2)
 GROUP BY t0.age, t0.id;"
-315,6110,185,5,"SELECT t0.id
+315,3354,192,5,"SELECT t0.id
 FROM regions AS t0 JOIN departments AS t1 ON t0.id = t1.id
 WHERE t1.id IS NOT NULL
 GROUP BY t0.id;"
-316,6320,133,3,"SELECT books.id
+316,1896,147,3,"SELECT books.id
 FROM books
 GROUP BY books.id;"
-317,9220,2702,5000,"SELECT orders.id AS c7996, books.price
+317,1550366,2810,5000,"SELECT orders.id AS c7996, books.price
 FROM books FULL JOIN orders ON books.id = orders.id;"
-318,22320,329,4,"SELECT books.price, books.id
+318,8406,346,4,"SELECT books.price, books.id
 FROM books FULL JOIN employees ON books.id = employees.id RIGHT JOIN regions ON employees.id = regions.id
 GROUP BY books.price, books.id;"
-319,2896,146,3,"SELECT books.id AS c9150, books.price, COUNT(books.id)
+319,932,163,3,"SELECT books.id AS c9150, books.price, COUNT(books.id)
 FROM books
 WHERE ((books.price IN (76, 77) AND books.id BETWEEN 1 AND 96) OR books.price IN (55, 66, 77))
 GROUP BY books.id, books.price;"
-320,4970,237,11,"SELECT customers.region_id, employees.id
+320,71482,247,11,"SELECT customers.region_id, employees.id
 FROM customers JOIN employees ON customers.id = employees.id;"
-321,16824,934,10,"SELECT t0.id AS c6071, COUNT(*), COUNT(*) AS c7241
+321,808000,991,10,"SELECT t0.id AS c6071, COUNT(*), COUNT(*) AS c7241
 FROM regions AS t0 CROSS JOIN customers AS t1
 WHERE ((t1.id >= 59 OR t0.id IS NULL) AND t1.id = 126)
 GROUP BY t0.id;"
-322,17220,823,500,"SELECT t1.region_id, t1.id, t2.price
+322,158466,723,500,"SELECT t1.region_id, t1.id, t2.price
 FROM regions AS t0 RIGHT JOIN customers AS t1 ON t0.id = t1.id LEFT JOIN books AS t2 ON t0.id = t2.id;"
-323,14275,522,3,"SELECT t0.region_id
+323,90703,528,3,"SELECT t0.region_id
 FROM customers AS t0 RIGHT JOIN users AS t1 ON t0.id = t1.id RIGHT JOIN markets AS t2 ON t1.id = t2.id
 WHERE t1.id < 14
 ORDER BY t0.region_id ASC;"
-324,12160,2620,3,"SELECT orders.id AS c4187, regions.id
+324,680894,1183,3,"SELECT orders.id AS c4187, regions.id
 FROM departments JOIN orders ON departments.id = orders.id LEFT JOIN regions ON departments.id = regions.id
 WHERE regions.id < 4;"
-325,15822,329,4,"SELECT markets.note AS c7216, books.price
+325,2992,402,4,"SELECT markets.note AS c7216, books.price
 FROM departments CROSS JOIN markets LEFT JOIN books ON markets.id = books.id
 WHERE ((departments.id != 2 AND markets.note = 'Old World') AND (departments.id BETWEEN 1 AND 5 OR departments.id >= 41));"
-326,1220,129,17,"SELECT t0.age
+326,2074,142,17,"SELECT t0.age
 FROM users AS t0;"
-327,6760,156,11,"SELECT t0.age
+327,11679,179,11,"SELECT t0.age
 FROM users AS t0
 GROUP BY t0.age
 ORDER BY t0.age ASC;"
-328,84498,84707,54310,"SELECT employees.department_id
+328,44723198,91834,54310,"SELECT employees.department_id
 FROM orders CROSS JOIN employees LEFT JOIN regions ON employees.id = regions.id
 WHERE ((employees.id <= 25 OR orders.id NOT BETWEEN 47 AND 184) OR orders.id IS NULL);"
-329,5680,195,3,"SELECT t0.id
+329,3583,199,3,"SELECT t0.id
 FROM markets AS t0 JOIN users AS t1 ON t0.id = t1.id
 WHERE (t0.id != 2 OR t0.id != 1)
 ORDER BY t0.id ASC;"
-330,11143,1166,0,"SELECT books.price, employees.id, COUNT(*)
+330,131853,2259,0,"SELECT books.price, employees.id, COUNT(*)
 FROM customers LEFT JOIN books ON customers.id = books.id FULL JOIN employees ON customers.id = employees.id
 WHERE ((customers.id > 96 AND employees.department_id != 32) AND (employees.id > 5 OR books.id IS NOT NULL))
 GROUP BY books.price, employees.id
 ORDER BY books.price DESC, employees.id DESC;"
-331,83620,1674673,50490,"SELECT t2.region_id, t2.id
+331,1755762000,1746374,50490,"SELECT t2.region_id, t2.id
 FROM orders AS t0 CROSS JOIN regions AS t1 FULL JOIN customers AS t2 ON t1.id = t2.id;"
-332,1610,145,10,"SELECT regions.id AS c7728
+332,1610,133,10,"SELECT regions.id AS c7728
 FROM regions
 WHERE regions.id IS NOT NULL;"
-333,22320,304862,6,"SELECT departments.id, COUNT(*)
+333,2478160,315148,6,"SELECT departments.id, COUNT(*)
 FROM orders FULL JOIN departments ON orders.id = departments.id LEFT JOIN customers ON departments.id = customers.id
 GROUP BY departments.id;"
-334,1775,165,10,"SELECT regions.id AS c1480
+334,1775,159,10,"SELECT regions.id AS c1480
 FROM regions
 WHERE regions.id IS NOT NULL
 ORDER BY regions.id DESC;"
-335,1133,144,0,"SELECT books.price, books.id
+335,433,148,0,"SELECT books.price, books.id
 FROM books
 WHERE (books.price < 44 AND (books.price IN (55, 55, 66, 66) AND books.price != 77))
 ORDER BY books.price DESC, books.id DESC;"
-336,1122,139,1,"SELECT t0.department_id
+336,1222,143,1,"SELECT t0.department_id
 FROM employees AS t0
 WHERE ((t0.department_id = 12 AND t0.department_id < 35) AND (t0.id IN (4) OR t0.department_id != 31));"
-337,1488,156,10,"SELECT users.id, users.age
+337,2432,152,10,"SELECT users.id, users.age
 FROM users
 WHERE users.age IN (1, 21, 33, 64);"
-338,1732,149,9,"SELECT t0.id
+338,1732,155,9,"SELECT t0.id
 FROM regions AS t0
 WHERE ((t0.id NOT BETWEEN 1 AND 15 OR t0.id < 10) AND (t0.id <= 40 OR t0.id != 3));"
-339,1610,151,1,"SELECT departments.id
+339,744,145,1,"SELECT departments.id
 FROM departments
 WHERE ((departments.id <= 98 OR departments.id > 1) AND (departments.id IS NULL OR departments.id IN (3, 3, 30, 91)));"
-340,12160,557,13,"SELECT customers.region_id AS c4276, markets.region AS c7002, COUNT(*), COUNT(*) AS c3968
+340,155932,606,13,"SELECT customers.region_id AS c4276, markets.region AS c7002, COUNT(*), COUNT(*) AS c3968
 FROM customers LEFT JOIN markets ON customers.id = markets.id
 WHERE (markets.note = 'Fast lane' OR customers.id IS NOT NULL)
 GROUP BY customers.region_id, markets.region;"
-341,18070,391,3,"SELECT customers.id, SUM(customers.region_id)
+341,76376,408,16,"SELECT customers.id, SUM(customers.region_id)
 FROM markets JOIN users ON markets.id = users.id RIGHT JOIN customers ON users.id = customers.id
 GROUP BY customers.id;"
-342,1122,140,0,"SELECT employees.department_id, employees.id
+342,1222,161,0,"SELECT employees.department_id, employees.id
 FROM employees
 WHERE ((employees.id >= 66 OR employees.id != 2) AND (employees.id > 69 AND employees.department_id = 33));"
-343,1660,145,17,"SELECT users.age
+343,3009,154,17,"SELECT users.age
 FROM users
 ORDER BY users.age ASC;"
-344,6110,278,3,"SELECT t1.price AS c605, t0.id AS c1651, t1.id
+344,2122,341,3,"SELECT t1.price AS c605, t0.id AS c1651, t1.id
 FROM regions AS t0 RIGHT JOIN books AS t1 ON t0.id = t1.id
 WHERE (t1.id != 3 OR t1.id = 3);"
-345,9660,441,3,"SELECT books.id, customers.id AS c5626
+345,155432,493,3,"SELECT books.id, customers.id AS c5626
 FROM books LEFT JOIN customers ON books.id = customers.id
 ORDER BY customers.id DESC;"
-346,84032,439,0,"SELECT t1.region, t2.id, COUNT(t1.id)
+346,29564,444,0,"SELECT t1.region, t2.id, COUNT(t1.id)
 FROM employees AS t0 CROSS JOIN markets AS t1 FULL JOIN regions AS t2 ON t1.id = t2.id
 WHERE t0.department_id = 36
 GROUP BY t1.region, t2.id;"
-347,9610,5218,0,"SELECT users.age AS c6973
+347,6452676,5531,0,"SELECT users.age AS c6973
 FROM users RIGHT JOIN orders ON users.id = orders.id
 WHERE users.id > 94;"
-348,19356,1399,1187,"SELECT t1.id, t0.id
+348,525100,1524,1187,"SELECT t1.id, t0.id
 FROM departments AS t0 CROSS JOIN customers AS t1
 WHERE ((t1.id BETWEEN 28 AND 146 AND t1.id IN (46, 50, 104, 146)) OR (t0.id < 4 AND t1.region_id NOT IN (2, 2, 10, 12)))
 ORDER BY t1.id DESC;"
-349,8825,280,5,"SELECT regions.id, departments.id AS c6050, COUNT(*), COUNT(*)
+349,4208,350,5,"SELECT regions.id, departments.id AS c6050, COUNT(*), COUNT(*)
 FROM regions RIGHT JOIN departments ON regions.id = departments.id
 WHERE departments.id IS NOT NULL
 GROUP BY regions.id, departments.id
 ORDER BY departments.id ASC;"
-350,14320,278,11,"SELECT employees.department_id, departments.id AS c3106, COUNT(*) AS c7893
+350,8110,276,11,"SELECT employees.department_id, departments.id AS c3106, COUNT(*) AS c7893
 FROM departments RIGHT JOIN employees ON departments.id = employees.id
 GROUP BY employees.department_id, departments.id;"
-351,83766,55158,261,"SELECT t0.customer_id, t2.id AS c6006, t2.age
+351,32852932,60056,261,"SELECT t0.customer_id, t2.id AS c6006, t2.age
 FROM orders AS t0 CROSS JOIN departments AS t1 FULL JOIN users AS t2 ON t1.id = t2.id
 WHERE (t1.id >= 3 AND (t0.id < 55 OR t0.id < 88));"
-352,21794,3404,80,"SELECT t1.customer_id, t1.id, t0.id
+352,5464128,3748,80,"SELECT t1.customer_id, t1.id, t0.id
 FROM departments AS t0 CROSS JOIN orders AS t1
 WHERE (t1.customer_id IN (426) OR (t1.customer_id IS NULL OR t0.id >= 57));"
-353,1220,237,500,"SELECT t0.id, t0.region_id
+353,61000,245,500,"SELECT t0.id, t0.region_id
 FROM customers AS t0;"
-354,2962,167,1,"SELECT t0.department_id, t0.id
+354,3760,176,1,"SELECT t0.department_id, t0.id
 FROM employees AS t0
 WHERE (t0.department_id >= 31 AND (t0.department_id > 34 OR t0.id < 33))
 GROUP BY t0.department_id, t0.id
 ORDER BY t0.department_id DESC;"
-355,1244,243,2,"SELECT customers.id, customers.region_id
+355,62200,362,2,"SELECT customers.id, customers.region_id
 FROM customers
 WHERE customers.id IN (153, 183);"
-356,17220,320,5,"SELECT employees.department_id, departments.id
+356,5326,320,5,"SELECT employees.department_id, departments.id
 FROM books LEFT JOIN employees ON books.id = employees.id FULL JOIN departments ON employees.id = departments.id;"
-357,5424,3425,4914,"SELECT orders.id AS c1456, orders.customer_id, COUNT(*), COUNT(orders.customer_id)
+357,2870000,3657,4914,"SELECT orders.id AS c1456, orders.customer_id, COUNT(*), COUNT(orders.customer_id)
 FROM orders
 WHERE (orders.id > 86 OR orders.customer_id IS NULL)
 GROUP BY orders.id, orders.customer_id;"
-358,4160,153,0,"SELECT t0.department_id, t0.id AS c8666, COUNT(*) AS c1170, COUNT(*)
+358,4260,153,0,"SELECT t0.department_id, t0.id AS c8666, COUNT(*) AS c1170, COUNT(*)
 FROM employees AS t0
 WHERE t0.id IS NULL
 GROUP BY t0.department_id, t0.id;"
-359,6320,149,10,"SELECT regions.id, COUNT(regions.id) AS c1004, COUNT(regions.id) AS c9498
+359,6320,159,10,"SELECT regions.id, COUNT(regions.id) AS c1004, COUNT(regions.id) AS c9498
 FROM regions
 GROUP BY regions.id;"
-360,1220,137,3,"SELECT t0.id, t0.note AS c1949, t0.region
+360,366,145,3,"SELECT t0.id, t0.note AS c1949, t0.region
 FROM markets AS t0;"
-361,649400,49930,11,"SELECT t2.department_id, COUNT(t2.id), SUM(t0.id)
+361,178001600,53741,11,"SELECT t2.department_id, COUNT(t2.id), SUM(t0.id)
 FROM departments AS t0 CROSS JOIN orders AS t1 CROSS JOIN employees AS t2
 GROUP BY t2.department_id;"
-362,88720,780221,3,"SELECT markets.id AS c6682, markets.note AS c3493
+362,785551896,851162,3,"SELECT markets.id AS c6682, markets.note AS c3493
 FROM orders CROSS JOIN customers RIGHT JOIN markets ON customers.id = markets.id
 GROUP BY markets.id, markets.note;"
-363,1775,156,3,"SELECT books.price
+363,433,159,3,"SELECT books.price
 FROM books
 WHERE books.price IS NOT NULL
 ORDER BY books.price DESC;"
-364,1288,261,44,"SELECT customers.region_id AS c2372
+364,69900,242,44,"SELECT customers.region_id AS c2372
 FROM customers
 WHERE customers.region_id IN (4, 89)
 ORDER BY customers.region_id DESC;"
-365,13135,2618,3,"SELECT t0.id AS c4468, t1.customer_id, t0.region
+365,831472,1381,3,"SELECT t0.id AS c4468, t1.customer_id, t0.region
 FROM markets AS t0 FULL JOIN orders AS t1 ON t0.id = t1.id JOIN customers AS t2 ON t0.id = t2.id
 WHERE t0.id <= 17;"
-366,1366,153,1,"SELECT users.id, users.age
+366,2310,178,1,"SELECT users.id, users.age
 FROM users
 WHERE (users.id = 15 OR (users.id != 3 AND users.id IS NULL));"
-367,1220,141,17,"SELECT t0.age
+367,2074,151,17,"SELECT t0.age
 FROM users AS t0;"
-368,21794,262,49,"SELECT t0.id, t1.age
+368,12062,286,49,"SELECT t0.id, t1.age
 FROM books AS t0 CROSS JOIN users AS t1
 WHERE (t1.id = 96 OR (t1.age != 18 OR t0.price <= 61));"
-369,3332,1069,0,"SELECT t0.id AS c4185, SUM(t0.id)
+369,850932,1083,0,"SELECT t0.id AS c4185, SUM(t0.id)
 FROM markets AS t0 LEFT JOIN orders AS t1 ON t0.id = t1.id
 WHERE ((t0.id BETWEEN 1 AND 7 OR t0.note != 'North, South') AND (t0.note != 'Old World' AND t0.note IN ('ASIA', 'Old World', 'unknown')))
 GROUP BY t0.id;"
-370,1610,145,2,"SELECT markets.note AS c2495, markets.id, markets.region
+370,422,154,2,"SELECT markets.note AS c2495, markets.id, markets.region
 FROM markets
 WHERE ((markets.note = 'North, South' AND markets.note != 'North, South') OR markets.note != 'Fast lane');"
-371,14600,283,110,"SELECT regions.id
+371,15960,288,110,"SELECT regions.id
 FROM regions CROSS JOIN employees;"
-372,1930,1577,3214,"SELECT t0.id
+372,1293750,1736,3214,"SELECT t0.id
 FROM orders AS t0
 WHERE (t0.id <= 95 OR t0.customer_id BETWEEN 55 AND 369)
 ORDER BY t0.id DESC;"
-373,6320,361,500,"SELECT customers.id, COUNT(customers.region_id)
+373,316000,380,500,"SELECT customers.id, COUNT(customers.region_id)
 FROM customers
 GROUP BY customers.id;"
-374,36830,5349,0,"SELECT orders.id AS c9907, COUNT(*) AS c8627
+374,9978000,5935,0,"SELECT orders.id AS c9907, COUNT(*) AS c8627
 FROM departments CROSS JOIN orders
 WHERE ((orders.id >= 79 OR orders.customer_id IN (63, 185, 226, 480)) AND departments.id IS NULL)
 GROUP BY orders.id
 ORDER BY orders.id ASC;"
-375,1854,1405,4999,"SELECT t0.customer_id AS c3627, t0.id AS c1197
+375,957500,1679,4999,"SELECT t0.customer_id AS c3627, t0.id AS c1197
 FROM orders AS t0
 WHERE (t0.customer_id <= 56 OR t0.id > 1);"
-376,18098,331,9,"SELECT t1.id, t0.id, t1.department_id
+376,10438,379,9,"SELECT t1.id, t0.id, t1.department_id
 FROM regions AS t0 FULL JOIN employees AS t1 ON t0.id = t1.id FULL JOIN departments AS t2 ON t0.id = t2.id
 WHERE t0.id NOT IN (3);"
-377,1643,469,341,"SELECT customers.id, customers.region_id, SUM(customers.region_id), SUM(customers.id)
+377,98212,508,341,"SELECT customers.id, customers.region_id, SUM(customers.region_id), SUM(customers.id)
 FROM customers
 WHERE ((customers.region_id != 9 OR customers.id = 20) AND (customers.region_id >= 3 AND customers.id > 5))
 GROUP BY customers.id, customers.region_id
 ORDER BY customers.id DESC, customers.region_id ASC;"
-378,6320,130,3,"SELECT markets.region, markets.id AS c5516
+378,1896,155,3,"SELECT markets.region, markets.id AS c5516
 FROM markets
 GROUP BY markets.region, markets.id;"
-379,1220,117,11,"SELECT employees.department_id, employees.id
+379,1342,142,11,"SELECT employees.department_id, employees.id
 FROM employees;"
-380,2494,2285,4329,"SELECT orders.customer_id
+380,1692500,2838,4329,"SELECT orders.customer_id
 FROM orders
 WHERE (orders.id < 86 OR (orders.customer_id IN (21, 71) OR orders.customer_id NOT BETWEEN 371 AND 436))
 ORDER BY orders.customer_id ASC;"
-381,18500,308,34,"SELECT t0.age AS c6869, t0.id
+381,10354,279,34,"SELECT t0.age AS c6869, t0.id
 FROM users AS t0 CROSS JOIN markets AS t1
 WHERE t1.note != 'Old World';"
-382,6056,163,3,"SELECT t0.id AS c3548, t0.note, SUM(t0.id) AS c5991, COUNT(*)
+382,1564,211,3,"SELECT t0.id AS c3548, t0.note, SUM(t0.id) AS c5991, COUNT(*)
 FROM markets AS t0
 WHERE ((t0.note IN ('Fast lane', 'Fast lane', 'Old World') OR t0.region = 'AMERICA') OR t0.id NOT IN (1, 2, 3))
 GROUP BY t0.id, t0.note;"
-383,178400,10350,8500,"SELECT customers.id, customers.region_id
+383,14597700,11406,8500,"SELECT customers.id, customers.region_id
 FROM regions CROSS JOIN customers CROSS JOIN users
 WHERE regions.id < 2;"
-384,433400,370,9,"SELECT markets.id, books.id, COUNT(markets.id), COUNT(markets.id)
+384,42520,429,9,"SELECT markets.id, books.id, COUNT(markets.id), COUNT(markets.id)
 FROM regions CROSS JOIN books CROSS JOIN markets
 WHERE regions.id != 5
 GROUP BY markets.id, books.id;"
-385,1366,133,0,"SELECT t0.id AS c9611, t0.age AS c4657
+385,2432,189,0,"SELECT t0.id AS c9611, t0.age AS c4657
 FROM users AS t0
 WHERE ((t0.id >= 3 OR t0.id IS NULL) AND t0.age IS NULL);"
-386,17220,2250,3,"SELECT markets.note, markets.region AS c394
+386,1553776,2370,3,"SELECT markets.note, markets.region AS c394
 FROM markets LEFT JOIN orders ON markets.id = orders.id LEFT JOIN employees ON orders.id = employees.id;"
-387,2922,304,0,"SELECT employees.id AS c1393
+387,1832,254,0,"SELECT employees.id AS c1393
 FROM employees LEFT JOIN books ON employees.id = books.id
 WHERE ((employees.id IS NULL AND books.id IS NOT NULL) AND (books.price = 55 AND employees.department_id = 12));"
-388,14600,10525,25000,"SELECT orders.customer_id AS c3285
+388,3650500,11472,25000,"SELECT orders.customer_id AS c3285
 FROM orders CROSS JOIN departments;"
-389,13135,2093,2,"SELECT employees.id AS c6990
+389,679882,1202,2,"SELECT employees.id AS c6990
 FROM orders LEFT JOIN markets ON orders.id = markets.id JOIN employees ON orders.id = employees.id
 WHERE markets.id < 3;"
-390,22600,1888,5000,"SELECT markets.note AS c1438, customers.region_id, markets.id AS c7869
+390,160080,1984,5000,"SELECT markets.note AS c1438, customers.region_id, markets.id AS c7869
 FROM customers LEFT JOIN markets ON customers.id = markets.id CROSS JOIN regions;"
-391,14760,2533,5,"SELECT orders.customer_id AS c6961, departments.id
+391,2253325,2732,5,"SELECT orders.customer_id AS c6961, departments.id
 FROM departments LEFT JOIN orders ON departments.id = orders.id
 GROUP BY orders.customer_id, departments.id
 ORDER BY departments.id DESC;"
-392,88055,535,11,"SELECT employees.department_id AS c8803, SUM(users.id), SUM(employees.id)
+392,63126,581,11,"SELECT employees.department_id AS c8803, SUM(users.id), SUM(employees.id)
 FROM users CROSS JOIN employees LEFT JOIN markets ON employees.id = markets.id
 WHERE ((markets.id >= 18 OR users.id = 4) OR employees.id >= 2)
 GROUP BY employees.department_id
 ORDER BY employees.department_id ASC;"
-393,13620,498913,384231,"SELECT orders.customer_id, customers.id
+393,291050000,530380,384231,"SELECT orders.customer_id, customers.id
 FROM orders CROSS JOIN customers
 WHERE (orders.id IS NOT NULL AND (orders.customer_id <= 190 AND customers.region_id IN (1, 5, 8, 9)));"
-394,1732,136,8,"SELECT t0.id
+394,1832,168,8,"SELECT t0.id
 FROM employees AS t0
 WHERE t0.department_id NOT IN (6, 11, 32, 94);"
-395,14600,10322,15000,"SELECT orders.id, orders.customer_id, books.price AS c2061
+395,2390300,11567,15000,"SELECT orders.id, orders.customer_id, books.price AS c2061
 FROM orders CROSS JOIN books;"
-396,1610,148,0,"SELECT markets.region, markets.id, markets.note
+396,422,160,0,"SELECT markets.region, markets.id, markets.note
 FROM markets
 WHERE markets.region IS NULL;"
-397,6320,392,500,"SELECT t0.id, t0.region_id, SUM(t0.region_id)
+397,316000,404,500,"SELECT t0.id, t0.region_id, SUM(t0.region_id)
 FROM customers AS t0
 GROUP BY t0.id, t0.region_id;"
-398,4626,240,10,"SELECT regions.id, customers.id, customers.region_id
+398,70776,252,10,"SELECT regions.id, customers.id, customers.region_id
 FROM regions JOIN customers ON regions.id = customers.id
 WHERE (customers.id NOT BETWEEN 18 AND 150 OR regions.id IN (1, 9, 10, 63));"
-399,4325,156,1,"SELECT departments.id AS c2818, COUNT(departments.id), COUNT(departments.id)
+399,1808,162,1,"SELECT departments.id AS c2818, COUNT(departments.id), COUNT(departments.id)
 FROM departments
 WHERE departments.id <= 1
 GROUP BY departments.id

@@ -253,8 +253,9 @@ int main(int argc, char** argv) {
     PropertySet required = parsed.required_order
         ? PropertySet{SortProperty{*parsed.required_order}}
         : PropertySet::Any();
-    Optimizer optimizer(parsed.op, MakeMainRules(), {}, LoadSchemaFromCsvDir(args.data_dir),
-                        std::move(required));
+    Optimizer optimizer(parsed.op, MakeMainRules(),
+                        CardinalityEstimates{LoadTableSizesFromCsvDir(args.data_dir)},
+                        LoadSchemaFromCsvDir(args.data_dir), std::move(required));
     plan = optimizer.Optimize();
     plan_cost = optimizer.GetBestCost();
   } catch (const std::exception& e) {

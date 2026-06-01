@@ -31,4 +31,7 @@ private:
 
 SchemaCatalog LoadSchemaFromCsvDir(const std::filesystem::path& dir);
 
+std::unordered_map<std::string, std::int64_t> LoadTableSizesFromCsvDir(
+    const std::filesystem::path& dir);
+
 }  // namespace stewkk::sql
