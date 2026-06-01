@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <fstream>
@@ -46,6 +48,7 @@ struct Args {
   bool print_plan = false;
   bool print_ast = false;
   bool jit = false;
+  bool stats = false;
   std::string check_reachable_path;
 };
 
@@ -65,6 +68,8 @@ Args ParseArgs(int argc, char** argv) {
       args.print_ast = true;
     } else if (a == "--jit") {
       args.jit = true;
+    } else if (a == "--stats") {
+      args.stats = true;
     } else if (a == "--check-reachable") {
       if (i + 1 >= argc) {
         std::cerr << "--check-reachable requires a plan file path\n";
@@ -77,7 +82,7 @@ Args ParseArgs(int argc, char** argv) {
     }
   }
   if (args.data_dir.empty() && args.check_reachable_path.empty()) {
-    std::cerr << "usage: sql --data-dir <csv_dir> [--print-plan] [--jit] < query.sql\n"
+    std::cerr << "usage: sql --data-dir <csv_dir> [--print-plan] [--jit] [--stats] < query.sql\n"
               << "       sql --check-reachable <plan_file> < query.sql\n";
     std::exit(kUsage);
   }
@@ -243,6 +248,7 @@ int main(int argc, char** argv) {
   }
 
   PhysicalPlanNode plan;
+  std::int64_t plan_cost = 0;
   try {
     PropertySet required = parsed.required_order
         ? PropertySet{SortProperty{*parsed.required_order}}
@@ -250,6 +256,7 @@ int main(int argc, char** argv) {
     Optimizer optimizer(parsed.op, MakeMainRules(), {}, LoadSchemaFromCsvDir(args.data_dir),
                         std::move(required));
     plan = optimizer.Optimize();
+    plan_cost = optimizer.GetBestCost();
   } catch (const std::exception& e) {
     std::cerr << "optimizer error: " << e.what() << "\n";
     return kOptimizerError;
@@ -262,7 +269,9 @@ int main(int argc, char** argv) {
   }
 
   Result<Relation> result;
+  std::int64_t exec_us = 0;
   try {
+    const auto exec_started = std::chrono::steady_clock::now();
     boost::asio::io_context ctx;
     boost::asio::any_io_executor exec = ctx.get_executor();
     auto fut = args.jit
@@ -272,6 +281,8 @@ int main(int argc, char** argv) {
                                 boost::asio::use_future);
     ctx.run();
     result = fut.get();
+    exec_us = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - exec_started).count();
   } catch (const std::exception& e) {
     std::cerr << "runtime error: " << e.what() << "\n";
     return kRuntimeError;
@@ -283,5 +294,10 @@ int main(int argc, char** argv) {
   }
 
   PrintRelation(result.value(), parsed.required_order.has_value());
+
+  if (args.stats) {
+    std::cerr << "STATS plan_cost=" << plan_cost << " exec_us=" << exec_us
+              << " rows=" << result.value().tuples.size() << "\n";
+  }
   return kOk;
 }
