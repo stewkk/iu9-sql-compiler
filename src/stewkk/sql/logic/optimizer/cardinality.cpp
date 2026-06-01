@@ -8,7 +8,52 @@ namespace stewkk::sql {
 
 namespace {
 
+constexpr double kEqualitySelectivity = 0.10;
+constexpr double kRangeSelectivity = 0.50;
+constexpr double kUnknownSelectivity = 0.50;
 
+bool IsConstant(const Expression& expr) {
+  return std::holds_alternative<IntConst>(expr)
+      || std::holds_alternative<StringConst>(expr)
+      || std::holds_alternative<Literal>(expr);
+}
+
+double EstimateFilterSelectivity(const Expression& predicate) {
+  return std::visit(utils::Overloaded{
+      [](const BinaryExpression& b) {
+        const auto lhs = EstimateFilterSelectivity(*b.lhs);
+        const auto rhs = EstimateFilterSelectivity(*b.rhs);
+        switch (b.binop) {
+          case BinaryOp::kAnd:
+            return lhs * rhs;
+          case BinaryOp::kOr:
+            return lhs + rhs - lhs * rhs;
+          case BinaryOp::kEq:
+            return (std::holds_alternative<Attribute>(*b.lhs) && IsConstant(*b.rhs))
+                || (IsConstant(*b.lhs) && std::holds_alternative<Attribute>(*b.rhs))
+                ? kEqualitySelectivity
+                : kUnknownSelectivity;
+          case BinaryOp::kGt:
+          case BinaryOp::kLt:
+          case BinaryOp::kLe:
+          case BinaryOp::kGe:
+            return kRangeSelectivity;
+          default:
+            return kUnknownSelectivity;
+        }
+      },
+      [](const UnaryExpression& u) {
+        return u.op == UnaryOp::kNot
+            ? 1.0 - EstimateFilterSelectivity(*u.child)
+            : kUnknownSelectivity;
+      },
+      [](const InExpression& in) {
+        const auto selectivity = std::min(0.50, in.values.size() * kEqualitySelectivity);
+        return in.negated ? 1.0 - selectivity : selectivity;
+      },
+      [](const auto&) { return kUnknownSelectivity; },
+  }, predicate);
+}
 
 double JoinSelectivity(const Expression& qual, int64_t lhs_card, int64_t rhs_card) {
   const auto* b = std::get_if<BinaryExpression>(&qual);
@@ -49,7 +94,10 @@ int64_t CardinalityEstimates::GetCardinality(const LogicalOperator& op) {
           return 10;
       },
       [this](const logical::Filter& f) -> int64_t {
-          return GetCardinality(f.source);
+          auto source_cardinality = GetCardinality(f.source);
+          auto filtered = static_cast<int64_t>(
+              source_cardinality * EstimateFilterSelectivity(f.predicate));
+          return std::max<int64_t>(1, filtered);
       },
       [this](const logical::Projection& p) -> int64_t {
           return GetCardinality(p.source);

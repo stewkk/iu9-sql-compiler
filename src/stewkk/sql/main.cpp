@@ -1,14 +1,10 @@
 #include <algorithm>
 #include <cstdlib>
 #include <exception>
-#include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <ranges>
-#include <regex>
 #include <sstream>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include <future>
@@ -86,30 +82,6 @@ Args ParseArgs(int argc, char** argv) {
     std::exit(kUsage);
   }
   return args;
-}
-
-SchemaCatalog LoadSchema(const std::string& dir) {
-  std::unordered_map<std::string, Schema> tables;
-  static const std::regex kBench{R"(_\d+$)"};
-  for (const auto& entry : std::filesystem::directory_iterator{dir}) {
-    if (entry.path().extension() != ".csv") continue;
-    auto stem = entry.path().stem().string();
-    if (std::regex_search(stem, kBench)) continue;
-
-    std::ifstream in{entry.path()};
-    std::string header;
-    if (!std::getline(in, header)) continue;
-
-    Schema schema;
-    for (const auto& part : header | std::views::split(',')) {
-      std::string token{part.begin(), part.end()};
-      auto colon = token.find(':');
-      if (colon == std::string::npos) continue;
-      schema.push_back(Attribute{stem, token.substr(0, colon)});
-    }
-    tables.emplace(std::move(stem), std::move(schema));
-  }
-  return SchemaCatalog{std::move(tables)};
 }
 
 std::string SerializeAst(const Operator& op) {
@@ -245,7 +217,7 @@ int main(int argc, char** argv) {
     MatchResult mr;
     try {
       SchemaCatalog schema = args.data_dir.empty() ? SchemaCatalog{}
-                                                    : LoadSchema(args.data_dir);
+                                                    : LoadSchemaFromCsvDir(args.data_dir);
       mr = IsPlanReachable(sql_stream, target, {}, std::move(schema));
     } catch (const std::exception& e) {
       std::cerr << "reachability error: " << e.what() << "\n";
@@ -275,7 +247,7 @@ int main(int argc, char** argv) {
     PropertySet required = parsed.required_order
         ? PropertySet{SortProperty{*parsed.required_order}}
         : PropertySet::Any();
-    Optimizer optimizer(parsed.op, MakeMainRules(), {}, LoadSchema(args.data_dir),
+    Optimizer optimizer(parsed.op, MakeMainRules(), {}, LoadSchemaFromCsvDir(args.data_dir),
                         std::move(required));
     plan = optimizer.Optimize();
   } catch (const std::exception& e) {

@@ -39,6 +39,21 @@
   \end{figure}
 }
 
+\newcommand{\graphplaceholder}[3]{%
+  \begin{figure}[H]
+    \centering
+    \fbox{%
+      \begin{minipage}[c][4.5cm][c]{0.91\textwidth}
+        \centering
+        \textbf{МЕСТО ДЛЯ ГРАФИКА}\\[0.4cm]
+        #3
+      \end{minipage}%
+    }
+    \caption{#1}
+    \label{#2}
+  \end{figure}
+}
+
 \setcounter{page}{2}
 
 \newpage
@@ -1185,6 +1200,51 @@ TEST(ParserTest, SelectSingleColumnFromSingleTable) {
 поддерживается сравнение интерпретируемого и JIT-компилируемого способов
 вычисления выражений.
 
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{naive-vs-optimizer.png}
+\caption{Сравнение времени выполнения запросов при наивном и оптимизированном
+   построении физического плана.}
+\label{fig:benchmark-naive-optimized}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{optimizer-speedup.png}
+\caption{Относительное ускорение выполнения запросов после применения оптимизатора.}
+\label{fig:benchmark-speedup}
+\end{figure}
+
+В таблице~\ref{tbl:ssb-benchmark} приведено среднее время выполнения трех
+повторений запросов SSB для набора данных масштаба \texttt{sf001}. Ускорение
+рассчитывается как отношение времени выполнения наивного плана ко времени
+выполнения оптимизированного плана.
+
+\begin{table}[H]
+  \centering
+  \caption{Результаты выполнения запросов Star Schema Benchmark.}
+  \label{tbl:ssb-benchmark}
+  \begin{tabular}{|l|r|r|r|}
+    \hline
+    Запрос & \texttt{Naive}, мс & \texttt{Optimized}, мс & Ускорение \\
+    \hline
+    \texttt{q1.1} & 8.11 & 6.51 & 1.25 \\
+    \texttt{q1.2} & 8.20 & 6.59 & 1.24 \\
+    \texttt{q1.3} & 8.00 & 6.58 & 1.22 \\
+    \texttt{q2.1} & 8.80 & 9.33 & 0.94 \\
+    \texttt{q2.2} & 8.84 & 6.18 & 1.43 \\
+    \texttt{q2.3} & 8.68 & 5.80 & 1.50 \\
+    \texttt{q3.1} & 35.67 & 5.90 & 6.04 \\
+    \texttt{q3.2} & 35.88 & 5.58 & 6.43 \\
+    \texttt{q3.3} & 38.05 & 5.86 & 6.49 \\
+    \texttt{q3.4} & 37.12 & 5.77 & 6.43 \\
+    \texttt{q4.1} & 9.06 & 12.21 & 0.74 \\
+    \texttt{q4.2} & 9.05 & 11.12 & 0.81 \\
+    \texttt{q4.3} & 9.28 & 6.31 & 1.47 \\
+    \hline
+  \end{tabular}
+\end{table}
+
 \subsection{Калибровка стоимостной модели}
 
 Для калибровки коэффициентов в стоимостных формулах реализованы отдельные
@@ -1203,6 +1263,46 @@ TEST(ParserTest, SelectSingleColumnFromSingleTable) {
 выполнения позволяет сравнить операторы между собой и скорректировать
 коэффициенты модели. Благодаря этому оптимизатор принимает решения на основе
 оценок, соответствующих характеристикам реализованного исполнителя.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{scaling.png}
+\caption{Зависимость времени выполнения физических операторов от размера входных
+   данных.}
+\label{fig:operator-benchmark}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{calibration.png}
+\caption{Сопоставление расчетной стоимости физических операторов с фактическим
+   временем выполнения.}
+\label{fig:cost-model-calibration}
+\end{figure}
+
+Стоимостные формулы физических операторов, полученные по результатам
+калибровки, приведены в таблице~\ref{tbl:cost-model-coefficients}. 
+
+\begin{table}[H]
+  \centering
+  \caption{Стоимостные формулы физических операторов.}
+  \label{tbl:cost-model-coefficients}
+  \small
+  \begin{tabular}{|p{0.40\textwidth}|l|}
+    \hline
+    Физический оператор & Формула стоимости \\
+    \hline
+    Последовательное сканирование & $100\,n$ \\
+    Фильтрация                    & $100\,n_{out}$ \\
+    Проекция                      & $22\,n_{out}$ \\
+    Сортировка                    & $11\,n\bigl(\lfloor\log_2 n\rfloor + 1\bigr)$ \\
+    Агрегация                     & $510\,n$ \\
+    Соединение вложенными циклами & $70\,n_l n_r$ \\
+    Декартово произведение        & $104\,n_l n_r$ \\
+    Хеш-соединение                & $100\,n_b w_b + 35\,n_p + 10\,n_o w_o$ \\
+    \hline
+  \end{tabular}
+\end{table}
 
 \anonsection{ЗАКЛЮЧЕНИЕ}
 

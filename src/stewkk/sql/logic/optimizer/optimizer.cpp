@@ -1,6 +1,7 @@
 #include <stewkk/sql/logic/optimizer/optimizer.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <stdexcept>
 #include <limits>
 
@@ -59,7 +60,19 @@ PropertySet DeriveOutputProps(utils::NotNull<PhysicalExpr*> expr,
   }, expr->root_operator);
 }
 
-int64_t LowerBoundLocalCost(utils::NotNull<LogicalExpr*> expr, CardinalityEstimates& cardinality) {
+int64_t HashJoinCost(utils::NotNull<Group*> build, utils::NotNull<Group*> probe,
+                     utils::NotNull<Group*> output, CardinalityEstimates& cardinality,
+                     SchemaCatalog& schema) {
+  constexpr int64_t kHashBuild = 100;
+  constexpr int64_t kHashProbe = 35;
+  constexpr int64_t kTupleCopy = 10;
+  return kHashBuild * cardinality.GetCardinality(build) * schema.GetWidth(build)
+       + kHashProbe * cardinality.GetCardinality(probe)
+       + kTupleCopy * cardinality.GetCardinality(output) * schema.GetWidth(output);
+}
+
+int64_t LowerBoundLocalCost(utils::NotNull<LogicalExpr*> expr, CardinalityEstimates& cardinality,
+                            SchemaCatalog& schema) {
   return std::visit(utils::Overloaded{
       [&](const logical::Table&) -> int64_t {
           return 100 * cardinality.GetCardinality(expr->group);
@@ -79,12 +92,17 @@ int64_t LowerBoundLocalCost(utils::NotNull<LogicalExpr*> expr, CardinalityEstima
       [&](const logical::Join& j) -> int64_t {
           auto n_l = cardinality.GetCardinality(j.lhs);
           auto n_r = cardinality.GetCardinality(j.rhs);
-          return std::min(69 * (n_l + n_r), 70 * n_l * n_r);
+          return std::min({
+              HashJoinCost(j.lhs, j.rhs, expr->group, cardinality, schema),
+              HashJoinCost(j.rhs, j.lhs, expr->group, cardinality, schema),
+              70 * n_l * n_r,
+          });
       },
   }, expr->root_operator);
 }
 
-int64_t CalcCost(utils::NotNull<PhysicalExpr*> expr, CardinalityEstimates& cardinality) {
+int64_t CalcCost(utils::NotNull<PhysicalExpr*> expr, CardinalityEstimates& cardinality,
+                 SchemaCatalog& schema) {
   return std::visit(utils::Overloaded{
       [&](const physical::SeqScan&) -> int64_t {
           return 100 * cardinality.GetCardinality(expr->group);
@@ -106,7 +124,7 @@ int64_t CalcCost(utils::NotNull<PhysicalExpr*> expr, CardinalityEstimates& cardi
           return 104 * n_l * n_r;
       },
       [&](const physical::HashJoin& j) -> int64_t {
-          return 69 * (cardinality.GetCardinality(j.lhs) + cardinality.GetCardinality(j.rhs));
+          return HashJoinCost(j.lhs, j.rhs, expr->group, cardinality, schema);
       },
       [&](const physical::Sort& s) -> int64_t {
           auto n = cardinality.GetCardinality(s.input);
@@ -189,7 +207,7 @@ int64_t Optimizer<NTransformation, NImplementation>::LowerBoundCost(utils::NotNu
  
   int64_t best = std::numeric_limits<int64_t>::max();
   for (auto expr : group->GetLogicalExprs()) {
-    int64_t local = LowerBoundLocalCost(expr, cardinality_);
+    int64_t local = LowerBoundLocalCost(expr, cardinality_, schema_);
     int64_t children = 0;
     bool overflow = false;
     for (auto child : GetChildren(expr)) {
@@ -300,7 +318,7 @@ void Optimizer<NTransformation, NImplementation>::TryRules(
     tasks_.emplace([this, expr, rule]() {
       Log("Applying implementation rule {} to group {}", rule, expr->group->GetId());
       auto new_expr = rules_applier_.Apply(ImplementationRuleId{rule}, expr, memo_);
-      auto lc = CalcCost(new_expr, cardinality_);
+      auto lc = CalcCost(new_expr, cardinality_, schema_);
       Log("Local cost for group {} expression: {}", new_expr->group->GetId(), lc);
       local_cost_[new_expr.get()] = lc;
     });
@@ -372,7 +390,7 @@ void Optimizer<NTransformation, NImplementation>::OptimizeGroup(
       auto op = enforcer->TryBuild(group, required, schema_);
       if (!op) continue;
       auto enf_expr = group->AddPhysicalExpr(*op, true);
-      auto lc = CalcCost(enf_expr, cardinality_);
+      auto lc = CalcCost(enf_expr, cardinality_, schema_);
       Log("Enforcer local cost for group {}: {}", group->GetId(), lc);
       local_cost_[enf_expr.get()] = lc;
       if (!limit || lc < *limit) {
@@ -474,15 +492,36 @@ void Optimizer<NTransformation, NImplementation>::RunSearch(Limit limit) {
 
 template<size_t NTransformation, size_t NImplementation>
 PhysicalPlanNode Optimizer<NTransformation, NImplementation>::Optimize() {
+  const auto started = std::chrono::steady_clock::now();
   RunSearch(std::numeric_limits<int64_t>::max());
   Log("Optimization complete, building plan");
-  return BuildOptimalPlan(root_->group.get(), global_required_);
+  auto plan = BuildOptimalPlan(root_->group.get(), global_required_);
+  const auto runtime = std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::steady_clock::now() - started);
+  Log("Optimization finished in {} us, chosen plan cost {}", runtime.count(), GetBestCost());
+  return plan;
 }
 
 template<size_t NTransformation, size_t NImplementation>
 PhysicalPlanNode Optimizer<NTransformation, NImplementation>::OptimizeExhaustive() {
+  const auto started = std::chrono::steady_clock::now();
   RunSearch(std::nullopt);
-  return BuildOptimalPlan(root_->group.get(), global_required_);
+  auto plan = BuildOptimalPlan(root_->group.get(), global_required_);
+  const auto runtime = std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::steady_clock::now() - started);
+  Log("Exhaustive optimization finished in {} us, chosen plan cost {}", runtime.count(),
+      GetBestCost());
+  return plan;
+}
+
+template<size_t NTransformation, size_t NImplementation>
+std::int64_t Optimizer<NTransformation, NImplementation>::GetBestCost() const {
+  WinnerKey key{root_->group.get(), global_required_};
+  auto it = winner_.find(key);
+  if (it == winner_.end()) {
+    throw std::runtime_error{"no optimal plan cost"};
+  }
+  return it->second.cost;
 }
 
 template<size_t NTransformation, size_t NImplementation>

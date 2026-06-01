@@ -171,6 +171,17 @@ int64_t SortModelCost(int64_t rows) {
   return 11 * (rows > 1 ? rows * static_cast<int64_t>(std::bit_width(static_cast<uint64_t>(rows))) : rows);
 }
 
+int64_t HashJoinModelCost(int64_t lhs_rows, int64_t rhs_rows) {
+  constexpr int64_t kInputWidth = 3;
+  constexpr int64_t kOutputWidth = 2 * kInputWidth;
+  constexpr int64_t kHashBuild = 100;
+  constexpr int64_t kHashProbe = 35;
+  constexpr int64_t kTupleCopy = 10;
+  return kHashBuild * lhs_rows * kInputWidth
+       + kHashProbe * rhs_rows
+       + kTupleCopy * std::min(lhs_rows, rhs_rows) * kOutputWidth;
+}
+
 int64_t FindSortRowsForTargetCost(int64_t target_cost) {
   int64_t best_rows = 1;
   for (int64_t rows = 2; SortModelCost(rows) <= 2 * target_cost; ++rows) {
@@ -368,8 +379,8 @@ void BM_OperatorHashJoin(benchmark::State& state) {
   for (auto _ : state) {
     benchmark::DoNotOptimize(RunPlan(plan, tables));
   }
-  SetBinaryCounters(state, lhs_rows, rhs_rows, 69 * (lhs_rows + rhs_rows),
-                    169 * (lhs_rows + rhs_rows),
+  SetBinaryCounters(state, lhs_rows, rhs_rows, HashJoinModelCost(lhs_rows, rhs_rows),
+                    HashJoinModelCost(lhs_rows, rhs_rows) + 100 * (lhs_rows + rhs_rows),
                     std::min(lhs_rows, rhs_rows));
 }
 
@@ -397,7 +408,8 @@ void RegisterCostMatched(int64_t target_cost) {
   register_unary("Projection", BM_OperatorProjection, DivideRounded(target_cost, 22));
   register_unary("Sort", BM_OperatorSort, FindSortRowsForTargetCost(target_cost));
   register_unary("Aggregation", BM_OperatorAggregation, DivideRounded(target_cost, 510));
-  register_binary("HashJoin", BM_OperatorHashJoin, DivideRounded(target_cost, 2 * 69));
+  register_binary("HashJoin", BM_OperatorHashJoin,
+                  DivideRounded(target_cost, HashJoinModelCost(1, 1)));
   register_binary("NestedLoopJoin", BM_OperatorNestedLoopJoin,
                   SqrtRounded(DivideRounded(target_cost, 70)));
   register_binary("NestedLoopCrossJoin", BM_OperatorNestedLoopCrossJoin,

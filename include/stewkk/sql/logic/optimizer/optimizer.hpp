@@ -32,6 +32,7 @@ public:
   PhysicalPlanNode Optimize();
   PhysicalPlanNode OptimizeExhaustive();
 
+  std::int64_t GetBestCost() const;
   utils::NotNull<Group*> GetRootGroup() const;
 
 private:

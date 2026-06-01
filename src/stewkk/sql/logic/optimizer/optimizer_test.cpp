@@ -1,5 +1,8 @@
 #include <gmock/gmock.h>
 
+#include <string_view>
+#include <unordered_map>
+
 #include <stewkk/sql/logic/parser/parser.hpp>
 #include <stewkk/sql/logic/optimizer/optimizer.hpp>
 #include <stewkk/sql/logic/optimizer/cardinality.hpp>
@@ -20,6 +23,41 @@ namespace stewkk::sql {
 // FIXME: сделать API в виде DoStep(), которое возвращает какой-то внутренний стейт оптимизатора
 // FIXME: применение правила (по крайней мере трансформации), должно создавать несколько выражений
 
+int64_t EstimateCardinality(
+    std::string_view sql, std::unordered_map<std::string, int64_t> table_sizes) {
+  std::stringstream s{std::string{sql}};
+  Memo memo;
+  auto root = memo.Populate(GetAST(s).value().op);
+  CardinalityEstimates cardinality{std::move(table_sizes)};
+  return cardinality.GetCardinality(root->group);
+}
+
+TEST(CardinalityEstimatesTest, AppliesFilterHeuristics) {
+  ASSERT_THAT(EstimateCardinality("SELECT * FROM users WHERE users.id = 1;", {{"users", 1000}}),
+              Eq(100));
+  ASSERT_THAT(
+      EstimateCardinality("SELECT * FROM users WHERE users.age BETWEEN 18 AND 30;",
+                          {{"users", 1000}}),
+      Eq(250));
+  ASSERT_THAT(
+      EstimateCardinality("SELECT * FROM users WHERE users.id IN (1, 2, 3);",
+                          {{"users", 1000}}),
+      Eq(300));
+}
+
+TEST(SchemaCatalogTest, DerivesJoinWidth) {
+  std::stringstream s{"SELECT * FROM users JOIN orders ON users.id = orders.user_id;"};
+  Memo memo;
+  auto root = memo.Populate(GetAST(s).value().op);
+  SchemaCatalog schema({
+      {"users", {Attribute{"users", "id"}, Attribute{"users", "name"}}},
+      {"orders", {Attribute{"orders", "id"}, Attribute{"orders", "user_id"},
+                  Attribute{"orders", "total"}}},
+  });
+
+  ASSERT_THAT(schema.GetWidth(root->group), Eq(5));
+}
+
 TEST(OptimizerTest, Simple) {
   std::stringstream s{"SELECT * FROM users;"};
   Operator op = GetAST(s).value().op;
@@ -28,6 +66,7 @@ TEST(OptimizerTest, Simple) {
   auto got = optimizer.Optimize();
 
   ASSERT_THAT(SerializeDot(got), Eq("digraph G { rankdir=BT;\n  n0 [label=\"SeqScan\\\\nusers\"]\n}\n"));
+  ASSERT_THAT(optimizer.GetBestCost(), Eq(1000));
 }
 
 TEST(OptimizerTest, JoinCommutativity) {
@@ -62,8 +101,8 @@ TEST(OptimizerTest, MultiwayJoinOCR) {
       Serialize(got),
       Eq("(PhysicalProjection (exprs (attr orders id) (attr customers id) (attr regions id))"
          " (HashJoin Inner (= (attr orders customer_id) (attr customers id))"
-         " (SeqScan orders) (HashJoin Inner (= (attr customers region_id) (attr regions id))"
-         " (SeqScan regions) (SeqScan customers))))"));
+         " (HashJoin Inner (= (attr customers region_id) (attr regions id))"
+         " (SeqScan regions) (SeqScan customers)) (SeqScan orders)))"));
 }
 
 TEST(OptimizerTest, MultiwayJoinROC) {
@@ -85,7 +124,7 @@ TEST(OptimizerTest, MultiwayJoinROC) {
       Eq("(PhysicalProjection (exprs (attr orders id) (attr customers id) (attr regions id))"
          " (HashJoin Inner (= (attr orders customer_id) (attr customers id))"
          " (HashJoin Inner (= (attr customers region_id) (attr regions id))"
-         " (SeqScan customers) (SeqScan regions)) (SeqScan orders)))"));
+         " (SeqScan regions) (SeqScan customers)) (SeqScan orders)))"));
 }
 
 TEST(OptimizerTest, OrderBy) {
@@ -117,6 +156,30 @@ TEST(OptimizerTest, AliasedJoinOptimizesWithAliasQualifiedAttrs) {
   ASSERT_THAT(serialized, HasSubstr("(SeqScan orders o)"));
   ASSERT_THAT(serialized, HasSubstr("(attr c id)"));
   ASSERT_THAT(serialized, HasSubstr("(attr o customer_id)"));
+}
+
+TEST(OptimizerTest, PushesSelectiveFilterIntoHashBuildSide) {
+  std::stringstream s{
+      "SELECT * FROM lineorder AS lo "
+      "JOIN supplier AS s ON lo.suppkey = s.id "
+      "WHERE s.region = 'AMERICA';"};
+  Operator op = GetAST(s).value().op;
+  SchemaCatalog schema({
+      {"lineorder", {Attribute{"lineorder", "suppkey"}, Attribute{"lineorder", "value"}}},
+      {"supplier", {Attribute{"supplier", "id"}, Attribute{"supplier", "region"}}},
+  });
+  Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({
+      {"lineorder", 6000},
+      {"supplier", 100},
+  }), std::move(schema));
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(
+      Serialize(got),
+      Eq("(HashJoin Inner (= (attr lo suppkey) (attr s id))"
+         " (PhysicalFilter (= (attr s region) (str \"AMERICA\")) (SeqScan supplier s))"
+         " (SeqScan lineorder lo))"));
 }
 
 TEST(ReachabilityTest, SeqScanReachable) {

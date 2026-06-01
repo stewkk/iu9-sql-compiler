@@ -1,10 +1,12 @@
 #include <benchmark/benchmark.h>
 
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <string>
@@ -24,6 +26,7 @@
 #include <stewkk/sql/logic/optimizer/properties/property_set.hpp>
 #include <stewkk/sql/logic/optimizer/properties/sort_property.hpp>
 #include <stewkk/sql/logic/optimizer/rules.hpp>
+#include <stewkk/sql/logic/optimizer/schema_catalog.hpp>
 #include <stewkk/sql/models/parser/relational_algebra_ast.hpp>
 #include <stewkk/sql/utils/overloaded.hpp>
 
@@ -120,6 +123,11 @@ private:
 
 enum class PlannerMode { kNaive, kOptimized };
 
+struct PlanStats {
+  std::chrono::nanoseconds optimizer_runtime{};
+  std::optional<int64_t> cost;
+};
+
 template <PlannerMode Mode>
 PhysicalPlanNode MakePlan(const Operator& op) {
   if constexpr (Mode == PlannerMode::kNaive) {
@@ -131,16 +139,30 @@ PhysicalPlanNode MakePlan(const Operator& op) {
 }
 
 template <PlannerMode Mode>
-PhysicalPlanNode MakePlan(const ParsedQuery& query, CardinalityEstimates cardinality) {
+PhysicalPlanNode MakePlan(const ParsedQuery& query, CardinalityEstimates cardinality,
+                          SchemaCatalog schema, PlanStats* stats = nullptr) {
   if constexpr (Mode == PlannerMode::kNaive) {
-    return ToPhysicalPlan(query.op);
+    auto plan = ToPhysicalPlan(query.op);
+    if (query.required_order) {
+      return PhysicalSort{
+          .source = std::make_shared<PhysicalPlanNode>(std::move(plan)),
+          .keys = *query.required_order,
+      };
+    }
+    return plan;
   } else {
     PropertySet required = query.required_order
         ? PropertySet{SortProperty{*query.required_order}}
         : PropertySet::Any();
-    Optimizer optimizer(query.op, MakeMainRules(), std::move(cardinality), {},
+    const auto started = std::chrono::steady_clock::now();
+    Optimizer optimizer(query.op, MakeMainRules(), std::move(cardinality), std::move(schema),
                         std::move(required));
-    return optimizer.Optimize();
+    auto plan = optimizer.Optimize();
+    if (stats) {
+      stats->optimizer_runtime = std::chrono::steady_clock::now() - started;
+      stats->cost = optimizer.GetBestCost();
+    }
+    return plan;
   }
 }
 
@@ -293,8 +315,10 @@ void BM_SSB(benchmark::State& state, std::string query, std::filesystem::path da
   }
 
   PhysicalPlanNode plan;
+  PlanStats plan_stats;
   try {
-    plan = MakePlan<Mode>(parsed.value(), LoadCardinalityFromCsvDir(data_dir));
+    plan = MakePlan<Mode>(parsed.value(), LoadCardinalityFromCsvDir(data_dir),
+                          LoadSchemaFromCsvDir(data_dir), &plan_stats);
   } catch (const std::exception& e) {
     state.SkipWithError(e.what());
     return;
@@ -311,13 +335,26 @@ void BM_SSB(benchmark::State& state, std::string query, std::filesystem::path da
     return fut.get();
   };
 
+  std::chrono::nanoseconds execution_runtime{};
   try {
     benchmark::DoNotOptimize(run_once());
     for (auto _ : state) {
+      const auto started = std::chrono::steady_clock::now();
       benchmark::DoNotOptimize(run_once());
+      execution_runtime += std::chrono::steady_clock::now() - started;
     }
   } catch (const std::exception& e) {
     state.SkipWithError(e.what());
+    return;
+  }
+
+  using Microseconds = std::chrono::duration<double, std::micro>;
+  state.counters["execution_us"] = benchmark::Counter{
+      Microseconds{execution_runtime}.count(), benchmark::Counter::kAvgIterations};
+  state.counters["includes_order_by"] = parsed.value().required_order.has_value() ? 1.0 : 0.0;
+  if (plan_stats.cost) {
+    state.counters["optimizer_us"] = Microseconds{plan_stats.optimizer_runtime}.count();
+    state.counters["plan_cost"] = static_cast<double>(*plan_stats.cost);
   }
 }
 

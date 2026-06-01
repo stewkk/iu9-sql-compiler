@@ -1,6 +1,10 @@
 #include <stewkk/sql/logic/optimizer/schema_catalog.hpp>
 
+#include <algorithm>
+#include <fstream>
 #include <format>
+#include <ranges>
+#include <regex>
 
 #include <stewkk/sql/utils/overloaded.hpp>
 
@@ -16,6 +20,11 @@ std::optional<Schema> SchemaCatalog::GetSchema(utils::NotNull<Group*> group) {
   auto schema = Derive(group->GetLogicalExprs().front()->root_operator);
   cache_[group.get()] = schema;
   return schema;
+}
+
+std::int64_t SchemaCatalog::GetWidth(utils::NotNull<Group*> group) {
+  auto schema = GetSchema(group);
+  return schema ? std::max<std::int64_t>(1, schema->size()) : 1;
 }
 
 // TODO: refactor to remove duplicate logic: both executor and optimizer derive
@@ -74,6 +83,34 @@ std::optional<Schema> SchemaCatalog::Derive(const LogicalOperator& op) {
           return l;
       },
   }, op);
+}
+
+SchemaCatalog LoadSchemaFromCsvDir(const std::filesystem::path& dir) {
+  std::unordered_map<std::string, Schema> tables;
+  if (!std::filesystem::is_directory(dir)) {
+    return SchemaCatalog{};
+  }
+
+  static const std::regex kBench{R"(_\d+$)"};
+  for (const auto& entry : std::filesystem::directory_iterator{dir}) {
+    if (entry.path().extension() != ".csv") continue;
+    auto stem = entry.path().stem().string();
+    if (std::regex_search(stem, kBench)) continue;
+
+    std::ifstream in{entry.path()};
+    std::string header;
+    if (!std::getline(in, header)) continue;
+
+    Schema schema;
+    for (const auto& part : header | std::views::split(',')) {
+      std::string token{part.begin(), part.end()};
+      auto colon = token.find(':');
+      if (colon == std::string::npos) continue;
+      schema.push_back(Attribute{stem, token.substr(0, colon)});
+    }
+    tables.emplace(std::move(stem), std::move(schema));
+  }
+  return SchemaCatalog{std::move(tables)};
 }
 
 }  // namespace stewkk::sql
