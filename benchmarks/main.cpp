@@ -101,7 +101,7 @@ CardinalityEstimates LoadCardinalityFromCsvDir(const std::filesystem::path& dir)
     if (entry.path().extension() != ".csv") continue;
     std::ifstream in{entry.path()};
     std::string line;
-    int64_t rows = -1; // header
+    int64_t rows = -1;
     while (std::getline(in, line)) ++rows;
     counts.emplace(entry.path().stem().string(), std::max<int64_t>(0, rows));
   }
@@ -148,10 +148,6 @@ static constexpr char kComplex4000[]{"SELECT departments_4000.id*2, employees_20
 static constexpr char kComplex8000[]{"SELECT departments_8000.id*2, employees_200.id+1 FROM employees_200 RIGHT JOIN departments_8000 ON employees_200.department_id = departments_8000.id AND departments_8000.id > 3 AND departments_8000.id*2*2/2/2*2 < 30;"};
 static constexpr char kComplex16000[]{"SELECT departments_16000.id*2, employees_200.id+1 FROM employees_200 RIGHT JOIN departments_16000 ON employees_200.department_id = departments_16000.id AND departments_16000.id > 3 AND departments_16000.id*2*2/2/2*2 < 30;"};
 
-// 3-way joins on skewed tables (regions=10, customers=500, orders=5000).
-// Naive textual order (orders ⋈ customers) ⋈ regions builds a ~2.5M-tuple
-// intermediate. JoinAssociativity + JoinCommutativity let the optimizer pick a
-// shape with much smaller intermediates.
 static constexpr char kMultiwayOCR[]{
     "SELECT orders.id, customers.id, regions.id FROM orders "
     "JOIN customers ON orders.customer_id = customers.id "

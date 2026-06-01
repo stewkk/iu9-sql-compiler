@@ -101,8 +101,6 @@ std::string SerializeExpr(const Expression& expr) {
                                SerializeExpr(*e.lhs), SerializeExpr(*e.rhs));
         }
         std::string operator()(const Attribute& a) const {
-            // Synthetic aggregate-output attributes have an empty table; emit
-            // "-" so the field stays a parseable atom on the deserialize side.
             return std::format("(attr {} {})", a.table.empty() ? "-" : a.table, a.name);
         }
         std::string operator()(IntConst n) const {

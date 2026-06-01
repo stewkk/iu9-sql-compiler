@@ -28,10 +28,6 @@ std::shared_ptr<Expression> Share(Expression e) {
   return std::make_shared<Expression>(std::move(e));
 }
 
-// Expand a single InExpression into a left-associative chain. IN folds with OR
-// over `lhs = value_i`; NOT IN folds with AND over `lhs != value_i`. The
-// associativity and operand order match converter.py's OR/AND fold so the
-// reachability target plan compares equal.
 Expression ExpandIn(const InExpression& in);
 
 Expression Expand(const Expression& e) {

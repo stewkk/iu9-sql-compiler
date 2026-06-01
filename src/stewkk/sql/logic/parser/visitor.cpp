@@ -390,10 +390,6 @@ Expression MakeUnary(UnaryOp op, Expression child) {
   return UnaryExpression{op, std::make_shared<Expression>(std::move(child))};
 }
 
-// Returns the table_ref's atom (no joins) and an iterator pointing to its first
-// post-atom child. The grammar's `(... join ...)*` tail is greedy on the rhs
-// table_ref, so the caller is responsible for flattening that chain instead of
-// visiting it whole.
 std::pair<Operator, ChildIt> ExtractAtom(Visitor* v, TableRefCtx* ctx) {
   if (ctx->xmltable()) {
     throw Error{ErrorType::kQueryNotSupported, "xmltable is not supported"};
@@ -440,8 +436,6 @@ std::pair<Operator, ChildIt> ExtractAtom(Visitor* v, TableRefCtx* ctx) {
   return {std::move(res), it};
 }
 
-// Walks the join tail of `ctx` starting at `it`, descending into each rhs
-// table_ref so that nested greedy joins become left-associative.
 Operator ContinueChain(Visitor* v, Operator lhs, TableRefCtx* ctx, ChildIt it) {
   const auto end = ctx->children.cend();
   while (it != end) {
@@ -817,7 +811,6 @@ std::any Visitor::visitA_expr_qual_op(codegen::PostgreSQLParser::A_expr_qual_opC
   if (exprs.size() == 1) {
     return visit(exprs.front());
   }
-  // Postgres allows != as an alias for <>, which the lexer produces as Operator (qual_op).
   if (exprs.size() == 2 && ctx->qual_op(0)->getText() == "!=") {
     auto lhs = std::any_cast<Expression>(visit(exprs[0]));
     auto rhs = std::any_cast<Expression>(visit(exprs[1]));

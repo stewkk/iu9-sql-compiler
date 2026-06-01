@@ -19,11 +19,6 @@ struct MatchResult {
 
 MatchResult IsReachable(utils::NotNull<Group*> root, const PhysicalPlanNode& target);
 
-// Runs an exhaustive search over `sql` and reports whether `target` is among
-// the physical alternatives the optimizer enumerates. The query's ORDER BY (if
-// any) is propagated as a required sort property so the search also generates
-// the Sort enforcers needed to reach an ordered plan; `schema` lets those
-// enforcers validate that the sort keys exist on the group they sit above.
 MatchResult IsPlanReachable(std::istream& sql, const PhysicalPlanNode& target,
                              CardinalityEstimates cardinality = {},
                              SchemaCatalog schema = {});

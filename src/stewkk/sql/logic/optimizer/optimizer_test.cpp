@@ -221,8 +221,8 @@ TEST(ReachabilityTest, InExpandsToOrChain) {
   ASSERT_THAT(result.reachable, IsTrue());
 }
 
-// An ORDER BY query becomes a required sort property, so the search generates a
-// Sort enforcer on the root projection group and the ordered plan is reachable.
+
+
 TEST(ReachabilityTest, OrderByReachableViaSortEnforcer) {
   std::stringstream s{"SELECT users.id FROM users ORDER BY users.id;"};
   PhysicalSort target{
@@ -235,8 +235,8 @@ TEST(ReachabilityTest, OrderByReachableViaSortEnforcer) {
   ASSERT_THAT(result.reachable, IsTrue());
 }
 
-// The enforcer is generated for the ORDER BY direction the query asked for, so
-// a plan whose Sort runs the other way is not reachable.
+
+
 TEST(ReachabilityTest, OrderByWrongDirectionNotReachable) {
   std::stringstream s{"SELECT users.id FROM users ORDER BY users.id ASC;"};
   PhysicalSort target{
@@ -249,8 +249,8 @@ TEST(ReachabilityTest, OrderByWrongDirectionNotReachable) {
   ASSERT_THAT(result.reachable, IsFalse());
 }
 
-// Without an ORDER BY no required sort is propagated, so no Sort enforcer is
-// ever built and a plan that carries a Sort cannot be reached.
+
+
 TEST(ReachabilityTest, SortNotReachableWithoutOrderBy) {
   std::stringstream s{"SELECT users.id FROM users;"};
   PhysicalSort target{

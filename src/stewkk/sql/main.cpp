@@ -88,11 +88,6 @@ Args ParseArgs(int argc, char** argv) {
   return args;
 }
 
-// Build a SchemaCatalog by reading the header of every <table>.csv in the
-// directory. Mirrors the conventions used by the query generator and
-// CsvDirSequentialScanner: header is "col:type,col:type,...", and files whose
-// stem ends in _<digits> are benchmark-only siblings of a base table and share
-// its schema, so they are skipped.
 SchemaCatalog LoadSchema(const std::string& dir) {
   std::unordered_map<std::string, Schema> tables;
   static const std::regex kBench{R"(_\d+$)"};
@@ -176,11 +171,6 @@ std::string TypeName(Type t) {
   return "?";
 }
 
-// Canonical text format the fuzzer compares against MS SQL Server output.
-// First line: tab-separated "table.col:type" header (or just ":type" when the
-// attribute has no name, e.g. an expression in the projection).
-// Following lines: one row each, tab-separated values, "NULL" for nulls.
-// Rows are sorted lexicographically unless the query had ORDER BY.
 void PrintRelation(const Relation& rel, bool preserve_order) {
   std::ostringstream header;
   for (size_t i = 0; i < rel.attributes.size(); ++i) {
@@ -208,10 +198,6 @@ void PrintRelation(const Relation& rel, bool preserve_order) {
   for (const auto& r : rows) std::cout << r << '\n';
 }
 
-// Coroutine declared as a free function (not a captureless lambda) so the
-// awaitable holds its parameters by reference into main's stack, sidestepping
-// the lifetime trap of an IIFE'd `[&]` lambda whose closure dies before the
-// coroutine frame.
 boost::asio::awaitable<Result<Relation>> RunQuery(const std::string& data_dir,
                                                   const PhysicalPlanNode& plan) {
   CsvDirSequentialScanner seq_scan{data_dir};

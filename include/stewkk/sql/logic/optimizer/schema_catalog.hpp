@@ -17,7 +17,7 @@ class SchemaCatalog {
 public:
   SchemaCatalog(std::unordered_map<std::string, Schema> tables = {});
 
-  // Returns nullopt when any table in the subtree is unknown to the catalog.
+ 
   std::optional<Schema> GetSchema(utils::NotNull<Group*> group);
 
 private:

@@ -43,10 +43,6 @@ private:
 
   void OptimizeInputs(utils::NotNull<PhysicalExpr*> expr, PropertySet required, std::vector<PropertySet> child_delivered, int64_t accum, Limit limit, size_t child_index = 0);
 
-  // Property-independent admissible lower bound on the cheapest physical plan
-  // for this group: min over logical alternatives of (best-case local cost +
-  // sum of children's lower bounds). Cached; safe to memoize once Phase 1
-  // exploration has populated the group's logical alternatives.
   std::int64_t LowerBoundCost(utils::NotNull<Group*> group);
 
   void ApplyRule(TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr, Limit limit);

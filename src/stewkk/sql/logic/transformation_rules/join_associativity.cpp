@@ -17,10 +17,6 @@ bool JoinAssociativity::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
   return false;
 }
 
-// (A ⋈_p1 B) ⋈_p2 C  →  A ⋈_pa (B ⋈_pbc C)
-// where pbc collects every conjunct of (p1 ∧ p2) whose attributes lie inside
-// B ∪ C, and pa keeps the rest. Avoids the degenerate ⋈_TRUE inner that drops
-// otherwise-pushable predicates onto the outer join.
 LogicalOperator JoinAssociativity::ApplyImpl(utils::NotNull<LogicalExpr*> expr, Memo& memo) {
   const auto& outer = std::get<logical::Join>(expr->root_operator);
   for (auto inner_expr : outer.lhs->GetLogicalExprs()) {

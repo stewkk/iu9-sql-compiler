@@ -122,7 +122,7 @@ Type GetExpressionType(const Expression& expr, const AttributesInfo& available_a
     }
     Type operator()(const Literal& literal) const {
       // NOTE: we are using switch because compiler will remind about adding
-      // type of new literal here
+     
       switch (literal) {
         case Literal::kNull:
           return Type::kBool;
@@ -589,9 +589,9 @@ boost::asio::awaitable<Result<Relation>> Executor<ExpressionExecutor>::Execute(c
   auto [attr_chan, tuples_chan] = co_await GetChannels();
   auto task = SpawnExecutor(exec, op, attr_chan, tuples_chan);
 
-  // If the child throws, its scope_fail closes both channels, which wakes
-  // our async_receive with channel_closed. We then await the task to surface
-  // the child's real exception instead of the channel_closed wrapper.
+ 
+ 
+ 
   std::exception_ptr eptr;
   AttributesInfo attrs;
   Tuples result;
@@ -635,7 +635,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
     }
     boost::asio::awaitable<void> operator()(const PhysicalProjection& projection) {
       // NOTE: We are using multiset relational algebra projection (i.e. not
-      // eleminating duplicate tuples)
+     
       co_await executor.ExecuteProjection(projection, attr_chan, tuples_chan);
       co_return;
     }
@@ -1079,11 +1079,11 @@ size_t FindAttrIndex(const AttributesInfo& attrs, const Attribute& a) {
 
 } // namespace
 
-// Inner equi-join: build a hash table on lhs.key, then probe with rhs.
-// ImplementHashJoin gates applicability to `attr = attr` quals on Inner joins,
-// so the only shapes that reach here are: lhs_attr == rhs_attr or rhs_attr ==
-// lhs_attr. We resolve which side owns each attribute via the lhs attribute
-// stream; the remaining one must belong to rhs.
+
+
+
+
+
 template <typename ExpressionExecutor>
 boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashJoin(
     const HashJoin& join, AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan) {
@@ -1112,7 +1112,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashJoin(
   auto lhs_attrs = co_await lhs_attrs_chan.async_receive(boost::asio::use_awaitable);
   auto rhs_attrs = co_await rhs_attrs_chan.async_receive(boost::asio::use_awaitable);
 
-  // Pick the (lhs_key, rhs_key) pair regardless of which side the qual wrote first.
+ 
   auto lhs_has = [&](const Attribute& attr) {
     return std::any_of(lhs_attrs.begin(), lhs_attrs.end(), [&](const AttributeInfo& ai) {
       return ai.table == attr.table && ai.name == attr.name;
@@ -1135,8 +1135,8 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashJoin(
                                 boost::asio::use_awaitable);
   attr_chan.close();
 
-  // Build phase: collect all lhs tuples into a hash multimap keyed by lhs.key.
-  // NULL keys never match (SQL = on NULL is unknown), so drop them.
+ 
+ 
   std::unordered_multimap<int64_t, Tuple> build;
   for (;;) {
     auto buf = co_await ReceiveTuples(lhs_tuples_chan);
@@ -1150,7 +1150,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashJoin(
   }
   Log("HashJoin build phase done; {} entries", build.size());
 
-  // Probe phase: stream rhs, lookup matches, emit joined tuples in kBufSize chunks.
+ 
   Tuples out_buf;
   out_buf.reserve(kBufSize);
   for (;;) {
@@ -1194,7 +1194,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashAggregate(
 
   auto in_attrs = co_await in_attrs_chan.async_receive(boost::asio::use_awaitable);
 
-  // Build output AttributesInfo: group_by cols then one slot per aggregate.
+ 
   AttributesInfo out_attrs;
   for (const auto& expr : agg.group_by) {
     if (const auto* attr = std::get_if<Attribute>(&expr)) {
@@ -1217,12 +1217,12 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashAggregate(
                                    boost::asio::use_awaitable);
   out_attr_chan.close();
 
-  // Per-group state: vector of int64_t accumulators, one per aggregate.
-  // For SUM: running total (null if all inputs null).
-  // For COUNT: running count of non-null inputs (or all rows for COUNT(*)).
+ 
+ 
+ 
   struct GroupState {
     std::vector<int64_t> accumulators;
-    std::vector<bool> any_non_null; // for SUM null tracking
+    std::vector<bool> any_non_null;
   };
   struct TupleKeyHash {
     size_t operator()(const std::vector<Value>& key) const {
@@ -1236,7 +1236,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashAggregate(
   };
   std::unordered_map<std::vector<Value>, GroupState, TupleKeyHash> groups;
 
-  // Scalar evaluator for group-by keys and aggregate arguments.
+ 
   auto do_scalar = [&](const Expression& expr, const Tuple& tuple) -> Value {
     return CalcExpression(tuple, in_attrs, expr);
   };
@@ -1270,7 +1270,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashAggregate(
             auto v = do_scalar(*agg_expr.argument, tuple);
             if (!v.is_null) state.accumulators[i]++;
           }
-        } else { // SUM
+        } else {
           auto v = do_scalar(*agg_expr.argument, tuple);
           if (!v.is_null) {
             state.accumulators[i] += v.value.int_value;
@@ -1281,7 +1281,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashAggregate(
     }
   }
 
-  // For scalar aggregate over empty input, emit one row with COUNT=0 / SUM=NULL.
+ 
   if (scalar_agg && groups.empty()) {
     groups.emplace(std::vector<Value>{}, init_state());
   }
@@ -1293,7 +1293,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashAggregate(
     for (size_t i = 0; i < agg.aggregates.size(); ++i) {
       const auto& agg_expr = std::get<AggregateExpression>(agg.aggregates[i]);
       if (agg_expr.function == AggregateFunction::kSum && !state.any_non_null[i]) {
-        tuple.push_back(Value{true}); // NULL
+        tuple.push_back(Value{true});
       } else {
         tuple.push_back(Value{false, {.int_value = state.accumulators[i]}});
       }

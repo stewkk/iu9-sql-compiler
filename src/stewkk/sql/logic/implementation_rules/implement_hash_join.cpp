@@ -4,10 +4,6 @@ namespace stewkk::sql {
 
 namespace {
 
-// HashJoin currently handles only `attr_l = attr_r` quals on Inner joins.
-// Outer-join semantics need a "right-side matched" bitmap during probe; not
-// implemented yet. Composite/expression keys would require key extraction
-// from arbitrary Expression nodes, also not done.
 bool IsSimpleEquiJoin(const Expression& qual) {
     const auto* bin = std::get_if<BinaryExpression>(&qual);
     if (!bin || bin->binop != BinaryOp::kEq) return false;

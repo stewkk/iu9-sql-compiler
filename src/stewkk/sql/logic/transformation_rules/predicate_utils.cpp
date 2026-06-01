@@ -67,8 +67,6 @@ std::unordered_set<std::string> ExprTables(const Expression& e) {
 
 namespace {
 
-// Equivalent logical exprs in a memo group all expose the same output tables,
-// so one expression suffices. Recurses across child groups via their fronts.
 void CollectGroupTables(utils::NotNull<Group*> g, std::unordered_set<std::string>& out,
                         std::unordered_set<Group*>& seen) {
   if (!seen.insert(g.get()).second) return;

@@ -24,7 +24,7 @@ static const std::vector<std::unique_ptr<Enforcer>> kEnforcers = [] {
   return v;
 }();
 
-// Top-down: given `required` of this expr, what must child `child_index` deliver?
+
 PropertySet RequiredInputProps(utils::NotNull<PhysicalExpr*> expr,
                                       PropertySet required, size_t child_index) {
   return std::visit(utils::Overloaded{
@@ -38,9 +38,6 @@ PropertySet RequiredInputProps(utils::NotNull<PhysicalExpr*> expr,
           return child_index == 0 ? required : PropertySet::Any();
       },
       [&](const physical::HashJoin&) -> PropertySet {
-          // HashJoin reorders output (hash-partitioned scan of build side, then
-          // probe-driven emit). It does not preserve any input sort order, so
-          // never ask children to satisfy `required`.
           return PropertySet::Any();
       },
       [&](const physical::Sort&) { return PropertySet::Any(); },
@@ -48,9 +45,6 @@ PropertySet RequiredInputProps(utils::NotNull<PhysicalExpr*> expr,
   }, expr->root_operator);
 }
 
-// Bottom-up: given what children delivered, what does this expr deliver?
-// Sort property is schema-blind — operators that need column access (sort
-// enforcer placement, merge join applicability) check the schema separately.
 PropertySet DeriveOutputProps(utils::NotNull<PhysicalExpr*> expr,
                                      const std::vector<PropertySet>& child_delivered) {
   return std::visit(utils::Overloaded{
@@ -65,10 +59,6 @@ PropertySet DeriveOutputProps(utils::NotNull<PhysicalExpr*> expr,
   }, expr->root_operator);
 }
 
-// Best-case local cost achievable by any physical impl of this logical
-// operator, ignoring required physical properties. Used to compute group lower
-// bounds for B&B pruning. Must remain ≤ every CalcCost over physical impls of
-// the same logical alternative — update when adding cheaper physical impls.
 int64_t LowerBoundLocalCost(utils::NotNull<LogicalExpr*> expr, CardinalityEstimates& cardinality) {
   return std::visit(utils::Overloaded{
       [&](const logical::Table&) -> int64_t {
@@ -87,9 +77,6 @@ int64_t LowerBoundLocalCost(utils::NotNull<LogicalExpr*> expr, CardinalityEstima
           return 104 * cardinality.GetCardinality(j.lhs) * cardinality.GetCardinality(j.rhs);
       },
       [&](const logical::Join& j) -> int64_t {
-          // Must stay ≤ every physical impl. NLJ ~ n_l*n_r, HJ ~ n_l+n_r
-          // (equi only). When either side has 1 tuple, NLJ can beat HJ, so
-          // take the min so the bound is safe for both alternatives.
           auto n_l = cardinality.GetCardinality(j.lhs);
           auto n_r = cardinality.GetCardinality(j.rhs);
           return std::min(69 * (n_l + n_r), 70 * n_l * n_r);
@@ -199,7 +186,7 @@ int64_t Optimizer<NTransformation, NImplementation>::LowerBoundCost(utils::NotNu
   if (auto it = lower_bounds_.find(group.get()); it != lower_bounds_.end()) {
     return it->second;
   }
-  // Memo groups form a DAG (no cycles), so recursion terminates.
+ 
   int64_t best = std::numeric_limits<int64_t>::max();
   for (auto expr : group->GetLogicalExprs()) {
     int64_t local = LowerBoundLocalCost(expr, cardinality_);
@@ -232,8 +219,8 @@ template<size_t NTransformation, size_t NImplementation>
 void Optimizer<NTransformation, NImplementation>::OptimizeInputs(
     utils::NotNull<PhysicalExpr*> expr, PropertySet required,
     std::vector<PropertySet> child_delivered, int64_t accum, Limit limit, size_t child_index) {
-  // accum = local_cost(expr) + cost of children processed so far.
-  // child_delivered[i] = what child i actually delivered (filled as we go).
+ 
+ 
   WinnerKey self_key{expr->group.get(), required};
   if (auto it = winner_.find(self_key); it != winner_.end()) {
     limit = limit ? Limit{std::min(*limit, it->second.cost)} : Limit{it->second.cost};
@@ -282,9 +269,9 @@ void Optimizer<NTransformation, NImplementation>::ApplyRule(
   Log("Applying transformation rule {} to group {}", rule.value, expr->group->GetId());
   auto new_expr = rules_applier_.Apply(rule, expr, memo_);
   tasks_.emplace([this, new_expr, limit]() { ExploreExpression(new_expr, limit); });
-  // A new logical alternative in new_expr->group may unlock parent-side rules
-  // whose patterns inspect child operators. Re-try rules on every parent;
-  // already-applied (expr, rule) pairs are no-ops thanks to RulesApplier gating.
+ 
+ 
+ 
   if (auto it = group_parents_.find(new_expr->group.get()); it != group_parents_.end()) {
     for (auto* parent : it->second) {
       tasks_.emplace([this, parent, limit]() {
@@ -367,9 +354,9 @@ void Optimizer<NTransformation, NImplementation>::OptimizeGroup(
     return;
   }
 
-  // Try every non-enforcer phys expr under `required`. Whether it actually
-  // serves `required` is decided at the bottom of OptimizeInputs once children
-  // have resolved and DeriveOutputProps can compute the true delivered.
+ 
+ 
+ 
   for (auto phys_expr : group->GetPhysicalExprs()) {
     if (phys_expr->is_enforcer) continue;
     auto lc = local_cost_[phys_expr.get()];
@@ -384,7 +371,7 @@ void Optimizer<NTransformation, NImplementation>::OptimizeGroup(
     for (const auto& enforcer : kEnforcers) {
       auto op = enforcer->TryBuild(group, required, schema_);
       if (!op) continue;
-      auto enf_expr = group->AddPhysicalExpr(*op, /*is_enforcer=*/true);
+      auto enf_expr = group->AddPhysicalExpr(*op, true);
       auto lc = CalcCost(enf_expr, cardinality_);
       Log("Enforcer local cost for group {}: {}", group->GetId(), lc);
       local_cost_[enf_expr.get()] = lc;

@@ -8,8 +8,8 @@ namespace stewkk::sql {
 
 namespace {
 
-// System R: each `attr = attr` conjunct contributes 1/max(lhs_card, rhs_card);
-// AND multiplies; anything else (including TRUE) contributes 1.0.
+
+
 double JoinSelectivity(const Expression& qual, int64_t lhs_card, int64_t rhs_card) {
   const auto* b = std::get_if<BinaryExpression>(&qual);
   if (!b) return 1.0;

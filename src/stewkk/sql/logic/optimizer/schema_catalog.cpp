@@ -35,8 +35,6 @@ std::optional<Schema> SchemaCatalog::Derive(const LogicalOperator& op) {
           return GetSchema(f.source);
       },
       [](const logical::Projection& p) -> std::optional<Schema> {
-          // Aliased projection outputs can be referenced by unqualified ORDER
-          // BY names. Unaliased computed expressions are not addressable.
           Schema out;
           for (size_t i = 0; i < p.expressions.size(); ++i) {
               if (i < p.aliases.size() && p.aliases[i]) {

@@ -738,9 +738,9 @@ TEST(ExecutorTest, GroupByCountStar) {
       }(),
       [](std::exception_ptr p, Result<Relation> got) {
         if (p) std::rethrow_exception(p);
-        // 11 distinct age values in users.csv
+       
         ASSERT_THAT(got.value().tuples.size(), Eq(11u));
-        // Sum of counts must equal total rows (17)
+       
         int64_t total = 0;
         for (const auto& t : got.value().tuples) {
           total += t[1].value.int_value;
