@@ -32,7 +32,7 @@ class DiskFileWriter {
     private:
         fs::path path_;
         std::ofstream f_;
-        std::size_t tuple_size_;
+        std::size_t tuple_size_ = 0;
 };
 
 }  // namespace stewkk::sql

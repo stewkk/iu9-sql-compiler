@@ -108,6 +108,16 @@ CardinalityEstimates LoadCardinalityFromCsvDir(const std::filesystem::path& dir)
   return CardinalityEstimates{std::move(counts)};
 }
 
+class ScopedClogSuppression {
+public:
+  ScopedClogSuppression() : nullstream_("/dev/null"), previous_(std::clog.rdbuf(nullstream_.rdbuf())) {}
+  ~ScopedClogSuppression() { std::clog.rdbuf(previous_); }
+
+private:
+  std::ofstream nullstream_;
+  std::streambuf* previous_;
+};
+
 enum class PlannerMode { kNaive, kOptimized };
 
 template <PlannerMode Mode>
@@ -159,8 +169,7 @@ static constexpr char kMultiwayROC[]{
 
 template <typename ExprExecutor, const char* Query, PlannerMode Mode>
 void BM_SQL(benchmark::State& state) {
-  std::ofstream nullstream("/dev/null");
-  std::clog.rdbuf(nullstream.rdbuf());
+  ScopedClogSuppression suppress_clog;
   boost::asio::io_context ctx;
   boost::asio::co_spawn(
       ctx,
@@ -205,8 +214,7 @@ REGISTER_BM_SQL(kMultiwayROC)
 
 template <typename ExprExecutor, const char* Query, PlannerMode Mode>
 void BM_SQL_Multithreaded(benchmark::State& state) {
-  std::ofstream nullstream("/dev/null");
-  std::clog.rdbuf(nullstream.rdbuf());
+  ScopedClogSuppression suppress_clog;
   boost::asio::io_context ctx;
   boost::asio::co_spawn(
       ctx,
@@ -269,8 +277,7 @@ std::filesystem::path SsbDataDir() {
 
 template <typename ExprExecutor, PlannerMode Mode>
 void BM_SSB(benchmark::State& state, std::string query, std::filesystem::path data_dir) {
-  std::ofstream nullstream("/dev/null");
-  std::clog.rdbuf(nullstream.rdbuf());
+  ScopedClogSuppression suppress_clog;
 
   if (!std::filesystem::is_directory(data_dir)) {
     state.SkipWithError(("SSB data directory not found: " + data_dir.string()

@@ -18,6 +18,14 @@
 
 namespace stewkk::sql {
 
+namespace {
+
+Value MakeBooleanValue(bool value) {
+  return Value{false, static_cast<int64_t>(value)};
+}
+
+}  // namespace
+
 template <typename Op, typename Ret>
   requires std::invocable<Op, int64_t, int64_t>
            && std::same_as<std::invoke_result_t<Op, int64_t, int64_t>, Ret>
@@ -35,7 +43,7 @@ Value ApplyBooleanOperator(Value lhs, Value rhs) {
   if (lhs.is_null || rhs.is_null) {
     return Value{true};
   }
-  return Value{false, {.bool_value = Op{}(lhs.value.bool_value, rhs.value.bool_value)}};
+  return MakeBooleanValue(Op{}(lhs.value.bool_value, rhs.value.bool_value));
 }
 
 struct IntPow {
@@ -260,17 +268,17 @@ Value CalcExpression(const Tuple& source, const AttributesInfo& source_attrs, co
       }
       switch (op) {
         case BinaryOp::kGt:
-          return Value{false, {.bool_value = cmp > 0}};
+          return MakeBooleanValue(cmp > 0);
         case BinaryOp::kLt:
-          return Value{false, {.bool_value = cmp < 0}};
+          return MakeBooleanValue(cmp < 0);
         case BinaryOp::kLe:
-          return Value{false, {.bool_value = cmp <= 0}};
+          return MakeBooleanValue(cmp <= 0);
         case BinaryOp::kGe:
-          return Value{false, {.bool_value = cmp >= 0}};
+          return MakeBooleanValue(cmp >= 0);
         case BinaryOp::kNotEq:
-          return Value{false, {.bool_value = cmp != 0}};
+          return MakeBooleanValue(cmp != 0);
         case BinaryOp::kEq:
-          return Value{false, {.bool_value = cmp == 0}};
+          return MakeBooleanValue(cmp == 0);
         default:
           std::unreachable();
       }
@@ -291,16 +299,16 @@ Value CalcExpression(const Tuple& source, const AttributesInfo& source_attrs, co
         case BinaryOp::kOr: {
           bool lhs_true = !lhs.is_null && lhs.value.bool_value;
           bool rhs_true = !rhs.is_null && rhs.value.bool_value;
-          if (lhs_true || rhs_true) return Value{false, {.bool_value = true}};
+          if (lhs_true || rhs_true) return MakeBooleanValue(true);
           if (lhs.is_null || rhs.is_null) return Value{true};
-          return Value{false, {.bool_value = false}};
+          return MakeBooleanValue(false);
         }
         case BinaryOp::kAnd: {
           bool lhs_false = !lhs.is_null && !lhs.value.bool_value;
           bool rhs_false = !rhs.is_null && !rhs.value.bool_value;
-          if (lhs_false || rhs_false) return Value{false, {.bool_value = false}};
+          if (lhs_false || rhs_false) return MakeBooleanValue(false);
           if (lhs.is_null || rhs.is_null) return Value{true};
-          return Value{false, {.bool_value = true}};
+          return MakeBooleanValue(true);
         }
         case BinaryOp::kPlus:
           return ApplyIntegersOperator<std::plus<int64_t>, int64_t>(std::move(lhs), std::move(rhs));
@@ -325,16 +333,16 @@ Value CalcExpression(const Tuple& source, const AttributesInfo& source_attrs, co
             return Value{true};
           }
           if (child.value.bool_value) {
-            return Value{false, {.bool_value = false}};
+            return MakeBooleanValue(false);
           }
-          return Value{false, {.bool_value = true}};
+          return MakeBooleanValue(true);
         case UnaryOp::kMinus:
           if (child.is_null) {
             return Value{true};
           }
           return Value{false, -child.value.int_value};
         case UnaryOp::kIsNull:
-          return Value{false, {.bool_value = child.is_null}};
+          return MakeBooleanValue(child.is_null);
       }
     }
     Value operator()(const InExpression& expr) {
@@ -352,14 +360,14 @@ Value CalcExpression(const Tuple& source, const AttributesInfo& source_attrs, co
           continue;
         }
         if (ValuesEqual(lhs, value, lhs_type)) {
-          return Value{false, {.bool_value = !expr.negated}};
+          return MakeBooleanValue(!expr.negated);
         }
       }
 
       if (saw_null) {
         return Value{true};
       }
-      return Value{false, {.bool_value = expr.negated}};
+      return MakeBooleanValue(expr.negated);
     }
     Value operator()(const AggregateExpression&) {
       throw std::logic_error{"aggregate expressions cannot be evaluated as scalar expressions"};
@@ -384,10 +392,10 @@ Value CalcExpression(const Tuple& source, const AttributesInfo& source_attrs, co
         case Literal::kNull:
           return Value{true};
         case Literal::kTrue: {
-          return Value{false, {.bool_value = true}};
+          return MakeBooleanValue(true);
         }
         case Literal::kFalse: {
-          return Value{false, {.bool_value = false}};
+          return MakeBooleanValue(false);
         }
         case Literal::kUnknown: {
           return Value{true};

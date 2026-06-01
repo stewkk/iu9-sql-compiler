@@ -208,17 +208,22 @@ void SetBinaryCounters(benchmark::State& state, int64_t lhs_rows, int64_t rhs_ro
   state.counters["output_rows"] = static_cast<double>(output_rows);
 }
 
-void SuppressClog() {
-  static std::ofstream nullstream("/dev/null");
-  std::clog.rdbuf(nullstream.rdbuf());
-}
+class ScopedClogSuppression {
+public:
+  ScopedClogSuppression() : nullstream_("/dev/null"), previous_(std::clog.rdbuf(nullstream_.rdbuf())) {}
+  ~ScopedClogSuppression() { std::clog.rdbuf(previous_); }
+
+private:
+  std::ofstream nullstream_;
+  std::streambuf* previous_;
+};
 
 void BM_OperatorSeqScan(benchmark::State& state) {
   const int64_t rows = state.range(0);
   auto tables = MakeTables(rows);
   auto plan = Scan("t");
 
-  SuppressClog();
+  ScopedClogSuppression suppress_clog;
 
   benchmark::DoNotOptimize(RunPlan(plan, tables));
   for (auto _ : state) {
@@ -236,7 +241,7 @@ void BM_OperatorFilter(benchmark::State& state) {
       .predicate = Binary(AttrExpr("t", "v"), BinaryOp::kLt, IntExpr(kThreshold)),
   }};
 
-  SuppressClog();
+  ScopedClogSuppression suppress_clog;
 
   benchmark::DoNotOptimize(RunPlan(plan, tables));
   for (auto _ : state) {
@@ -260,7 +265,7 @@ void BM_OperatorProjection(benchmark::State& state) {
       .aliases = {std::nullopt, std::nullopt},
   }};
 
-  SuppressClog();
+  ScopedClogSuppression suppress_clog;
 
   benchmark::DoNotOptimize(RunPlan(plan, tables));
   for (auto _ : state) {
@@ -277,7 +282,7 @@ void BM_OperatorSort(benchmark::State& state) {
       .keys = SortOrder{{SortKey{.table = "t", .column = "id", .dir = Direction::kAsc}}},
   }};
 
-  SuppressClog();
+  ScopedClogSuppression suppress_clog;
 
   benchmark::DoNotOptimize(RunPlan(plan, tables));
   for (auto _ : state) {
@@ -295,7 +300,7 @@ void BM_OperatorAggregation(benchmark::State& state) {
       .aggregates = {CountStar()},
   }};
 
-  SuppressClog();
+  ScopedClogSuppression suppress_clog;
 
   benchmark::DoNotOptimize(RunPlan(plan, tables));
   for (auto _ : state) {
@@ -315,7 +320,7 @@ void BM_OperatorNestedLoopJoin(benchmark::State& state) {
       .qual = Binary(AttrExpr("t", "k"), BinaryOp::kEq, AttrExpr("u", "k")),
   }};
 
-  SuppressClog();
+  ScopedClogSuppression suppress_clog;
 
   benchmark::DoNotOptimize(RunPlan(plan, tables));
   for (auto _ : state) {
@@ -335,7 +340,7 @@ void BM_OperatorNestedLoopCrossJoin(benchmark::State& state) {
       .rhs = PlanPtr(Scan("u")),
   }};
 
-  SuppressClog();
+  ScopedClogSuppression suppress_clog;
 
   benchmark::DoNotOptimize(RunPlan(plan, tables));
   for (auto _ : state) {
@@ -357,7 +362,7 @@ void BM_OperatorHashJoin(benchmark::State& state) {
       .qual = Binary(AttrExpr("t", "k"), BinaryOp::kEq, AttrExpr("u", "k")),
   }};
 
-  SuppressClog();
+  ScopedClogSuppression suppress_clog;
 
   benchmark::DoNotOptimize(RunPlan(plan, tables));
   for (auto _ : state) {
