@@ -11,8 +11,10 @@ namespace stewkk::sql {
 bool JoinAssociativity::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
   if (!std::holds_alternative<logical::Join>(expr->root_operator)) return false;
   const auto& outer = std::get<logical::Join>(expr->root_operator);
+  if (outer.type != JoinType::kInner) return false;
   for (auto inner_expr : outer.lhs->GetLogicalExprs()) {
-    if (std::holds_alternative<logical::Join>(inner_expr->root_operator)) return true;
+    const auto* inner = std::get_if<logical::Join>(&inner_expr->root_operator);
+    if (inner != nullptr && inner->type == JoinType::kInner) return true;
   }
   return false;
 }
@@ -22,6 +24,7 @@ LogicalOperator JoinAssociativity::ApplyImpl(utils::NotNull<LogicalExpr*> expr, 
   for (auto inner_expr : outer.lhs->GetLogicalExprs()) {
     if (!std::holds_alternative<logical::Join>(inner_expr->root_operator)) continue;
     const auto& inner = std::get<logical::Join>(inner_expr->root_operator);
+    if (outer.type != JoinType::kInner || inner.type != JoinType::kInner) continue;
 
     auto bc_tables = GroupTables(inner.rhs);
     auto c_tables = GroupTables(outer.rhs);

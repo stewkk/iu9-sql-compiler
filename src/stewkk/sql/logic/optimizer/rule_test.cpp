@@ -81,4 +81,19 @@ TEST_F(JoinAssociativityTest, ReturnsCorrectExpression) {
   EXPECT_EQ(outer.qual, Expression{Literal::kTrue});
 }
 
+TEST_F(JoinAssociativityTest, DoesNotApplyWhenInnerJoinIsOuter) {
+  auto outer_ab = memo.AddGroup(logical::Join{a, b, JoinType::kFull, Literal::kTrue})->group;
+  auto expr = memo.AddGroup(
+      logical::Join{outer_ab, c, JoinType::kInner, Literal::kTrue});
+
+  EXPECT_FALSE(rule.IsApplicable(expr));
+}
+
+TEST_F(JoinAssociativityTest, DoesNotApplyWhenOuterJoinIsOuter) {
+  auto expr = memo.AddGroup(
+      logical::Join{ab, c, JoinType::kFull, Literal::kTrue});
+
+  EXPECT_FALSE(rule.IsApplicable(expr));
+}
+
 }  // namespace stewkk::sql
