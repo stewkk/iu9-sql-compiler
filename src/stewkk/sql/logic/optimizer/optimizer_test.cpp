@@ -141,6 +141,44 @@ TEST(OptimizerTest, OrderBy) {
   ASSERT_THAT(Serialize(got), Eq("(Sort (keys users.id Asc) (SeqScan users))"));
 }
 
+TEST(OptimizerTest, OrderBySortsAfterCrossJoin) {
+  std::stringstream s{
+      "SELECT * FROM departments CROSS JOIN orders ORDER BY departments.id;"};
+  auto parsed = GetAST(s).value();
+  SchemaCatalog schema({
+      {"departments", {Attribute{"departments", "id"}}},
+      {"orders", {Attribute{"orders", "id"}}},
+  });
+  PropertySet required{SortProperty{*parsed.required_order}};
+  Optimizer optimizer(parsed.op, MakeMainRules(), {}, std::move(schema), std::move(required));
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(
+      Serialize(got),
+      Eq("(Sort (keys departments.id Asc)"
+         " (NestedLoopCrossJoin (SeqScan departments) (SeqScan orders)))"));
+}
+
+TEST(OptimizerTest, OrderBySortsAfterNestedLoopJoin) {
+  std::stringstream s{
+      "SELECT * FROM departments JOIN orders ON departments.id < orders.id "
+      "ORDER BY departments.id;"};
+  auto parsed = GetAST(s).value();
+  SchemaCatalog schema({
+      {"departments", {Attribute{"departments", "id"}}},
+      {"orders", {Attribute{"orders", "id"}}},
+  });
+  PropertySet required{SortProperty{*parsed.required_order}};
+  Optimizer optimizer(parsed.op, MakeMainRules(), {}, std::move(schema), std::move(required));
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(
+      Serialize(got),
+      HasSubstr("(Sort (keys departments.id Asc) (NestedLoopJoin Inner"));
+}
+
 TEST(OptimizerTest, AliasedJoinOptimizesWithAliasQualifiedAttrs) {
   std::stringstream s{"SELECT c.id FROM customers AS c JOIN orders AS o ON c.id = o.customer_id WHERE c.region_id = 1;"};
   Operator op = GetAST(s).value().op;

@@ -32,12 +32,8 @@ PropertySet RequiredInputProps(utils::NotNull<PhysicalExpr*> expr,
       [&](const physical::SeqScan&) { return PropertySet::Any(); },
       [&](const physical::Filter&) { return required; },
       [&](const physical::Projection&) { return required; },
-      [&](const physical::NestedLoopJoin&) -> PropertySet {
-          return child_index == 0 ? required : PropertySet::Any();
-      },
-      [&](const physical::NestedLoopCrossJoin&) -> PropertySet {
-          return child_index == 0 ? required : PropertySet::Any();
-      },
+      [&](const physical::NestedLoopJoin&) { return PropertySet::Any(); },
+      [&](const physical::NestedLoopCrossJoin&) { return PropertySet::Any(); },
       [&](const physical::HashJoin&) -> PropertySet {
           return PropertySet::Any();
       },
@@ -52,8 +48,8 @@ PropertySet DeriveOutputProps(utils::NotNull<PhysicalExpr*> expr,
       [&](const physical::SeqScan&) { return PropertySet::Any(); },
       [&](const physical::Filter&) { return child_delivered[0]; },
       [&](const physical::Projection&) { return child_delivered[0]; },
-      [&](const physical::NestedLoopJoin&) { return child_delivered[0]; },
-      [&](const physical::NestedLoopCrossJoin&) { return child_delivered[0]; },
+      [&](const physical::NestedLoopJoin&) { return PropertySet::Any(); },
+      [&](const physical::NestedLoopCrossJoin&) { return PropertySet::Any(); },
       [&](const physical::HashJoin&) { return PropertySet::Any(); },
       [&](const physical::Sort& s) { return PropertySet{SortProperty{s.keys}}; },
       [&](const physical::Aggregation&) { return PropertySet::Any(); },
