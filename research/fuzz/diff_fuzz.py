@@ -104,8 +104,10 @@ def _check_order(query: SelectQuery, our_rows: list[str]) -> str | None:
         cur = [(_typed(cells[i]), direction) for i, direction in keys if i < len(cells)]
         if prev is not None:
             for (va, da), (vb, _) in zip(prev, cur):
-                if va is None or vb is None or va == vb:
+                if va == vb:
                     continue
+                if va is None or vb is None:
+                    break
                 less = va < vb
                 if da == "desc":
                     less = not less
