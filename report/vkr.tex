@@ -1205,28 +1205,73 @@ CSV-файлы удобно создавать, изменять и исполь
 стоимость или нижняя оценка стоимости поддерева уже превышает текущий лучший
 результат, соответствующая ветвь пространства поиска не рассматривается дальше.
 
+Для оценки кардинальности промежуточных результатов используется коэффициент
+селективности \(sel(p)\), показывающий долю кортежей, удовлетворяющих предикату
+\(p\). Используемые формулы приведены в таблице~\ref{tbl:selectivity-model}.
+
 \begin{table}[H]
   \centering
-  \caption{Стоимостные формулы физических операторов.}
-  \label{tbl:cost-model-coefficients}
+  \caption{Формулы оценки селективности предикатов.}
+  \label{tbl:selectivity-model}
   \small
-  \begin{tabular}{|p{0.40\textwidth}|l|}
+  \begin{tabular}{|p{0.42\textwidth}|p{0.42\textwidth}|}
     \hline
-    Физический оператор & Формула стоимости \\
+    Вид предиката & Формула селективности \\
     \hline
-    Последовательное сканирование & $100\,n$ \\
-    Фильтрация                    & $100\,n_{out}$ \\
-    Проекция                      & $22\,n_{out}$ \\
-    Сортировка                    & $11\,n\bigl(\lfloor\log_2 n\rfloor + 1\bigr)$ \\
-    Агрегация                     & $510\,n$ \\
-    Соединение вложенными циклами & $70\,n_l n_r$ \\
-    Декартово произведение        & $104\,n_l n_r$ \\
-    Хеш-соединение                & $100\,n_b w_b + 35\,n_p + 10\,n_o w_o$ \\
+    \(a = c\), где \(a\) --- атрибут, \(c\) --- константа
+      & \(sel(a = c) = 0{,}10\) \\
+    \hline
+    \(a < b\), \(a > b\), \(a \le b\), \(a \ge b\)
+      & \(sel(p) = 0{,}50\) \\
+    \hline
+    \(p_1 \land p_2\)
+      & \(sel(p_1 \land p_2) = sel(p_1) \cdot sel(p_2)\) \\
+    \hline
+    \(p_1 \lor p_2\)
+      & \(sel(p_1 \lor p_2) =
+         sel(p_1) + sel(p_2) - sel(p_1) \cdot sel(p_2)\) \\
+    \hline
+    \(\lnot p\)
+      & \(sel(\lnot p) = 1 - sel(p)\) \\
+    \hline
+    \(a \in \{c_1, \ldots, c_k\}\)
+      & \(sel(p) = \min(0{,}50,\; 0{,}10k)\) \\
+    \hline
+    \(a \notin \{c_1, \ldots, c_k\}\)
+      & \(sel(p) = 1 - \min(0{,}50,\; 0{,}10k)\) \\
+    \hline
+    \(a = b\) в условии соединения, где \(a\) и \(b\) --- атрибуты разных входов
+      & \(sel(a = b) = \frac{1}{\max(1,\; \max(n_l, n_r))}\) \\
+    \hline
+    \(\theta_1 \land \theta_2\) в условии соединения
+      & \(sel(\theta_1 \land \theta_2) =
+         sel(\theta_1) \cdot sel(\theta_2)\) \\
+    \hline
+    Иной или неизвестный предикат фильтрации
+      & \(sel(p) = 0{,}50\) \\
+    \hline
+    Иной или неизвестный предикат соединения
+      & \(sel(\theta) = 1\) \\
     \hline
   \end{tabular}
 \end{table}
 
-% TODO: таблица с формулами для селективности и обоснование
+Такие формулы выбраны как простая эвристическая модель, не требующая гистограмм,
+сведений о количестве различных значений и статистик корреляции между
+атрибутами. Равенство атрибута константе считается достаточно селективным,
+поэтому ему сопоставляется коэффициент \(0{,}10\). Диапазонные и неизвестные
+условия оцениваются нейтральным коэффициентом \(0{,}50\), так как без статистики
+нельзя надежно определить, какую часть отношения они оставят. Для \sqlkw{IN}
+используется сумма селективностей отдельных равенств с верхней границей
+\(0{,}50\), чтобы длинный список значений не делал оценку слишком оптимистичной.
+
+Формулы для \sqlkw{AND}, \sqlkw{OR} и \sqlkw{NOT} основаны на предположении
+независимости предикатов. Для эквисоединения двух атрибутов используется оценка
+\(1 / \max(n_l, n_r)\), соответствующая типичному случаю соединения по ключу или
+внешнему ключу, размер результата в таком случае оказывается сопоставим с
+размером большего входа, а не с полным декартовым произведением. Для неизвестных
+условий соединения применяется селективность \(1\), чтобы не занижать стоимость
+плана при отсутствии надежной информации.
 
 Отдельно учитываются физические свойства результата. В данной работе таким
 свойством является порядок строк, требуемый предложением \ORDERBY{}. Если
@@ -1480,24 +1525,7 @@ bool ImplementHashJoin::IsApplicable(
 \subsubsection{Стоимостная модель}
 
 Стоимость плана вычисляется как сумма локальных стоимостей физических
-операторов. Коэффициенты были подобраны с помощью бенчмарков отдельных
-операторов, описанных в разделе тестирования.
-
-Для входных кардинальностей $N$, $N_l$ и $N_r$ используются следующие формулы:
-\[
-\begin{aligned}
-  C_{\text{scan}} &= 100N, \\
-  C_{\text{filter}} &= 100N, \\
-  C_{\text{projection}} &= 22N, \\
-  C_{\text{aggregation}} &= 510N, \\
-  C_{\text{nested-loop join}} &= 70N_lN_r, \\
-  C_{\text{cross join}} &= 104N_lN_r, \\
-  C_{\text{hash join}} &= 69(N_l + N_r), \\
-  C_{\text{sort}} &\approx 11N\log_2N.
-\end{aligned}
-\]
-
-Фрагмент реализации стоимостной модели приведен в
+операторов. Фрагмент реализации стоимостной модели приведен в
 листинге~\ref{lst:optimizer-cost}.
 
 \begin{listing}[H]
@@ -1902,19 +1930,23 @@ cmake --build build -- -j 6
 Имя каждого файла без расширения считается именем таблицы. В заголовке каждого
 файла для столбца указывается имя и тип через двоеточие. Поддерживаются типы
 \texttt{int} и \texttt{string}. Пустое SQL-значение записывается как
-\texttt{NULL}.
-
-Для первого запуска можно использовать готовые тестовые данные в \verb|test/static/executor/test_data|.
-
-SQL-запрос передается программе через стандартный поток ввода. Простейший
-пример запуска представлен на листинге~\ref{lst:run-example}.
+\texttt{NULL}. Для первого запуска можно использовать готовые тестовые данные в
+\verb|test/static/executor/test_data|. SQL-запрос передается программе через
+стандартный поток ввода. Простейший пример запуска представлен на
+листинге~\ref{lst:run-example}.
 
 \begin{listing}[H]
-  \caption{Простейший пример запуска программы.}
+  \caption{Примеры команд для запуска программы.}
   \label{lst:run-example}
   \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{bash}
 echo 'SELECT users.id FROM users;' | \
   ./build/bin/sql --data-dir test/static/executor/test_data
+
+
+echo 'SELECT users.id FROM users WHERE users.age > 18 \
+ORDER BY users.id;' | \
+  ./build/bin/sql --data-dir test/static/executor/test_data \
+  --print-ast --print-plan
   \end{minted}
 \end{listing}
 
@@ -1929,63 +1961,50 @@ echo 'SELECT users.id FROM users;' | \
 \label{fig:practice-run}
 \end{figure}
 
-\subsubsection{Вывод логического и физического планов}
-
 Для диагностики предусмотрены параметры \texttt{--print-ast} и
 \texttt{--print-plan}. Первый параметр выводит логическое дерево после
 синтаксического анализа, второй --- выбранный физический план.
-Пример использования представлен на листинге~\ref{lst:run-plan}.
+Пример использования представлен на листинге~\ref{lst:run-example}.
 
-\begin{listing}[H]
-  \caption{Запуск программы с выводом логического дерева и физического плана.}
-  \label{lst:run-plan}
-  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{bash}
-echo 'SELECT users.id FROM users WHERE users.age > 18 \
-ORDER BY users.id;' | \
-  ./build/bin/sql --data-dir test/static/executor/test_data \
-  --print-ast --print-plan
-  \end{minted}
-\end{listing}
+% \begin{figure}[H]
+% \centering
+% \includegraphics[width=0.8\textwidth]{run-with-prints.png}
+% \caption{Вывод логического дерева и физического плана}%
+% \label{fig:practice-plan}
+% \end{figure}
 
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.8\textwidth]{run-with-prints.png}
-\caption{Вывод логического дерева и физического плана}%
-\label{fig:practice-plan}
-\end{figure}
+% Для проверки полноты набора правил оптимизации предусмотрен режим
+% \verb|--check-reachable|. В этом режиме программа получает SQL-запрос и
+% сериализованный физический план, после чего выполняет полный перебор
+% пространства поиска без отсечения по стоимости. Если заданный план может быть
+% получен с помощью реализованных правил, программа выводит сообщение
+% \verb|REACHABLE|.
 
-Для проверки полноты набора правил оптимизации предусмотрен режим
-\verb|--check-reachable|. В этом режиме программа получает SQL-запрос и
-сериализованный физический план, после чего выполняет полный перебор
-пространства поиска без отсечения по стоимости. Если заданный план может быть
-получен с помощью реализованных правил, программа выводит сообщение
-\verb|REACHABLE|.
+% План передается в отдельном файле в формате S-expression. Например, содержимое
+% файла \verb|target.plan| может иметь вид, представленный на листинге~\ref{lst:target-plan}.
 
-План передается в отдельном файле в формате S-expression. Например, содержимое
-файла \verb|target.plan| может иметь вид, представленный на листинге~\ref{lst:target-plan}.
+% \begin{listing}[H]
+%   \caption{Пример содержимого файла с целевым физическим планом.}
+%   \label{lst:target-plan}
+%   \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
+% (PhysicalProjection (exprs (attr users id))
+%   (PhysicalFilter (> (attr users age) 18)
+%     (SeqScan users)))
+%   \end{minted}
+% \end{listing}
 
-\begin{listing}[H]
-  \caption{Пример содержимого файла с целевым физическим планом.}
-  \label{lst:target-plan}
-  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
-(PhysicalProjection (exprs (attr users id))
-  (PhysicalFilter (> (attr users age) 18)
-    (SeqScan users)))
-  \end{minted}
-\end{listing}
+% Проверка выполняется командой на листинге~\ref{lst:check-reachable}.
 
-Проверка выполняется командой на листинге~\ref{lst:check-reachable}.
-
-\begin{listing}[H]
-  \caption{Запуск программы в режиме проверки достижимости плана.}
-  \label{lst:check-reachable}
-  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
-echo 'SELECT users.id FROM users WHERE users.age > 18;' | \
-  ./build/bin/sql \
-  --data-dir test/static/executor/test_data \
-  --check-reachable target.plan
-  \end{minted}
-\end{listing}
+% \begin{listing}[H]
+%   \caption{Запуск программы в режиме проверки достижимости плана.}
+%   \label{lst:check-reachable}
+%   \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
+% echo 'SELECT users.id FROM users WHERE users.age > 18;' | \
+%   ./build/bin/sql \
+%   --data-dir test/static/executor/test_data \
+%   --check-reachable target.plan
+%   \end{minted}
+% \end{listing}
 
 Если план недостижим, программа выводит сообщение \verb|NOT REACHABLE| и
 описание первого обнаруженного расхождения. Параметр \verb|--data-dir|
@@ -2006,127 +2025,91 @@ cd ..
   \end{minted}
 \end{listing}
 
-Для запуска модульных тестов C++ следует выполнить команду на листинге~\ref{lst:ctest}.
+% Модульные тесты проверяют синтаксический анализ запросов, вычисление выражений,
+% исполнение физических операторов, индексное сканирование, сериализацию планов,
+% структуру Memo, правила оптимизации и физические свойства.
 
-\begin{listing}[H]
-  \caption{Запуск модульных тестов C++.}
-  \label{lst:ctest}
-  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
-ctest --test-dir build --output-on-failure
-  \end{minted}
-\end{listing}
+% Для запуска Python-тестов преобразователя планов Microsoft SQL Server
+% необходимо предварительно запустить контейнер, после чего выполнить команды на листинге~\ref{lst:pytest-converter}.
 
-Модульные тесты проверяют синтаксический анализ запросов, вычисление выражений,
-исполнение физических операторов, индексное сканирование, сериализацию планов,
-структуру Memo, правила оптимизации и физические свойства.
+% \begin{listing}[H]
+%   \caption{Запуск тестов преобразователя планов Microsoft SQL Server.}
+%   \label{lst:pytest-converter}
+%   \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
+% cd research
+% pytest -q test_converter.py
+% cd ..
+%   \end{minted}
+% \end{listing}
 
-Для запуска Python-тестов преобразователя планов Microsoft SQL Server
-необходимо предварительно запустить контейнер, после чего выполнить команды на листинге~\ref{lst:pytest-converter}.
+% Тесты инструментов Star Schema Benchmark запускаются командой на листинге~\ref{lst:pytest-ssb}.
 
-\begin{listing}[H]
-  \caption{Запуск тестов преобразователя планов Microsoft SQL Server.}
-  \label{lst:pytest-converter}
-  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
-cd research
-pytest -q test_converter.py
-cd ..
-  \end{minted}
-\end{listing}
-
-Тесты инструментов Star Schema Benchmark запускаются командой на листинге~\ref{lst:pytest-ssb}.
-
-\begin{listing}[H]
-  \caption{Запуск тестов инструментов Star Schema Benchmark.}
-  \label{lst:pytest-ssb}
-  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
-pytest -q benchmarks/datasets/ssb
-  \end{minted}
-\end{listing}
+% \begin{listing}[H]
+%   \caption{Запуск тестов инструментов Star Schema Benchmark.}
+%   \label{lst:pytest-ssb}
+%   \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
+% pytest -q benchmarks/datasets/ssb
+%   \end{minted}
+% \end{listing}
 
 Для поиска ошибок исполнения реализован дифференциальный фаззер. Он генерирует
 случайные SQL-запросы, выполняет их в модельной СУБД и Microsoft SQL Server,
 после чего сравнивает полученные результаты. Перед запуском необходимо поднять
-контейнер с Microsoft SQL Server.
+контейнер с Microsoft SQL Server. Фаззер запускается из корневого каталога
+проекта командой на листинге~\ref{lst:reach-fuzz}.
 
-Фаззер запускается из корневого каталога проекта командой на листинге~\ref{lst:diff-fuzz}.
+Второй фаззер проверяет полноту набора правил оптимизатора. Он получает
+физический план запроса из Microsoft SQL Server, преобразует его во внутренний
+формат проекта и запускает программу в режиме \verb|--check-reachable|, как
+показано на листинге~\ref{lst:reach-fuzz}.
 
 \begin{listing}[H]
-  \caption{Запуск дифференциального фаззера.}
-  \label{lst:diff-fuzz}
+  \caption{Запуск фаззеров.}
+  \label{lst:reach-fuzz}
   \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
+python -m research.fuzz.reach_fuzz \
+  --cli build/bin/sql \
+  --data-dir test/static/executor/test_data
 python -m research.fuzz.diff_fuzz \
   --cli build/bin/sql \
   --data-dir test/static/executor/test_data
   \end{minted}
 \end{listing}
 
-Для проверки режима JIT-компиляции можно дополнительно передать параметр
-\verb|--jit|. При обнаружении расхождения фаззер выводит начальное значение
-генератора случайных чисел и текст запроса, что позволяет воспроизвести ошибку.
+% \begin{figure}[H]
+% \centering
+% \includegraphics[width=0.8\textwidth]{reach-fuzz.png}
+% \caption{Пример вывода фаззера проверки полноты правил оптимизатора}%
+% \label{fig:reach-fuzz}
+% \end{figure}
 
-Второй фаззер проверяет полноту набора правил оптимизатора. Он получает
-физический план запроса из Microsoft SQL Server, преобразует его во внутренний
-формат проекта и запускает программу в режиме \verb|--check-reachable|, как показано на листинге~\ref{lst:reach-fuzz}.
-
-\begin{listing}[H]
-  \caption{Запуск фаззера проверки полноты правил оптимизатора.}
-  \label{lst:reach-fuzz}
-  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
-python -m research.fuzz.reach_fuzz \
-  --cli build/bin/sql \
-  --data-dir test/static/executor/test_data
-  \end{minted}
-\end{listing}
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.8\textwidth]{reach-fuzz.png}
-\caption{Пример вывода фаззера проверки полноты правил оптимизатора}%
-\label{fig:reach-fuzz}
-\end{figure}
-
-Оба фаззера поддерживают параметр \verb|--start-seed|. Он задает начальное
-значение генератора и используется для воспроизводимого повторного запуска,
-как показано на листинге~\ref{lst:reach-fuzz-seed}.
-
-\begin{listing}[H]
-  \caption{Запуск фаззера с фиксированным начальным значением генератора.}
-  \label{lst:reach-fuzz-seed}
-  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
-python -m research.fuzz.reach_fuzz \
-  --cli build/bin/sql \
-  --data-dir test/static/executor/test_data \
-  --start-seed 1000
-  \end{minted}
-\end{listing}
-
-\begin{longtable}{|p{4.2cm}|p{9.3cm}|}
-  \caption{Параметры командной строки программы.}\label{tbl:practice-cli}\\
-  \hline
-  Параметр & Назначение \\
-  \hline
-  \endfirsthead
-  \multicolumn{2}{l}{\small Продолжение таблицы~\ref{tbl:practice-cli}}\\
-  \hline
-  Параметр & Назначение \\
-  \hline
-  \endhead
-  \texttt{--data-dir DIR} &
-  Директория с CSV-файлами таблиц. Обязательна при обычном исполнении запроса. \\
-  \hline
-  \texttt{--print-ast} &
-  Вывод логического дерева операторов после синтаксического анализа. \\
-  \hline
-  \texttt{--print-plan} &
-  Вывод выбранного физического плана в формате S-expression. \\
-  \hline
-  \texttt{--jit} &
-  Использование кэшируемой JIT-компиляции скалярных выражений. \\
-  \hline
-  \texttt{--check-reachable FILE} &
-  Проверка достижимости физического плана, сериализованного в файле. \\
-  \hline
-\end{longtable}
+% \begin{longtable}{|p{4.2cm}|p{9.3cm}|}
+%   \caption{Параметры командной строки программы.}\label{tbl:practice-cli}\\
+%   \hline
+%   Параметр & Назначение \\
+%   \hline
+%   \endfirsthead
+%   \multicolumn{2}{l}{\small Продолжение таблицы~\ref{tbl:practice-cli}}\\
+%   \hline
+%   Параметр & Назначение \\
+%   \hline
+%   \endhead
+%   \texttt{--data-dir DIR} &
+%   Директория с CSV-файлами таблиц. Обязательна при обычном исполнении запроса. \\
+%   \hline
+%   \texttt{--print-ast} &
+%   Вывод логического дерева операторов после синтаксического анализа. \\
+%   \hline
+%   \texttt{--print-plan} &
+%   Вывод выбранного физического плана в формате S-expression. \\
+%   \hline
+%   \texttt{--jit} &
+%   Использование кэшируемой JIT-компиляции скалярных выражений. \\
+%   \hline
+%   \texttt{--check-reachable FILE} &
+%   Проверка достижимости физического плана, сериализованного в файле. \\
+%   \hline
+% \end{longtable}
 
 \section{Тестирование}
 
@@ -2672,5 +2655,26 @@ Memo и правила преобразования. Реализован пои
   \hline
 \end{longtable}
 \end{scriptsize}
+
+\begin{table}[H]
+  \centering
+  \caption{Стоимостные формулы физических операторов.}
+  \label{tbl:cost-model-coefficients}
+  \small
+  \begin{tabular}{|p{0.40\textwidth}|l|}
+    \hline
+    Физический оператор & Формула стоимости \\
+    \hline
+    Последовательное сканирование & $100\,n$ \\
+    Фильтрация                    & $100\,n_{out}$ \\
+    Проекция                      & $22\,n_{out}$ \\
+    Сортировка                    & $11\,n\bigl(\lfloor\log_2 n\rfloor + 1\bigr)$ \\
+    Агрегация                     & $510\,n$ \\
+    Соединение вложенными циклами & $70\,n_l n_r$ \\
+    Декартово произведение        & $104\,n_l n_r$ \\
+    Хеш-соединение                & $100\,n_b w_b + 35\,n_p + 10\,n_o w_o$ \\
+    \hline
+  \end{tabular}
+\end{table}
 
 \end{document}
