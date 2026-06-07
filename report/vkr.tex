@@ -1209,53 +1209,6 @@ CSV-файлы удобно создавать, изменять и исполь
 селективности \(sel(p)\), показывающий долю кортежей, удовлетворяющих предикату
 \(p\). Используемые формулы приведены в таблице~\ref{tbl:selectivity-model}.
 
-\begin{table}[H]
-  \centering
-  \caption{Формулы оценки селективности предикатов.}
-  \label{tbl:selectivity-model}
-  \small
-  \begin{tabular}{|p{0.42\textwidth}|p{0.42\textwidth}|}
-    \hline
-    Вид предиката & Формула селективности \\
-    \hline
-    \(a = c\), где \(a\) --- атрибут, \(c\) --- константа
-      & \(sel(a = c) = 0{,}10\) \\
-    \hline
-    \(a < b\), \(a > b\), \(a \le b\), \(a \ge b\)
-      & \(sel(p) = 0{,}50\) \\
-    \hline
-    \(p_1 \land p_2\)
-      & \(sel(p_1 \land p_2) = sel(p_1) \cdot sel(p_2)\) \\
-    \hline
-    \(p_1 \lor p_2\)
-      & \(sel(p_1 \lor p_2) =
-         sel(p_1) + sel(p_2) - sel(p_1) \cdot sel(p_2)\) \\
-    \hline
-    \(\lnot p\)
-      & \(sel(\lnot p) = 1 - sel(p)\) \\
-    \hline
-    \(a \in \{c_1, \ldots, c_k\}\)
-      & \(sel(p) = \min(0{,}50,\; 0{,}10k)\) \\
-    \hline
-    \(a \notin \{c_1, \ldots, c_k\}\)
-      & \(sel(p) = 1 - \min(0{,}50,\; 0{,}10k)\) \\
-    \hline
-    \(a = b\) в условии соединения, где \(a\) и \(b\) --- атрибуты разных входов
-      & \(sel(a = b) = \frac{1}{\max(1,\; \max(n_l, n_r))}\) \\
-    \hline
-    \(\theta_1 \land \theta_2\) в условии соединения
-      & \(sel(\theta_1 \land \theta_2) =
-         sel(\theta_1) \cdot sel(\theta_2)\) \\
-    \hline
-    Иной или неизвестный предикат фильтрации
-      & \(sel(p) = 0{,}50\) \\
-    \hline
-    Иной или неизвестный предикат соединения
-      & \(sel(\theta) = 1\) \\
-    \hline
-  \end{tabular}
-\end{table}
-
 Такие формулы выбраны как простая эвристическая модель, не требующая гистограмм,
 сведений о количестве различных значений и статистик корреляции между
 атрибутами. Равенство атрибута константе считается достаточно селективным,
@@ -1411,80 +1364,37 @@ public:
 \subsubsection{Правила трансформации и реализации}
 
 Расширение пространства поиска выполняется с помощью правил. Реализовано два
-типа правил: трансформационные и реализационные. Их интерфейсы приведены в
-листинге~\ref{lst:optimizer-rules}.
+типа правил: трансформационные и реализационные. % Их интерфейсы приведены в
+% листинге~\ref{lst:optimizer-rules}.
+Правила реализуют единый интерфейс, состоящий из условия применимости и метода
+для применения правила. Условие применимости выполняет быструю структурную
+проверку по дереву выражений в Memo. Метод применения правила порождает
+необходимые новые группы и результирующее логическое или физическое выражение. В
+качестве примера в листинге~\ref{lst:join-commutativity} приведена реализация
+правила коммутативности соединений.
 
-\begin{listing}[H]
-  \caption{Интерфейсы правил оптимизации.}
-  \label{lst:optimizer-rules}
-  \begin{minted}[style=bw, breaklines, frame=single,
-    fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{cpp}
-class TransformationRule {
-public:
-  virtual bool IsApplicable(utils::NotNull<LogicalExpr*> expr) = 0;
-  utils::NotNull<LogicalExpr*> Apply(
-      utils::NotNull<LogicalExpr*> expr, Memo& memo);
-private:
-  virtual LogicalOperator ApplyImpl(
-      utils::NotNull<LogicalExpr*> expr, Memo& memo) = 0;
-};
-class ImplementationRule {
-public:
-  virtual bool IsApplicable(utils::NotNull<LogicalExpr*> expr) = 0;
-  virtual utils::NotNull<PhysicalExpr*> Apply(
-      utils::NotNull<LogicalExpr*> expr, Memo& memo) = 0;
-};
-  \end{minted}
-\end{listing}
-
-В качестве примера в листинге~\ref{lst:join-commutativity} приведено правило
-коммутативности соединений.
-
-\begin{listing}[H]
-  \caption{Правило коммутативности соединения.}
-  \label{lst:join-commutativity}
-  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize,
-    linenos=false, xleftmargin=1.5em]{cpp}
-LogicalOperator JoinCommutativity::ApplyImpl(
-    utils::NotNull<LogicalExpr*> expr, Memo&) {
-  auto join = std::get<logical::Join>(expr->root_operator);
-  std::swap(join.lhs, join.rhs);
-
-  if (join.type == JoinType::kLeft) {
-    join.type = JoinType::kRight;
-  } else if (join.type == JoinType::kRight) {
-    join.type = JoinType::kLeft;
-  }
-  return join;
-}
-  \end{minted}
-\end{listing}
-
-Пример метода для проверки применимости правила приведен в
-листинге~\ref{lst:implement-hash-join}.
-
-\begin{listing}[H]
-  \caption{Проверка применимости хеш-соединения.}
-  \label{lst:implement-hash-join}
-  \begin{minted}[style=bw, breaklines, frame=single,
-    fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{cpp}
-bool ImplementHashJoin::IsApplicable(
-    utils::NotNull<LogicalExpr*> expr) {
-  if (!std::holds_alternative<logical::Join>(
-          expr->root_operator)) {
-    return false;
-  }
-  const auto& join =
-      std::get<logical::Join>(expr->root_operator);
-  if (join.type != JoinType::kInner) return false;
-  const auto* bin =
-      std::get_if<BinaryExpression>(&join.qual);
-  return bin && bin->binop == BinaryOp::kEq
-      && std::holds_alternative<Attribute>(*bin->lhs)
-      && std::holds_alternative<Attribute>(*bin->rhs);
-}
-  \end{minted}
-\end{listing}
+% \begin{listing}[H]
+%   \caption{Интерфейсы правил оптимизации.}
+%   \label{lst:optimizer-rules}
+%   \begin{minted}[style=bw, breaklines, frame=single,
+%     fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{cpp}
+% class TransformationRule {
+% public:
+%   virtual bool IsApplicable(utils::NotNull<LogicalExpr*> expr) = 0;
+%   utils::NotNull<LogicalExpr*> Apply(
+%       utils::NotNull<LogicalExpr*> expr, Memo& memo);
+% private:
+%   virtual LogicalOperator ApplyImpl(
+%       utils::NotNull<LogicalExpr*> expr, Memo& memo) = 0;
+% };
+% class ImplementationRule {
+% public:
+%   virtual bool IsApplicable(utils::NotNull<LogicalExpr*> expr) = 0;
+%   virtual utils::NotNull<PhysicalExpr*> Apply(
+%       utils::NotNull<LogicalExpr*> expr, Memo& memo) = 0;
+% };
+%   \end{minted}
+% \end{listing}
 
 Для каждого выражения хранится информация о ранее примененных правилах. Это
 предотвращает повторное выполнение одного правила над одним выражением и
@@ -1500,36 +1410,6 @@ bool ImplementHashJoin::IsApplicable(
 операторов. Фрагмент реализации стоимостной модели приведен в
 листинге~\ref{lst:optimizer-cost}.
 
-\begin{listing}[H]
-  \caption{Вычисление локальной стоимости физических операторов.}
-  \label{lst:optimizer-cost}
-  \begin{minted}[style=bw, breaklines, frame=single,
-    fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{cpp}
-int64_t CalcCost(PhysicalExpr* expr,
-                  CardinalityEstimates& cardinality) {
-  return std::visit(utils::Overloaded{
-    [&](const physical::SeqScan&) {
-      return 100 * cardinality.GetCardinality(expr->group);
-    },
-    [&](const physical::NestedLoopJoin& j) {
-      return 70 * cardinality.GetCardinality(j.lhs)
-                * cardinality.GetCardinality(j.rhs);
-    },
-    [&](const physical::HashJoin& j) {
-      return 69 * (cardinality.GetCardinality(j.lhs)
-                  + cardinality.GetCardinality(j.rhs));
-    },
-    [&](const physical::Sort& s) {
-      auto n = cardinality.GetCardinality(s.input);
-      return 11 * n * std::bit_width(
-          static_cast<uint64_t>(n));
-    },
-    ...
-  }, expr->root_operator);
-}
-  \end{minted}
-\end{listing}
-
 \subsubsection{Алгоритм поиска}
 
 Класс \verb|Optimizer| реализует алгоритм поиска. При создании объекта исходное
@@ -1541,44 +1421,6 @@ int64_t CalcCost(PhysicalExpr* expr,
 физического выражения и обработку его дочерних узлов. Основной метод оптимизации
 группы приведен в листинге~\ref{lst:optimize-group}.
 
-\begin{listing}[H]
-  \caption{Оптимизация группы Memo.}
-  \label{lst:optimize-group}
-  \begin{minted}[style=bw, breaklines, frame=single,
-    fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{cpp}
-void Optimizer::OptimizeGroup(Group* group,
-                              PropertySet required,
-                              Limit limit) {
-  WinnerKey key{group, required};
-  if (winner_.contains(key)) return;
-  if (IsExplored(group)
-      && limit
-      && LowerBoundCost(group) >= *limit) {
-    return;
-  }
-  if (!IsExplored(group)) {
-    tasks_.emplace([=] {
-      OptimizeGroup(group, required, limit);
-    });
-    tasks_.emplace([=] {
-      ExploreGroup(group, limit);
-    });
-    return;
-  }
-  for (auto expr : group->GetPhysicalExprs()) {
-    if (expr->is_enforcer) continue;
-    auto cost = local_cost_[expr.get()];
-    if (!limit || cost < *limit) {
-      tasks_.emplace([=] {
-        OptimizeInputs(expr, required, {}, cost, limit);
-      });
-    }
-  }
-  AddEnforcers(group, required, limit);
-}
-  \end{minted}
-\end{listing}
-
 Если группа еще не исследована, в стек добавляются две задачи. Первая расширяет
 группу с помощью правил, вторая повторно запускает ее оптимизацию после
 расширения. Если группа уже исследована, для каждого физического выражения
@@ -1586,7 +1428,7 @@ void Optimizer::OptimizeGroup(Group* group,
 
 Для каждой пары из группы и требуемого набора свойств хранится лучший найденный
 вариант. Ключ такого варианта представлен структурой
-\verb|WinnerKey|~\refAlgo{winner-key}. Хранение победителя отдельно для каждого
+\verb|WinnerKey|~\refAlgo{lst:winner-key}. Хранение победителя отдельно для каждого
 набора свойств необходимо, поскольку самый дешевый неотсортированный план может
 отличаться от самого дешевого плана, удовлетворяющего требованию
 \verb|ORDER BY|.
@@ -1718,34 +1560,9 @@ std::optional<PhysicalOperator> SortEnforcer::TryBuild(
 
 \subsection{Модуль физического хранения данных}
 
-Для чтения таблиц реализован класс
-\verb|CsvDirSequentialScanner|~\refAlgo{lst:csv-dir-scanners}. Он
-выполняет последовательное сканирование CSV-файла и передает прочитанные
-кортежи модулю исполнения физических операторов.
-
-\begin{listing}[H]
-  \caption{Объявления классов сканирования CSV-таблиц.}
-  \label{lst:csv-dir-scanners}
-  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{C++}
-struct CsvDirSequentialScanner {
-    std::string dir;
-    boost::asio::awaitable<Result<>> operator()(
-        const std::string& table_name,
-        const std::string& output_table_name,
-        AttributesInfoChannel& attrs_chan,
-        TuplesChannel& tuples_chan) const;
-};
-struct CsvDirIndexedScanner {
-    std::string dir;
-    boost::asio::awaitable<Result<>> operator()(
-        const std::string& table_name,
-        const std::string& output_table_name,
-        const Expression& predicate,
-        AttributesInfoChannel& attrs_chan,
-        TuplesChannel& tuples_chan) const;
-};
-  \end{minted}
-\end{listing}
+Для чтения таблиц реализован класс \verb|CsvDirSequentialScanner|. Он выполняет
+последовательное сканирование CSV-файла и передает прочитанные кортежи модулю
+исполнения физических операторов.
 
 Список доступных индексов задается в файле \verb|indexes.meta|,
 расположенном в директории с данными. Каждая строка файла содержит
@@ -1761,10 +1578,9 @@ users id sorted users.id.sorted.idx
 \end{listing}
 
 Для чтения данных с использованием индекса реализован класс
-\verb|CsvDirIndexedScanner|~\refAlgo{lst:csv-dir-scanners}. Если указанный в
-метаданных бинарный файл отсутствует, индекс строится при первом обращении к
-таблице. Для поиска диапазона подходящих ключей используется упорядоченность
-записей индекса.
+\verb|CsvDirIndexedScanner|. Если указанный в метаданных бинарный файл
+отсутствует, индекс строится при первом обращении к таблице. Для поиска
+диапазона подходящих ключей используется упорядоченность записей индекса.
 
 Поддерживаются индексы только для целочисленных атрибутов. Индексное
 сканирование применяется для предикатов сравнения атрибута с целочисленной
@@ -1787,17 +1603,6 @@ users id sorted users.id.sorted.idx
 template <typename ExpressionExecutor = InterpretedExpressionExecutor>
 class Executor {
 public:
-  using SequentialScan = std::function<boost::asio::awaitable<Result<>>(
-      const std::string& table_name,
-      const std::string& output_table_name,
-      AttributesInfoChannel& attr_chan,
-      TuplesChannel& tuples_chan)>;
-  using IndexScan = std::function<boost::asio::awaitable<Result<>>(
-      const std::string& table_name,
-      const std::string& output_table_name,
-      const Expression& predicate,
-      AttributesInfoChannel& attr_chan,
-      TuplesChannel& tuples_chan)>;
   Executor(SequentialScan seq_scan,
             IndexScan index_scan,
             boost::asio::any_io_executor executor);
@@ -1877,7 +1682,7 @@ cmake --build build -- -j 6
 \texttt{NULL}. Для первого запуска можно использовать готовые тестовые данные в
 \verb|test/static/executor/test_data|. SQL-запрос передается программе через
 стандартный поток ввода. Простейший пример запуска представлен на
-листинге~\ref{lst:run-example}.
+листинге~\ref{lst:run-example} и на рисунке~\ref{fig:practice-run}.
 
 \begin{listing}[H]
   \caption{Примеры команд для запуска программы.}
@@ -1885,7 +1690,6 @@ cmake --build build -- -j 6
   \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{bash}
 echo 'SELECT users.id FROM users;' | \
   ./build/bin/sql --data-dir test/static/executor/test_data
-
 
 echo 'SELECT users.id FROM users WHERE users.age > 18 \
 ORDER BY users.id;' | \
@@ -1897,13 +1701,6 @@ ORDER BY users.id;' | \
 Программа выводит заголовок отношения, содержащий имена и типы столбцов, а
 затем полученные строки. Если запрос не содержит \ORDERBY{}, строки вывода
 сортируются лексикографически для воспроизводимости результата.
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.8\textwidth]{run-example.png}
-\caption{Выполнение SQL-запроса над тестовыми данными}%
-\label{fig:practice-run}
-\end{figure}
 
 Для диагностики предусмотрены параметры \texttt{--print-ast} и
 \texttt{--print-plan}. Первый параметр выводит логическое дерево после
@@ -1955,20 +1752,6 @@ ORDER BY users.id;' | \
 необходим для загрузки схем таблиц. В частности, схема используется при
 проверке достижимости планов с сортировкой.
 
-Для автоматизированной проверки достижимости планов используется Microsoft SQL
-Server. Контейнер с СУБД запускается с помощью Docker Compose. Перед запуском
-скриптов в директории research, следует выполнить команды на листинге~\ref{lst:docker-up}.
-
-\begin{listing}[H]
-  \caption{Запуск контейнера с Microsoft SQL Server.}
-  \label{lst:docker-up}
-  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
-cd research
-docker compose up -d
-cd ..
-  \end{minted}
-\end{listing}
-
 % Модульные тесты проверяют синтаксический анализ запросов, вычисление выражений,
 % исполнение физических операторов, индексное сканирование, сериализацию планов,
 % структуру Memo, правила оптимизации и физические свойства.
@@ -2011,6 +1794,7 @@ cd ..
   \caption{Запуск фаззеров.}
   \label{lst:reach-fuzz}
   \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
+docker compose up -d
 python -m research.fuzz.reach_fuzz \
   --cli build/bin/sql \
   --data-dir test/static/executor/test_data
@@ -2218,15 +2002,11 @@ TEST(ParserTest, SelectSingleColumnFromSingleTable) {
 \anonsection{ЗАКЛЮЧЕНИЕ}
 
 В ходе работы была изучена архитектура оптимизаторов Cascades и на ее основе
-спроектирован собственный оптимизатор для модельной реляционной СУБД. В
-результате были выделены основные компоненты системы, такие как структура Memo,
-набор правил преобразования и реализации, стоимостная модель, механизм учета
-физических свойств и алгоритм поиска физического плана.
+спроектирован собственный оптимизатор для модельной реляционной СУБД.
 
 Было формализовано поддерживаемое подмножество SQL и соответствующее ему
 представление в терминах реляционной алгебры. Реализованная система поддерживает
-запросы на чтение данных с фильтрацией, проекцией, соединениями, агрегацией и
-сортировкой.
+запросы на чтение данных с основными операторами диалекта PostgreSQL.
 
 Был реализован алгоритм поиска оптимального физического плана и структура Memo
 для эффективного хранения групп логически эквивалентных выражений. В результате
@@ -2235,10 +2015,8 @@ TEST(ParserTest, SelectSingleColumnFromSingleTable) {
 
 Для формирования пространства поиска был разработан набор правил трансформации и
 реализации для основных операторов реляционной алгебры. Реализованные правила
-позволяют изменять порядок и группировку соединений, преобразовывать и
-проталкивать фильтры, а также сопоставлять логическим операторам физические
-реализации, включая последовательное сканирование, фильтрацию, проекцию,
-агрегацию, соединение вложенными циклами и хеш-соединение.
+позволяют изменять порядок и группировку соединений, преобразовывать предикаты и
+выражения, а также сопоставлять логическим операторам физические реализации.
 
 Для ускорения поиска был реализован метод ветвей и границ. Оптимизатор
 использует текущую лучшую стоимость и нижние оценки стоимости поддеревьев для
@@ -2356,6 +2134,54 @@ Microsoft SQL Server.
     \caption{Пример структуры Memo.}%
     \label{fig:memo-structure}
 \end{figure}
+
+\begin{table}[H]
+  \centering
+  \caption{Формулы оценки селективности предикатов.}
+  \label{tbl:selectivity-model}
+  \small
+  \begin{tabular}{|p{0.42\textwidth}|p{0.42\textwidth}|}
+    \hline
+    Вид предиката & Формула селективности \\
+    \hline
+    \(a = c\), где \(a\) --- атрибут, \(c\) --- константа
+      & \(sel(a = c) = 0{,}10\) \\
+    \hline
+    \(a < b\), \(a > b\), \(a \le b\), \(a \ge b\)
+      & \(sel(p) = 0{,}50\) \\
+    \hline
+    \(p_1 \land p_2\)
+      & \(sel(p_1 \land p_2) = sel(p_1) \cdot sel(p_2)\) \\
+    \hline
+    \(p_1 \lor p_2\)
+      & \(sel(p_1 \lor p_2) =
+         sel(p_1) + sel(p_2) - sel(p_1) \cdot sel(p_2)\) \\
+    \hline
+    \(\lnot p\)
+      & \(sel(\lnot p) = 1 - sel(p)\) \\
+    \hline
+    \(a \in \{c_1, \ldots, c_k\}\)
+      & \(sel(p) = \min(0{,}50,\; 0{,}10k)\) \\
+    \hline
+    \(a \notin \{c_1, \ldots, c_k\}\)
+      & \(sel(p) = 1 - \min(0{,}50,\; 0{,}10k)\) \\
+    \hline
+    \(a = b\) в условии соединения, где \(a\) и \(b\) --- атрибуты разных входов
+      & \(sel(a = b) = \frac{1}{\max(1,\; \max(n_l, n_r))}\) \\
+    \hline
+    \(\theta_1 \land \theta_2\) в условии соединения
+      & \(sel(\theta_1 \land \theta_2) =
+         sel(\theta_1) \cdot sel(\theta_2)\) \\
+    \hline
+    Иной или неизвестный предикат фильтрации
+      & \(sel(p) = 0{,}50\) \\
+    \hline
+    Иной или неизвестный предикат соединения
+      & \(sel(\theta) = 1\) \\
+    \hline
+  \end{tabular}
+\end{table}
+
 
 \begin{algorithm}[H]
     \caption{Алгоритм поиска (часть 1).}%
@@ -2622,5 +2448,98 @@ Microsoft SQL Server.
     \hline
   \end{tabular}
 \end{table}
+
+\begin{listing}[H]
+  \caption{Правило коммутативности соединения.}
+  \label{lst:join-commutativity}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize,
+    linenos=false, xleftmargin=1.5em]{cpp}
+LogicalOperator JoinCommutativity::ApplyImpl(
+    utils::NotNull<LogicalExpr*> expr, Memo&) {
+  auto join = std::get<logical::Join>(expr->root_operator);
+  std::swap(join.lhs, join.rhs);
+
+  if (join.type == JoinType::kLeft) {
+    join.type = JoinType::kRight;
+  } else if (join.type == JoinType::kRight) {
+    join.type = JoinType::kLeft;
+  }
+  return join;
+}
+bool ImplementHashJoin::IsApplicable(
+    utils::NotNull<LogicalExpr*> expr) {
+  if (!std::holds_alternative<logical::Join>(
+          expr->root_operator)) {
+    return false;
+  }
+  const auto& join =
+      std::get<logical::Join>(expr->root_operator);
+  if (join.type != JoinType::kInner) return false;
+  const auto* bin =
+      std::get_if<BinaryExpression>(&join.qual);
+  return bin && bin->binop == BinaryOp::kEq
+      && std::holds_alternative<Attribute>(*bin->lhs)
+      && std::holds_alternative<Attribute>(*bin->rhs);
+}
+  \end{minted}
+\end{listing}
+\begin{listing}[H]
+  \caption{Вычисление локальной стоимости физических операторов.}
+  \label{lst:optimizer-cost}
+  \begin{minted}[style=bw, breaklines, frame=single,
+    fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{cpp}
+int64_t CalcCost(PhysicalExpr* expr,
+                  CardinalityEstimates& cardinality) {
+  return std::visit(utils::Overloaded{
+    [&](const physical::NestedLoopJoin& j) {
+      return 70 * cardinality.GetCardinality(j.lhs)
+                * cardinality.GetCardinality(j.rhs);
+    },
+    [&](const physical::HashJoin& j) {
+      return 69 * (cardinality.GetCardinality(j.lhs)
+                  + cardinality.GetCardinality(j.rhs));
+    },
+  \end{minted}
+\end{listing}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{run-example.png}
+\caption{Выполнение SQL-запроса над тестовыми данными}%
+\label{fig:practice-run}
+\end{figure}
+
+\begin{listing}[H]
+  \caption{Оптимизация группы Memo.}
+  \label{lst:optimize-group}
+  \begin{minted}[style=bw, breaklines, frame=single,
+    fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{cpp}
+void Optimizer::OptimizeGroup(Group* group, PropertySet required,
+                              Limit limit) {
+  WinnerKey key{group, required};
+  if (winner_.contains(key)) return;
+  if (IsExplored(group) && limit && LowerBoundCost(group) >= *limit) return;
+  if (!IsExplored(group)) {
+    tasks_.emplace([=] {
+      OptimizeGroup(group, required, limit);
+    });
+    tasks_.emplace([=] {
+      ExploreGroup(group, limit);
+    });
+    return;
+  }
+  for (auto expr : group->GetPhysicalExprs()) {
+    if (expr->is_enforcer) continue;
+    auto cost = local_cost_[expr.get()];
+    if (!limit || cost < *limit) {
+      tasks_.emplace([=] {
+        OptimizeInputs(expr, required, {}, cost, limit);
+      });
+    }
+  }
+  AddEnforcers(group, required, limit);
+}
+  \end{minted}
+\end{listing}
 
 \end{document}

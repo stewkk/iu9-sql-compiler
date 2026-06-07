@@ -672,6 +672,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
       co_return;
     }
     boost::asio::awaitable<void> operator()(const IndexSeek& seek) {
+      // FIXME: make index_scan_ required!
       if (!executor.index_scan_) {
         throw std::runtime_error("IndexSeek execution requested, but no index scanner is configured");
       }
