@@ -248,6 +248,7 @@ int main(int argc, char** argv) {
   }
 
   PhysicalPlanNode plan;
+  PhysicalPlanNode naive_plan;
   std::int64_t plan_cost = 0;
   std::int64_t naive_plan_cost = 0;
   try {
@@ -260,22 +261,20 @@ int main(int argc, char** argv) {
     plan = optimizer.Optimize();
     plan_cost = optimizer.GetBestCost();
 
-    if (args.stats) {
-      PropertySet naive_required = parsed.required_order
-          ? PropertySet{SortProperty{*parsed.required_order}}
-          : PropertySet::Any();
-      Optimizer naive_optimizer(parsed.op, MakeNaiveRules(),
-                                CardinalityEstimates{LoadTableSizesFromCsvDir(args.data_dir)},
-                                LoadSchemaFromCsvDir(args.data_dir), std::move(naive_required));
-      naive_optimizer.Optimize();
-      naive_plan_cost = naive_optimizer.GetBestCost();
-    }
+    PropertySet naive_required = parsed.required_order
+                                     ? PropertySet{SortProperty{*parsed.required_order}}
+                                     : PropertySet::Any();
+    Optimizer naive_optimizer(parsed.op, MakeNaiveRules(),
+                              CardinalityEstimates{LoadTableSizesFromCsvDir(args.data_dir)},
+                              LoadSchemaFromCsvDir(args.data_dir), std::move(naive_required));
+    naive_plan = naive_optimizer.Optimize();
+    naive_plan_cost = naive_optimizer.GetBestCost();
   } catch (const std::exception& e) {
     std::cerr << "optimizer error: " << e.what() << "\n";
     return kOptimizerError;
   }
 
-  OutputDot(plan, std::nullopt);
+  OutputDot(plan, naive_plan);
 
   if (args.print_plan) {
     std::cerr << Serialize(plan) << "\n";
