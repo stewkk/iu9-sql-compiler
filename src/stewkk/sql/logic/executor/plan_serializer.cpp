@@ -589,7 +589,7 @@ struct DotBuilder {
 
     int Emit(std::string label, const std::optional<PlanNodeMetadata>& metadata) {
         if (metadata) {
-            label += std::format("\\ncard={}\\ncost={}", metadata->cardinality,
+            label += std::format("\ncard={}\ncost={}", metadata->cardinality,
                                  metadata->local_cost);
         }
         int id = next_id++;
