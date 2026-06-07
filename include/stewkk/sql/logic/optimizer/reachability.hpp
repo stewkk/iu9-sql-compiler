@@ -21,6 +21,7 @@ MatchResult IsReachable(utils::NotNull<Group*> root, const PhysicalPlanNode& tar
 
 MatchResult IsPlanReachable(std::istream& sql, const PhysicalPlanNode& target,
                              CardinalityEstimates cardinality = {},
-                             SchemaCatalog schema = {});
+                             SchemaCatalog schema = {},
+                             IndexCatalog indexes = {});
 
 }  // namespace stewkk::sql

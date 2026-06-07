@@ -68,7 +68,7 @@ TEST(OptimizerTest, Simple) {
 
   ASSERT_THAT(SerializeDot(got),
               Eq("digraph G { rankdir=BT;\n"
-                 "  n0 [label=\"SeqScan\\\\nusers\\\\ncard=10\\\\ncost=1000\"]\n"
+                 "  n0 [label=\"SeqScan\\\\nusers\\ncard=10\\ncost=1000\"]\n"
                  "}\n"));
   ASSERT_THAT(optimizer.GetBestCost(), Eq(1000));
 }
@@ -224,6 +224,42 @@ TEST(OptimizerTest, PushesSelectiveFilterIntoHashBuildSide) {
          " (SeqScan lineorder lo))"));
 }
 
+TEST(OptimizerTest, UsesIndexSeekForIndexedIntegerPredicate) {
+  std::stringstream s{"SELECT * FROM users WHERE users.id = 8;"};
+  Operator op = GetAST(s).value().op;
+  Optimizer optimizer(op, MakeMainRules(IndexCatalog({
+      IndexInfo{.table = "users", .column = "id", .type = "sorted", .file = "users.id.sorted.idx"},
+  })), CardinalityEstimates({{"users", 1000}}));
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(Serialize(got), Eq("(IndexSeek (= (attr users id) 8) users)"));
+}
+
+TEST(OptimizerTest, KeepsSequentialFilterWhenIndexMetadataIsAbsent) {
+  std::stringstream s{"SELECT * FROM users WHERE users.id = 8;"};
+  Operator op = GetAST(s).value().op;
+  Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({{"users", 1000}}));
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(Serialize(got),
+              Eq("(PhysicalFilter (= (attr users id) 8) (SeqScan users))"));
+}
+
+TEST(OptimizerTest, IndexSeekSupportsAliasAndFullResidualPredicate) {
+  std::stringstream s{"SELECT * FROM users AS u WHERE u.id >= 8 AND u.age < 70;"};
+  Operator op = GetAST(s).value().op;
+  Optimizer optimizer(op, MakeMainRules(IndexCatalog({
+      IndexInfo{.table = "users", .column = "id", .type = "sorted", .file = "users.id.sorted.idx"},
+  })), CardinalityEstimates({{"users", 1000}}));
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(Serialize(got),
+              Eq("(IndexSeek (and (>= (attr u id) 8) (< (attr u age) 70)) users u)"));
+}
+
 TEST(OptimizerTest, NaiveRulesDisableLogicalTransformations) {
   std::stringstream s{
       "SELECT * FROM lineorder AS lo "
@@ -265,6 +301,21 @@ TEST(ReachabilityTest, SeqScanWrongTable) {
   auto result = IsPlanReachable(s, SeqScan{"orders"});
   ASSERT_THAT(result.reachable, IsFalse());
   ASSERT_THAT(result.mismatch, HasSubstr("users"));
+}
+
+TEST(ReachabilityTest, IndexSeekReachableWithIndexCatalog) {
+  std::stringstream s{"SELECT * FROM users WHERE users.id >= 8;"};
+  Expression predicate = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kGe,
+      std::make_shared<Expression>(IntConst{8})};
+  auto result = IsPlanReachable(
+      s, IndexSeek{"users", std::nullopt, predicate}, {}, {},
+      IndexCatalog({
+          IndexInfo{.table = "users", .column = "id", .type = "sorted",
+                    .file = "users.id.sorted.idx"},
+      }));
+  ASSERT_THAT(result.reachable, IsTrue());
 }
 
 TEST(ReachabilityTest, WrongOperatorType) {

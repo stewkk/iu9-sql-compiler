@@ -7,10 +7,15 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/co_spawn.hpp>
+#include <boost/asio/use_future.hpp>
 
 #include <stewkk/sql/logic/parser/parser.hpp>
 #include <stewkk/sql/logic/executor/executor.hpp>
 #include <stewkk/sql/logic/executor/sequential_scan.hpp>
+#include <stewkk/sql/logic/optimizer/cardinality.hpp>
+#include <stewkk/sql/logic/optimizer/optimizer.hpp>
+#include <stewkk/sql/logic/optimizer/rules.hpp>
+#include <stewkk/sql/logic/optimizer/schema_catalog.hpp>
 #include <stewkk/sql/models/parser/relational_algebra_ast.hpp>
 #include <stewkk/sql/utils/overloaded.hpp>
 
@@ -187,6 +192,46 @@ TEST(ExecutorTest, IndexSeekBuildsAndUsesSortedIntIndex) {
       });
 
   ctx.run();
+}
+
+TEST(ExecutorTest, OptimizedIndexSeekPlanExecutes) {
+  auto dir = std::filesystem::temp_directory_path() / "iu9_sql_optimized_index_seek_test";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  {
+    std::ofstream csv{dir / "users.csv"};
+    csv << "id:int,age:int\n"
+        << "10,22\n"
+        << "1,33\n"
+        << "8,64\n"
+        << "8,70\n";
+    std::ofstream meta{dir / "indexes.meta"};
+    meta << "users id sorted users.id.sorted.idx\n";
+  }
+
+  std::stringstream sql{"SELECT * FROM users WHERE users.id >= 8 AND users.age < 70;"};
+  auto parsed = GetAST(sql).value();
+  Optimizer optimizer(parsed.op, MakeMainRules(LoadIndexCatalogFromCsvDir(dir)),
+                      CardinalityEstimates({{"users", 4}}),
+                      LoadSchemaFromCsvDir(dir));
+  auto plan = optimizer.Optimize();
+
+  boost::asio::io_context ctx;
+  CsvDirSequentialScanner seq_scan{dir.string()};
+  CsvDirIndexedScanner index_scan{dir.string()};
+  Executor executor(std::move(seq_scan), std::move(index_scan), ctx.get_executor());
+  auto fut = boost::asio::co_spawn(ctx, executor.Execute(plan), boost::asio::use_future);
+  ctx.run();
+  auto got = fut.get();
+
+  ASSERT_THAT(got.value().attributes,
+              Eq(AttributesInfo{{"users", "id", Type::kInt}, {"users", "age", Type::kInt}}));
+  ASSERT_THAT(got.value().tuples,
+              Eq(Tuples{
+                  Tuple{Value{false, 8}, Value{false, 64}},
+                  Tuple{Value{false, 10}, Value{false, 22}},
+              }));
+  std::filesystem::remove_all(dir);
 }
 
 TEST(ExecutorTest, StringFilterProjectionAndCsvQuotes) {

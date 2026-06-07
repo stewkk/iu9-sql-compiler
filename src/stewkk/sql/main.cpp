@@ -186,8 +186,9 @@ boost::asio::awaitable<Result<Relation>> RunQuery(const std::string& data_dir,
 boost::asio::awaitable<Result<Relation>> RunQueryJit(const std::string& data_dir,
                                                      const PhysicalPlanNode& plan) {
   CsvDirSequentialScanner seq_scan{data_dir};
+  CsvDirIndexedScanner index_scan{data_dir};
   Executor<CachedJitCompiledExpressionExecutor> executor(
-      std::move(seq_scan), co_await boost::asio::this_coro::executor);
+      std::move(seq_scan), std::move(index_scan), co_await boost::asio::this_coro::executor);
   co_return co_await executor.Execute(plan);
 }
 
@@ -223,7 +224,9 @@ int main(int argc, char** argv) {
     try {
       SchemaCatalog schema = args.data_dir.empty() ? SchemaCatalog{}
                                                     : LoadSchemaFromCsvDir(args.data_dir);
-      mr = IsPlanReachable(sql_stream, target, {}, std::move(schema));
+      IndexCatalog indexes = args.data_dir.empty() ? IndexCatalog{}
+                                                   : LoadIndexCatalogFromCsvDir(args.data_dir);
+      mr = IsPlanReachable(sql_stream, target, {}, std::move(schema), std::move(indexes));
     } catch (const std::exception& e) {
       std::cerr << "reachability error: " << e.what() << "\n";
       return kOptimizerError;
@@ -255,7 +258,7 @@ int main(int argc, char** argv) {
     PropertySet required = parsed.required_order
         ? PropertySet{SortProperty{*parsed.required_order}}
         : PropertySet::Any();
-    Optimizer optimizer(parsed.op, MakeMainRules(),
+    Optimizer optimizer(parsed.op, MakeMainRules(LoadIndexCatalogFromCsvDir(args.data_dir)),
                         CardinalityEstimates{LoadTableSizesFromCsvDir(args.data_dir)},
                         LoadSchemaFromCsvDir(args.data_dir), std::move(required));
     plan = optimizer.Optimize();

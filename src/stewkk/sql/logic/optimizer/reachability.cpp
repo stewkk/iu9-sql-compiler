@@ -1,6 +1,7 @@
 #include <stewkk/sql/logic/optimizer/reachability.hpp>
 
 #include <format>
+#include <utility>
 
 #include <stewkk/sql/utils/overloaded.hpp>
 #include <stewkk/sql/logic/parser/parser.hpp>
@@ -35,6 +36,22 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
                 return {false, depth + 1,
                         std::format("SeqScan alias '{}' != '{}'",
                                     op.alias.value_or(""), t->alias.value_or(""))};
+            return {true, depth + 1, {}};
+        },
+        [&](const physical::IndexSeek& op) -> InternalMatch {
+            const auto* t = std::get_if<IndexSeek>(&target.node);
+            if (!t) return {false, depth, "type mismatch: expected IndexSeek"};
+            if (op.table != t->table)
+                return {false, depth + 1,
+                        std::format("IndexSeek table '{}' != '{}'", op.table, t->table)};
+            if (op.alias != t->alias)
+                return {false, depth + 1,
+                        std::format("IndexSeek alias '{}' != '{}'",
+                                    op.alias.value_or(""), t->alias.value_or(""))};
+            if (op.predicate != t->predicate)
+                return {false, depth + 1,
+                        std::format("IndexSeek predicate '{}' != '{}'",
+                                    ToString(op.predicate), ToString(t->predicate))};
             return {true, depth + 1, {}};
         },
         [&](const physical::Filter& op) -> InternalMatch {
@@ -139,12 +156,13 @@ MatchResult IsReachable(utils::NotNull<Group*> root, const PhysicalPlanNode& tar
 }
 
 MatchResult IsPlanReachable(std::istream& sql, const PhysicalPlanNode& target,
-                             CardinalityEstimates cardinality, SchemaCatalog schema) {
+                             CardinalityEstimates cardinality, SchemaCatalog schema,
+                             IndexCatalog indexes) {
     auto parsed = GetAST(sql).value();
     PropertySet required = parsed.required_order
         ? PropertySet{SortProperty{*parsed.required_order}}
         : PropertySet::Any();
-    Optimizer optimizer(parsed.op, MakeMainRules(), std::move(cardinality),
+    Optimizer optimizer(parsed.op, MakeMainRules(std::move(indexes)), std::move(cardinality),
                         std::move(schema), std::move(required));
     auto plan = optimizer.OptimizeExhaustive();
     auto result = IsReachable(optimizer.GetRootGroup(), target);

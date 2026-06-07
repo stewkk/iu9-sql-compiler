@@ -12,6 +12,7 @@
 #include <stewkk/sql/utils/overloaded.hpp>
 #include <stewkk/sql/utils/log.hpp>
 #include <stewkk/sql/logic/executor/buffer_size.hpp>
+#include <stewkk/sql/logic/implementation_rules/implement_index_seek.hpp>
 #include <stewkk/sql/logic/optimizer/properties/sort_property.hpp>
 #include <stewkk/sql/logic/optimizer/sort_enforcer.hpp>
 
@@ -30,6 +31,7 @@ PropertySet RequiredInputProps(utils::NotNull<PhysicalExpr*> expr,
                                       PropertySet required, size_t child_index) {
   return std::visit(utils::Overloaded{
       [&](const physical::SeqScan&) { return PropertySet::Any(); },
+      [&](const physical::IndexSeek&) { return PropertySet::Any(); },
       [&](const physical::Filter&) { return required; },
       [&](const physical::Projection&) { return required; },
       [&](const physical::NestedLoopJoin&) { return PropertySet::Any(); },
@@ -46,6 +48,7 @@ PropertySet DeriveOutputProps(utils::NotNull<PhysicalExpr*> expr,
                                      const std::vector<PropertySet>& child_delivered) {
   return std::visit(utils::Overloaded{
       [&](const physical::SeqScan&) { return PropertySet::Any(); },
+      [&](const physical::IndexSeek&) { return PropertySet::Any(); },
       [&](const physical::Filter&) { return child_delivered[0]; },
       [&](const physical::Projection&) { return child_delivered[0]; },
       [&](const physical::NestedLoopJoin&) { return PropertySet::Any(); },
@@ -102,6 +105,11 @@ int64_t CalcCost(utils::NotNull<PhysicalExpr*> expr, CardinalityEstimates& cardi
   return std::visit(utils::Overloaded{
       [&](const physical::SeqScan&) -> int64_t {
           return 100 * cardinality.GetCardinality(expr->group);
+      },
+      [&](const physical::IndexSeek&) -> int64_t {
+          auto out = cardinality.GetCardinality(expr->group);
+          return 200 * out + 100 * static_cast<int64_t>(
+              std::bit_width(static_cast<uint64_t>(std::max<int64_t>(1, out))));
       },
       [&](const physical::Filter&) -> int64_t {
           return 100 * cardinality.GetCardinality(expr->group);
@@ -160,6 +168,9 @@ std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<LogicalExpr*> exp
 std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<PhysicalExpr*> expr) {
   return std::visit(utils::Overloaded{
       [](const physical::SeqScan&) -> std::vector<utils::NotNull<Group*>> {
+          return {};
+      },
+      [](const physical::IndexSeek&) -> std::vector<utils::NotNull<Group*>> {
           return {};
       },
       [](const physical::Filter& f) -> std::vector<utils::NotNull<Group*>> {
@@ -413,6 +424,9 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
           [](const physical::SeqScan& op) -> PhysicalPlanNode {
             return SeqScan{.table = op.table, .alias = op.alias};
           },
+          [](const physical::IndexSeek& op) -> PhysicalPlanNode {
+            return IndexSeek{.table = op.table, .alias = op.alias, .predicate = op.predicate};
+          },
           [this, best_expr_nn, required](const physical::Projection& op) -> PhysicalPlanNode {
             return PhysicalProjection{
                 .source = std::make_shared<PhysicalPlanNode>(
@@ -530,7 +544,7 @@ utils::NotNull<Group*> Optimizer<NTransformation, NImplementation>::GetRootGroup
   return root_->group;
 }
 
-template class Optimizer<7, 7>;
+template class Optimizer<7, 8>;
 template class Optimizer<0, 6>;
 
 }  // namespace stewkk::sql

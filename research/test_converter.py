@@ -129,7 +129,65 @@ def test_aliased_index_seek_from_xml():
 
     result = convert(plan)
 
-    assert result == "(IndexSeek (> (attr t titleId) 5000) Titles)"
+    assert result == "(IndexSeek (> (attr t titleId) 5000) Titles t)"
+
+
+def test_index_seek_without_seek_predicates_uses_predicate_from_xml():
+    plan = showplan("""
+      <RelOp PhysicalOp="Index Seek" LogicalOp="Index Seek">
+        <IndexScan>
+          <Object Database="[fuzz]" Schema="[dbo]" Table="[customers]" Alias="[t0]" Index="[ix_customers_region_id]"/>
+          <Predicate>
+            <ScalarOperator>
+              <Compare CompareOp="EQ">
+                <ScalarOperator>
+                  <Identifier>
+                    <ColumnReference Database="[fuzz]" Schema="[dbo]" Table="[customers]" Alias="[t0]" Column="region_id"/>
+                  </Identifier>
+                </ScalarOperator>
+                <ScalarOperator>
+                  <Const ConstValue="(7)"/>
+                </ScalarOperator>
+              </Compare>
+            </ScalarOperator>
+          </Predicate>
+        </IndexScan>
+      </RelOp>
+    """)
+
+    result = convert(plan)
+
+    assert result == "(IndexSeek (= (attr t0 region_id) 7) customers t0)"
+
+
+def test_index_seek_prefix_eq_from_xml():
+    plan = showplan("""
+      <RelOp PhysicalOp="Index Seek" LogicalOp="Index Seek">
+        <IndexScan>
+          <Object Database="[fuzz]" Schema="[dbo]" Table="[customers]" Alias="[t0]" Index="[ix_customers_region_id]"/>
+          <SeekPredicates>
+            <SeekPredicateNew>
+              <SeekKeys>
+                <Prefix ScanType="EQ">
+                  <RangeColumns>
+                    <ColumnReference Database="[fuzz]" Schema="[dbo]" Table="[customers]" Alias="[t0]" Column="region_id"/>
+                  </RangeColumns>
+                  <RangeExpressions>
+                    <ScalarOperator>
+                      <Const ConstValue="(7)"/>
+                    </ScalarOperator>
+                  </RangeExpressions>
+                </Prefix>
+              </SeekKeys>
+            </SeekPredicateNew>
+          </SeekPredicates>
+        </IndexScan>
+      </RelOp>
+    """)
+
+    result = convert(plan)
+
+    assert result == "(IndexSeek (= (attr t0 region_id) 7) customers t0)"
 
 
 def test_filter_lt(extractor):

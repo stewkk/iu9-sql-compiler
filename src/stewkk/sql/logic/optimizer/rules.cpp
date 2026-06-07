@@ -1,8 +1,10 @@
 #include <stewkk/sql/logic/optimizer/rules.hpp>
 
+#include <utility>
+
 namespace stewkk::sql {
 
-Rules<7, 7> MakeMainRules() {
+Rules<7, 8> MakeMainRules(IndexCatalog indexes) {
     return {
         .transformation_rules = {
             std::make_unique<JoinCommutativity>(),
@@ -16,6 +18,7 @@ Rules<7, 7> MakeMainRules() {
         .implementation_rules = {
             std::make_unique<ImplementTable>(),
             std::make_unique<ImplementFilter>(),
+            std::make_unique<ImplementIndexSeek>(std::move(indexes)),
             std::make_unique<ImplementProjection>(),
             std::make_unique<ImplementJoin>(),
             std::make_unique<ImplementCrossJoin>(),

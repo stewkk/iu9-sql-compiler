@@ -5,10 +5,21 @@
 #include <format>
 #include <ranges>
 #include <regex>
+#include <sstream>
+#include <utility>
 
 #include <stewkk/sql/utils/overloaded.hpp>
 
 namespace stewkk::sql {
+
+IndexCatalog::IndexCatalog(std::vector<IndexInfo> indexes)
+    : indexes_(std::move(indexes)) {}
+
+bool IndexCatalog::HasSortedIndex(const std::string& table, const std::string& column) const {
+  return std::ranges::any_of(indexes_, [&](const IndexInfo& index) {
+    return index.table == table && index.column == column && index.type == "sorted";
+  });
+}
 
 SchemaCatalog::SchemaCatalog(std::unordered_map<std::string, Schema> tables)
     : tables_(std::move(tables)) {}
@@ -111,6 +122,29 @@ SchemaCatalog LoadSchemaFromCsvDir(const std::filesystem::path& dir) {
     tables.emplace(std::move(stem), std::move(schema));
   }
   return SchemaCatalog{std::move(tables)};
+}
+
+IndexCatalog LoadIndexCatalogFromCsvDir(const std::filesystem::path& dir) {
+  std::vector<IndexInfo> indexes;
+  std::ifstream input{dir / "indexes.meta"};
+  if (!input) {
+    return IndexCatalog{};
+  }
+
+  std::string line;
+  while (std::getline(input, line)) {
+    auto first = line.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos || line[first] == '#') {
+      continue;
+    }
+
+    std::istringstream fields{line};
+    IndexInfo index;
+    if (fields >> index.table >> index.column >> index.type >> index.file) {
+      indexes.push_back(std::move(index));
+    }
+  }
+  return IndexCatalog{std::move(indexes)};
 }
 
 std::unordered_map<std::string, std::int64_t> LoadTableSizesFromCsvDir(

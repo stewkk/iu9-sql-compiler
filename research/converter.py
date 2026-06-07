@@ -210,19 +210,22 @@ def _convert_scan(relop: ET.Element) -> str:
         raise ValueError("cannot find Object element in scan")
     table, alias = _object_table_and_alias(obj)
     visible_table = alias or table
+    pred_elem = relop.find(f".//{NS}IndexScan/{NS}Predicate/{NS}ScalarOperator")
+    if pred_elem is None:
+        pred_elem = relop.find(f".//{NS}TableScan/{NS}Predicate/{NS}ScalarOperator")
 
     if "Seek" in phys_op:
         seek_pred = _convert_seek_predicates(relop, visible_table)
         if seek_pred is None:
-            raise ValueError(f"Index Seek node has no SeekPredicates: {phys_op!r}")
-        base = f"(IndexSeek {seek_pred} {table})"
+            if pred_elem is None:
+                raise ValueError(f"Index Seek node has no SeekPredicates: {phys_op!r}")
+            seek_pred = _convert_scalar(pred_elem)
+            pred_elem = None
+        base = f"(IndexSeek {seek_pred} {table} {alias})" if alias else f"(IndexSeek {seek_pred} {table})"
     else:
         base = f"(SeqScan {table} {alias})" if alias else f"(SeqScan {table})"
 
     # Residual predicate (pushed-down filter evaluated after the scan/seek)
-    pred_elem = relop.find(f".//{NS}IndexScan/{NS}Predicate/{NS}ScalarOperator")
-    if pred_elem is None:
-        pred_elem = relop.find(f".//{NS}TableScan/{NS}Predicate/{NS}ScalarOperator")
     if pred_elem is not None:
         return f"(PhysicalFilter {_convert_scalar(pred_elem)} {base})"
 
@@ -235,7 +238,8 @@ def _convert_seek_predicates(relop: ET.Element, table: str) -> str | None:
         return None
 
     conditions = []
-    for range_elem in (seek_preds.findall(f".//{NS}StartRange") +
+    for range_elem in (seek_preds.findall(f".//{NS}Prefix") +
+                       seek_preds.findall(f".//{NS}StartRange") +
                        seek_preds.findall(f".//{NS}EndRange")):
         op = _SEEK_SCAN_TYPES.get(range_elem.get("ScanType", ""))
         if not op:

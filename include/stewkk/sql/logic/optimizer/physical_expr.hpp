@@ -22,6 +22,14 @@ struct SeqScan {
   bool operator==(const SeqScan&) const = default;
 };
 
+struct IndexSeek {
+  std::string table;
+  std::optional<std::string> alias;
+  Expression predicate;
+
+  bool operator==(const IndexSeek&) const = default;
+};
+
 struct Projection {
   utils::NotNull<Group*> source;
   std::vector<Expression> expressions;
@@ -82,7 +90,8 @@ struct Aggregation {
 struct PhysicalExpr {
     std::variant<physical::SeqScan, physical::Projection, physical::Filter,
                  physical::NestedLoopJoin, physical::NestedLoopCrossJoin,
-                 physical::HashJoin, physical::Sort, physical::Aggregation> root_operator;
+                 physical::HashJoin, physical::Sort, physical::Aggregation,
+                 physical::IndexSeek> root_operator;
     utils::NotNull<Group*> group;
     bool is_enforcer = false;
 };

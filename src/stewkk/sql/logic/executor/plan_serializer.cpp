@@ -577,6 +577,10 @@ std::string EscapeLabel(std::string_view s) {
     std::string out;
     out.reserve(s.size());
     for (char c : s) {
+        if (c == '\n') {
+            out += "\\n";
+            continue;
+        }
         if (c == '"' || c == '\\') out += '\\';
         out += c;
     }

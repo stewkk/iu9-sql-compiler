@@ -48,6 +48,7 @@ add_library(libsql
   logic/transformation_rules/in_to_or_chain.cpp
   logic/implementation_rules/implement_table.cpp
   logic/implementation_rules/implement_filter.cpp
+  logic/implementation_rules/implement_index_seek.cpp
   logic/implementation_rules/implement_projection.cpp
   logic/implementation_rules/implement_join.cpp
   logic/implementation_rules/implement_cross_join.cpp

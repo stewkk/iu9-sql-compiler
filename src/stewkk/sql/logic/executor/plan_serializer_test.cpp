@@ -267,7 +267,7 @@ TEST(PlanSerializerDotTest, RendersMetadataWhenPresent) {
 
     auto dot = SerializeDot(plan);
 
-    EXPECT_THAT(dot, ::testing::HasSubstr("SeqScan\\\\nusers\\\\ncard=42\\\\ncost=4200"));
+    EXPECT_THAT(dot, ::testing::HasSubstr("SeqScan\\\\nusers\\ncard=42\\ncost=4200"));
 }
 
 } // namespace stewkk::sql

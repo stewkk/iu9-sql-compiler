@@ -123,6 +123,13 @@ class MsSqlRunner:
                 rows,
             )
 
+        for col, type_ in zip(cols, types):
+            if type_ == "int":
+                index_name = f"ix_{path.stem}_{col}"
+                cur.execute(
+                    f"CREATE INDEX [{index_name}] ON [dbo].[{path.stem}] ([{col}])"
+                )
+
     def run(self, query: str) -> RunResult:
         if self._conn is None:
             self._conn = self._connect(self._database)
