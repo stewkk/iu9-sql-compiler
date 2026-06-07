@@ -59,6 +59,10 @@ public:
 private:
   boost::asio::awaitable<void> Execute(const PhysicalPlanNode& op, AttributesInfoChannel& attr_chan,
                                        TuplesChannel& tuples_chan);
+  boost::asio::awaitable<void> ExecuteSeqScan(const SeqScan& seq_scan, AttributesInfoChannel& attr_chan,
+                                              TuplesChannel& tuples_chan);
+  boost::asio::awaitable<void> ExecuteIndexSeek(const IndexSeek& seek, AttributesInfoChannel& attr_chan,
+                                                TuplesChannel& tuples_chan);
   boost::asio::awaitable<void> ExecuteProjection(const PhysicalProjection& proj, AttributesInfoChannel& attr_chan,
                                                  TuplesChannel& tuples_chan);
   boost::asio::awaitable<void> ExecuteFilter(const PhysicalFilter& filter, AttributesInfoChannel& attr_chan,
@@ -73,6 +77,8 @@ private:
   boost::asio::awaitable<void> ExecuteHashAggregate(const PhysicalAggregation& agg,
                                                      AttributesInfoChannel& attr_chan,
                                                      TuplesChannel& tuples_chan);
+  boost::asio::awaitable<void> ExecuteSort(const PhysicalSort& sort, AttributesInfoChannel& attr_chan,
+                                           TuplesChannel& tuples_chan);
   boost::asio::experimental::promise<void(std::exception_ptr)> SpawnExecutor(
       boost::asio::any_io_executor exec,
       const PhysicalPlanNode& op, AttributesInfoChannel& attr_chan, TuplesChannel& tuple_chan);

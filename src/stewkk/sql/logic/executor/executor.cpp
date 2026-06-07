@@ -636,119 +636,36 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
     tuples_chan.close();
   });
   struct ExecuteVisitor{
-    boost::asio::awaitable<void> operator()(const SeqScan& seq_scan) {
-      co_await executor.sequential_scan_(seq_scan.table, std::string{OutputTable(seq_scan)},
-                                         attr_chan, tuples_chan);
-      co_return;
+    boost::asio::awaitable<void> operator()(const SeqScan& seq_scan) const {
+      return executor.ExecuteSeqScan(seq_scan, attr_chan, tuples_chan);
     }
-    boost::asio::awaitable<void> operator()(const PhysicalProjection& projection) {
+    boost::asio::awaitable<void> operator()(const PhysicalProjection& projection) const {
       // NOTE: We are using multiset relational algebra projection (i.e. not
-     
-      co_await executor.ExecuteProjection(projection, attr_chan, tuples_chan);
-      co_return;
+      return executor.ExecuteProjection(projection, attr_chan, tuples_chan);
     }
-    boost::asio::awaitable<void> operator()(const PhysicalFilter& filter) {
-      co_await executor.ExecuteFilter(filter, attr_chan, tuples_chan);
-      co_return;
+    boost::asio::awaitable<void> operator()(const PhysicalFilter& filter) const {
+      return executor.ExecuteFilter(filter, attr_chan, tuples_chan);
     }
-    boost::asio::awaitable<void> operator()(const NestedLoopJoin& join) {
-      co_await executor.ExecuteJoin(join, attr_chan, tuples_chan);
-      co_return;
+    boost::asio::awaitable<void> operator()(const NestedLoopJoin& join) const {
+      return executor.ExecuteJoin(join, attr_chan, tuples_chan);
     }
-    boost::asio::awaitable<void> operator()(const NestedLoopCrossJoin& cross_join) {
-      co_await executor.ExecuteCrossJoin(cross_join, attr_chan, tuples_chan);
-      co_return;
+    boost::asio::awaitable<void> operator()(const NestedLoopCrossJoin& cross_join) const {
+      return executor.ExecuteCrossJoin(cross_join, attr_chan, tuples_chan);
     }
-    boost::asio::awaitable<void> operator()(const HashJoin& join) {
-      co_await executor.ExecuteHashJoin(join, attr_chan, tuples_chan);
-      co_return;
+    boost::asio::awaitable<void> operator()(const HashJoin& join) const {
+      return executor.ExecuteHashJoin(join, attr_chan, tuples_chan);
     }
-    boost::asio::awaitable<void> operator()(const PhysicalAggregation& agg) {
-      co_await executor.ExecuteHashAggregate(agg, attr_chan, tuples_chan);
-      co_return;
+    boost::asio::awaitable<void> operator()(const PhysicalAggregation& agg) const {
+      return executor.ExecuteHashAggregate(agg, attr_chan, tuples_chan);
     }
-    boost::asio::awaitable<void> operator()(const MergeJoin&) {
+    boost::asio::awaitable<void> operator()(const MergeJoin&) const {
       throw std::runtime_error("MergeJoin execution not implemented");
-      co_return;
     }
-    boost::asio::awaitable<void> operator()(const IndexSeek& seek) {
-      // FIXME: make index_scan_ required!
-      if (!executor.index_scan_) {
-        throw std::runtime_error("IndexSeek execution requested, but no index scanner is configured");
-      }
-      co_await executor.index_scan_(seek.table, seek.alias ? *seek.alias : seek.table, seek.predicate,
-                                    attr_chan, tuples_chan);
-      co_return;
+    boost::asio::awaitable<void> operator()(const IndexSeek& seek) const {
+      return executor.ExecuteIndexSeek(seek, attr_chan, tuples_chan);
     }
-    // FIXME: that's in-memory sort
-    boost::asio::awaitable<void> operator()(const PhysicalSort& sort) {
-      auto close_on_fail = boost::scope::make_scope_fail(
-          [this] { attr_chan.close(); tuples_chan.close(); });
-      auto exec = co_await boost::asio::this_coro::executor;
-      auto [in_attrs_chan, in_tuples_chan] = co_await GetChannels();
-      auto task = executor.SpawnExecutor(exec, *sort.source, in_attrs_chan, in_tuples_chan);
-
-      auto attrs = co_await in_attrs_chan.async_receive(boost::asio::use_awaitable);
-      co_await attr_chan.async_send(boost::system::error_code{}, attrs, boost::asio::use_awaitable);
-      attr_chan.close();
-
-      Tuples all_tuples;
-      for (;;) {
-        auto buf = co_await ReceiveTuples(in_tuples_chan);
-        if (buf.empty()) break;
-        std::move(buf.begin(), buf.end(), std::back_inserter(all_tuples));
-      }
-
-      std::vector<std::pair<size_t, Direction>> key_indices;
-      for (const auto& key : sort.keys.keys) {
-        auto it = std::find_if(attrs.begin(), attrs.end(),
-            [&](const AttributeInfo& a) {
-              return a.name == key.column && (key.table.empty() || a.table == key.table);
-            });
-        if (it == attrs.end())
-          throw std::runtime_error{"sort key column not found: " + key.table + "." + key.column};
-        key_indices.push_back({static_cast<size_t>(it - attrs.begin()), key.dir});
-      }
-
-      std::sort(all_tuples.begin(), all_tuples.end(),
-          [&](const Tuple& a, const Tuple& b) {
-            for (const auto& [idx, dir] : key_indices) {
-              const auto& attr = attrs[idx];
-              const auto& va = a[idx];
-              const auto& vb = b[idx];
-              if (va.is_null && vb.is_null) continue;
-              if (va.is_null) return false;
-              if (vb.is_null) return true;
-              bool less = false;
-              bool greater = false;
-              switch (attr.type) {
-                case Type::kInt:
-                  less = va.value.int_value < vb.value.int_value;
-                  greater = va.value.int_value > vb.value.int_value;
-                  break;
-                case Type::kBool:
-                  less = va.value.bool_value < vb.value.bool_value;
-                  greater = va.value.bool_value > vb.value.bool_value;
-                  break;
-                case Type::kString: {
-                  const auto& sa = GetInternedString(va.value.string_id);
-                  const auto& sb = GetInternedString(vb.value.string_id);
-                  less = sa < sb;
-                  greater = sa > sb;
-                  break;
-                }
-              }
-              if (less || greater) return dir == Direction::kAsc ? less : greater;
-            }
-            return false;
-          });
-
-      if (!all_tuples.empty())
-        co_await tuples_chan.async_send(boost::system::error_code{},
-            std::move(all_tuples), boost::asio::use_awaitable);
-      co_await task(boost::asio::use_awaitable);
-      tuples_chan.close();
-      co_return;
+    boost::asio::awaitable<void> operator()(const PhysicalSort& sort) const {
+      return executor.ExecuteSort(sort, attr_chan, tuples_chan);
     }
 
     AttributesInfoChannel& attr_chan;
@@ -757,6 +674,95 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
   };
   co_await std::visit(ExecuteVisitor{attr_chan, tuples_chan, *this}, op.node);
   co_return;
+}
+
+template <typename ExpressionExecutor>
+boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteSeqScan(
+    const SeqScan& seq_scan, AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan) {
+  co_await sequential_scan_(seq_scan.table, std::string{OutputTable(seq_scan)}, attr_chan, tuples_chan);
+}
+
+template <typename ExpressionExecutor>
+boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteIndexSeek(
+    const IndexSeek& seek, AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan) {
+  // FIXME: make index_scan_ required!
+  if (!index_scan_) {
+    throw std::runtime_error("IndexSeek execution requested, but no index scanner is configured");
+  }
+  co_await index_scan_(seek.table, seek.alias ? *seek.alias : seek.table, seek.predicate,
+                       attr_chan, tuples_chan);
+}
+
+template <typename ExpressionExecutor>
+boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteSort(
+    const PhysicalSort& sort, AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan) {
+  // FIXME: that's in-memory sort
+  auto close_on_fail = boost::scope::make_scope_fail(
+      [&] { attr_chan.close(); tuples_chan.close(); });
+  auto exec = co_await boost::asio::this_coro::executor;
+  auto [in_attrs_chan, in_tuples_chan] = co_await GetChannels();
+  auto task = SpawnExecutor(exec, *sort.source, in_attrs_chan, in_tuples_chan);
+
+  auto attrs = co_await in_attrs_chan.async_receive(boost::asio::use_awaitable);
+  co_await attr_chan.async_send(boost::system::error_code{}, attrs, boost::asio::use_awaitable);
+  attr_chan.close();
+
+  Tuples all_tuples;
+  for (;;) {
+    auto buf = co_await ReceiveTuples(in_tuples_chan);
+    if (buf.empty()) break;
+    std::move(buf.begin(), buf.end(), std::back_inserter(all_tuples));
+  }
+
+  std::vector<std::pair<size_t, Direction>> key_indices;
+  for (const auto& key : sort.keys.keys) {
+    auto it = std::find_if(attrs.begin(), attrs.end(),
+        [&](const AttributeInfo& a) {
+          return a.name == key.column && (key.table.empty() || a.table == key.table);
+        });
+    if (it == attrs.end())
+      throw std::runtime_error{"sort key column not found: " + key.table + "." + key.column};
+    key_indices.push_back({static_cast<size_t>(it - attrs.begin()), key.dir});
+  }
+
+  std::sort(all_tuples.begin(), all_tuples.end(),
+      [&](const Tuple& a, const Tuple& b) {
+        for (const auto& [idx, dir] : key_indices) {
+          const auto& attr = attrs[idx];
+          const auto& va = a[idx];
+          const auto& vb = b[idx];
+          if (va.is_null && vb.is_null) continue;
+          if (va.is_null) return false;
+          if (vb.is_null) return true;
+          bool less = false;
+          bool greater = false;
+          switch (attr.type) {
+            case Type::kInt:
+              less = va.value.int_value < vb.value.int_value;
+              greater = va.value.int_value > vb.value.int_value;
+              break;
+            case Type::kBool:
+              less = va.value.bool_value < vb.value.bool_value;
+              greater = va.value.bool_value > vb.value.bool_value;
+              break;
+            case Type::kString: {
+              const auto& sa = GetInternedString(va.value.string_id);
+              const auto& sb = GetInternedString(vb.value.string_id);
+              less = sa < sb;
+              greater = sa > sb;
+              break;
+            }
+          }
+          if (less || greater) return dir == Direction::kAsc ? less : greater;
+        }
+        return false;
+      });
+
+  if (!all_tuples.empty())
+    co_await tuples_chan.async_send(boost::system::error_code{},
+        std::move(all_tuples), boost::asio::use_awaitable);
+  co_await task(boost::asio::use_awaitable);
+  tuples_chan.close();
 }
 
 template <typename ExpressionExecutor>
