@@ -261,4 +261,13 @@ TEST(PlanSerializerDotTest, SmokeTest) {
     EXPECT_THAT(dot, ::testing::HasSubstr("n1 -> n2"));
 }
 
+TEST(PlanSerializerDotTest, RendersMetadataWhenPresent) {
+    PhysicalPlanNode plan = SeqScan{"users"};
+    plan.metadata = PlanNodeMetadata{.cardinality = 42, .local_cost = 4200};
+
+    auto dot = SerializeDot(plan);
+
+    EXPECT_THAT(dot, ::testing::HasSubstr("SeqScan\\\\nusers\\\\ncard=42\\\\ncost=4200"));
+}
+
 } // namespace stewkk::sql

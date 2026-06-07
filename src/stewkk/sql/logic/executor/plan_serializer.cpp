@@ -224,7 +224,7 @@ std::string SerializeNode(const PhysicalPlanNode& node) {
                                group_by_str, aggs_str, SerializeNode(*n.source));
         }
     };
-    return std::visit(Visitor{}, node);
+    return std::visit(Visitor{}, node.node);
 }
 
 enum class TokenKind { LParen, RParen, Atom };
@@ -587,7 +587,11 @@ struct DotBuilder {
     std::ostringstream os;
     int next_id = 0;
 
-    int Emit(std::string_view label) {
+    int Emit(std::string label, const std::optional<PlanNodeMetadata>& metadata) {
+        if (metadata) {
+            label += std::format("\\ncard={}\\ncost={}", metadata->cardinality,
+                                 metadata->local_cost);
+        }
         int id = next_id++;
         os << std::format("  n{} [label=\"{}\"]\n", id, EscapeLabel(label));
         return id;
@@ -597,65 +601,87 @@ struct DotBuilder {
         os << std::format("  n{} -> n{}\n", from, to);
     }
 
-    int operator()(const SeqScan& n) {
-        if (n.alias) {
-            return Emit(std::format("SeqScan\\n{} AS {}", n.table, *n.alias));
-        }
-        return Emit(std::format("SeqScan\\n{}", n.table));
+    int EmitNode(const PhysicalPlanNode& node) {
+        return std::visit([&](const auto& n) { return EmitAlternative(n, node.metadata); },
+                          node.node);
     }
-    int operator()(const PhysicalFilter& n) {
-        int src = std::visit(*this, *n.source);
-        int id = Emit(std::format("σ {}", ToString(n.predicate)));
+
+    int EmitAlternative(const SeqScan& n, const std::optional<PlanNodeMetadata>& metadata) {
+        if (n.alias) {
+            return Emit(std::format("SeqScan\\n{} AS {}", n.table, *n.alias), metadata);
+        }
+        return Emit(std::format("SeqScan\\n{}", n.table), metadata);
+    }
+
+    int EmitAlternative(const PhysicalFilter& n,
+                        const std::optional<PlanNodeMetadata>& metadata) {
+        int src = EmitNode(*n.source);
+        int id = Emit(std::format("σ {}", ToString(n.predicate)), metadata);
         EmitEdge(src, id);
         return id;
     }
-    int operator()(const PhysicalProjection& n) {
-        int src = std::visit(*this, *n.source);
+
+    int EmitAlternative(const PhysicalProjection& n,
+                        const std::optional<PlanNodeMetadata>& metadata) {
+        int src = EmitNode(*n.source);
         auto exprs = n.expressions
                      | std::views::transform([](const Expression& e) { return ToString(e); })
                      | std::views::join_with(std::string(", "))
                      | std::ranges::to<std::string>();
-        int id = Emit(std::format("π {}", exprs));
+        int id = Emit(std::format("π {}", exprs), metadata);
         EmitEdge(src, id);
         return id;
     }
-    int operator()(const NestedLoopCrossJoin& n) {
-        int lhs = std::visit(*this, *n.lhs);
-        int rhs = std::visit(*this, *n.rhs);
-        int id = Emit("×");
+
+    int EmitAlternative(const NestedLoopCrossJoin& n,
+                        const std::optional<PlanNodeMetadata>& metadata) {
+        int lhs = EmitNode(*n.lhs);
+        int rhs = EmitNode(*n.rhs);
+        int id = Emit("×", metadata);
         EmitEdge(lhs, id);
         EmitEdge(rhs, id);
         return id;
     }
-    int operator()(const NestedLoopJoin& n) {
-        int lhs = std::visit(*this, *n.lhs);
-        int rhs = std::visit(*this, *n.rhs);
-        int id = Emit(std::format("NL {}\\nON {}", ToString(n.type), ToString(n.qual)));
+
+    int EmitAlternative(const NestedLoopJoin& n,
+                        const std::optional<PlanNodeMetadata>& metadata) {
+        int lhs = EmitNode(*n.lhs);
+        int rhs = EmitNode(*n.rhs);
+        int id = Emit(std::format("NL {}\\nON {}", ToString(n.type), ToString(n.qual)),
+                      metadata);
         EmitEdge(lhs, id);
         EmitEdge(rhs, id);
         return id;
     }
-    int operator()(const IndexSeek& n) {
-        return Emit(std::format("IndexSeek\\n{}\\n{}", n.table, ToString(n.predicate)));
+
+    int EmitAlternative(const IndexSeek& n, const std::optional<PlanNodeMetadata>& metadata) {
+        return Emit(std::format("IndexSeek\\n{}\\n{}", n.table, ToString(n.predicate)),
+                    metadata);
     }
-    int operator()(const HashJoin& n) {
-        int lhs = std::visit(*this, *n.lhs);
-        int rhs = std::visit(*this, *n.rhs);
-        int id = Emit(std::format("Hash {}\\nON {}", ToString(n.type), ToString(n.qual)));
+
+    int EmitAlternative(const HashJoin& n, const std::optional<PlanNodeMetadata>& metadata) {
+        int lhs = EmitNode(*n.lhs);
+        int rhs = EmitNode(*n.rhs);
+        int id = Emit(std::format("Hash {}\\nON {}", ToString(n.type), ToString(n.qual)),
+                      metadata);
         EmitEdge(lhs, id);
         EmitEdge(rhs, id);
         return id;
     }
-    int operator()(const MergeJoin& n) {
-        int lhs = std::visit(*this, *n.lhs);
-        int rhs = std::visit(*this, *n.rhs);
-        int id = Emit(std::format("Merge {}\\nON {}", ToString(n.type), ToString(n.qual)));
+
+    int EmitAlternative(const MergeJoin& n, const std::optional<PlanNodeMetadata>& metadata) {
+        int lhs = EmitNode(*n.lhs);
+        int rhs = EmitNode(*n.rhs);
+        int id = Emit(std::format("Merge {}\\nON {}", ToString(n.type), ToString(n.qual)),
+                      metadata);
         EmitEdge(lhs, id);
         EmitEdge(rhs, id);
         return id;
     }
-    int operator()(const PhysicalSort& n) {
-        int src = std::visit(*this, *n.source);
+
+    int EmitAlternative(const PhysicalSort& n,
+                        const std::optional<PlanNodeMetadata>& metadata) {
+        int src = EmitNode(*n.source);
         std::string keys;
         for (const auto& k : n.keys.keys) {
             if (!keys.empty()) keys += ", ";
@@ -664,12 +690,14 @@ struct DotBuilder {
             keys += k.column;
             keys += k.dir == Direction::kAsc ? " asc" : " desc";
         }
-        int id = Emit(std::format("Sort\\n{}", keys));
+        int id = Emit(std::format("Sort\\n{}", keys), metadata);
         EmitEdge(src, id);
         return id;
     }
-    int operator()(const PhysicalAggregation& n) {
-        int src = std::visit(*this, *n.source);
+
+    int EmitAlternative(const PhysicalAggregation& n,
+                        const std::optional<PlanNodeMetadata>& metadata) {
+        int src = EmitNode(*n.source);
         std::string aggs;
         for (const auto& e : n.aggregates) {
             if (!aggs.empty()) aggs += ", ";
@@ -680,7 +708,8 @@ struct DotBuilder {
             if (!group_by.empty()) group_by += ", ";
             group_by += ToString(e);
         }
-        int id = Emit(std::format("HashAgg\\nGROUP BY {}\\n{}", group_by, aggs));
+        int id = Emit(std::format("HashAgg\\nGROUP BY {}\\n{}", group_by, aggs),
+                      metadata);
         EmitEdge(src, id);
         return id;
     }
@@ -700,7 +729,7 @@ PhysicalPlanNode Deserialize(std::string_view text) {
 
 std::string SerializeDot(const PhysicalPlanNode& node) {
     DotBuilder b;
-    std::visit(b, node);
+    b.EmitNode(node);
     return std::format("digraph G {{ rankdir=BT;\n{}}}\n", b.os.str());
 }
 

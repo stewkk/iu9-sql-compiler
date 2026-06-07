@@ -66,7 +66,10 @@ TEST(OptimizerTest, Simple) {
 
   auto got = optimizer.Optimize();
 
-  ASSERT_THAT(SerializeDot(got), Eq("digraph G { rankdir=BT;\n  n0 [label=\"SeqScan\\\\nusers\"]\n}\n"));
+  ASSERT_THAT(SerializeDot(got),
+              Eq("digraph G { rankdir=BT;\n"
+                 "  n0 [label=\"SeqScan\\\\nusers\\\\ncard=10\\\\ncost=1000\"]\n"
+                 "}\n"));
   ASSERT_THAT(optimizer.GetBestCost(), Eq(1000));
 }
 

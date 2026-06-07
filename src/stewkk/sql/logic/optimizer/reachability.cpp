@@ -26,7 +26,7 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
                                   const PhysicalPlanNode& target, int depth) {
     return std::visit(utils::Overloaded{
         [&](const physical::SeqScan& op) -> InternalMatch {
-            const auto* t = std::get_if<SeqScan>(&target);
+            const auto* t = std::get_if<SeqScan>(&target.node);
             if (!t) return {false, depth, "type mismatch: expected SeqScan"};
             if (op.table != t->table)
                 return {false, depth + 1,
@@ -38,7 +38,7 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             return {true, depth + 1, {}};
         },
         [&](const physical::Filter& op) -> InternalMatch {
-            const auto* t = std::get_if<PhysicalFilter>(&target);
+            const auto* t = std::get_if<PhysicalFilter>(&target.node);
             if (!t) return {false, depth, "type mismatch: expected Filter"};
             if (op.predicate != t->predicate)
                 return {false, depth + 1,
@@ -49,7 +49,7 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             return child;
         },
         [&](const physical::Projection& op) -> InternalMatch {
-            const auto* t = std::get_if<PhysicalProjection>(&target);
+            const auto* t = std::get_if<PhysicalProjection>(&target.node);
             if (!t) return {false, depth, "type mismatch: expected Projection"};
             if (op.expressions != t->expressions)
                 return {false, depth + 1, "Projection expressions mismatch"};
@@ -58,7 +58,7 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             return child;
         },
         [&](const physical::NestedLoopJoin& op) -> InternalMatch {
-            const auto* t = std::get_if<NestedLoopJoin>(&target);
+            const auto* t = std::get_if<NestedLoopJoin>(&target.node);
             if (!t) return {false, depth, "type mismatch: expected NestedLoopJoin"};
             if (op.type != t->type)
                 return {false, depth + 1, "NestedLoopJoin join type mismatch"};
@@ -73,7 +73,7 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             return {true, std::max(lhs.depth, rhs.depth), {}};
         },
         [&](const physical::NestedLoopCrossJoin& op) -> InternalMatch {
-            const auto* t = std::get_if<NestedLoopCrossJoin>(&target);
+            const auto* t = std::get_if<NestedLoopCrossJoin>(&target.node);
             if (!t) return {false, depth, "type mismatch: expected NestedLoopCrossJoin"};
             auto lhs = MatchGroup(op.lhs.get(), *t->lhs, depth + 1);
             if (!lhs.ok) { lhs.reason = "NestedLoopCrossJoin.lhs: " + lhs.reason; return lhs; }
@@ -82,7 +82,7 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             return {true, std::max(lhs.depth, rhs.depth), {}};
         },
         [&](const physical::HashJoin& op) -> InternalMatch {
-            const auto* t = std::get_if<HashJoin>(&target);
+            const auto* t = std::get_if<HashJoin>(&target.node);
             if (!t) return {false, depth, "type mismatch: expected HashJoin"};
             if (op.type != t->type)
                 return {false, depth + 1, "HashJoin join type mismatch"};
@@ -97,7 +97,7 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             return {true, std::max(lhs.depth, rhs.depth), {}};
         },
         [&](const physical::Sort& op) -> InternalMatch {
-            const auto* t = std::get_if<PhysicalSort>(&target);
+            const auto* t = std::get_if<PhysicalSort>(&target.node);
             if (!t) return {false, depth, "type mismatch: expected Sort"};
             if (op.keys != t->keys)
                 return {false, depth + 1, "Sort keys mismatch"};
@@ -106,7 +106,7 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             return child;
         },
         [&](const physical::Aggregation& op) -> InternalMatch {
-            const auto* t = std::get_if<PhysicalAggregation>(&target);
+            const auto* t = std::get_if<PhysicalAggregation>(&target.node);
             if (!t) return {false, depth, "type mismatch: expected HashAggregate"};
             if (op.group_by != t->group_by)
                 return {false, depth + 1, "Aggregation group_by mismatch"};

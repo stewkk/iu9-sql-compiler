@@ -1,8 +1,12 @@
 #pragma once
 
 #include <string>
+#include <cstdint>
+#include <memory>
 #include <optional>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -23,8 +27,7 @@ struct MergeJoin;
 struct IndexSeek;
 struct PhysicalSort;
 struct PhysicalAggregation;
-
-using PhysicalPlanNode = std::variant<SeqScan, PhysicalProjection, PhysicalFilter, NestedLoopCrossJoin, NestedLoopJoin, HashJoin, MergeJoin, IndexSeek, PhysicalSort, PhysicalAggregation>;
+struct PhysicalPlanNode;
 
 struct SeqScan {
   std::string table;
@@ -105,6 +108,29 @@ struct PhysicalAggregation {
   std::vector<Expression> aggregates;
 
   bool operator==(const PhysicalAggregation&) const;
+};
+
+struct PlanNodeMetadata {
+  std::int64_t cardinality = 0;
+  std::int64_t local_cost = 0;
+
+  bool operator==(const PlanNodeMetadata&) const = default;
+};
+
+using PhysicalPlanAlternative = std::variant<SeqScan, PhysicalProjection, PhysicalFilter, NestedLoopCrossJoin, NestedLoopJoin, HashJoin, MergeJoin, IndexSeek, PhysicalSort, PhysicalAggregation>;
+
+struct PhysicalPlanNode {
+  PhysicalPlanAlternative node;
+  std::optional<PlanNodeMetadata> metadata;
+
+  PhysicalPlanNode() = default;
+
+  template <typename T>
+    requires (!std::same_as<std::remove_cvref_t<T>, PhysicalPlanNode>
+              && std::constructible_from<PhysicalPlanAlternative, T>)
+  PhysicalPlanNode(T&& value) : node(std::forward<T>(value)) {}
+
+  bool operator==(const PhysicalPlanNode& other) const;
 };
 
 } // namespace stewkk::sql

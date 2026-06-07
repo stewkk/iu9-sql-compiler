@@ -755,7 +755,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
     TuplesChannel& tuples_chan;
     Executor& executor;
   };
-  co_await std::visit(ExecuteVisitor{attr_chan, tuples_chan, *this}, op);
+  co_await std::visit(ExecuteVisitor{attr_chan, tuples_chan, *this}, op.node);
   co_return;
 }
 

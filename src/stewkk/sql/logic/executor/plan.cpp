@@ -2,6 +2,10 @@
 
 namespace stewkk::sql {
 
+bool PhysicalPlanNode::operator==(const PhysicalPlanNode& other) const {
+  return node == other.node;
+}
+
 std::string_view OutputTable(const SeqScan& scan) {
   return scan.alias ? std::string_view{*scan.alias} : std::string_view{scan.table};
 }

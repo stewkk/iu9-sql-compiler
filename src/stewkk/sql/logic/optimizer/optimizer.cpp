@@ -408,7 +408,7 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
   }
   auto* best_expr = it->second.plan;
   utils::NotNull<PhysicalExpr*> best_expr_nn{best_expr};
-  return std::visit(
+  auto plan = std::visit(
       utils::Overloaded{
           [](const physical::SeqScan& op) -> PhysicalPlanNode {
             return SeqScan{.table = op.table, .alias = op.alias};
@@ -473,6 +473,11 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
           },
       },
       best_expr->root_operator);
+  plan.metadata = PlanNodeMetadata{
+      .cardinality = cardinality_.GetCardinality(best_expr->group),
+      .local_cost = local_cost_.at(best_expr),
+  };
+  return plan;
 }
 
 template<size_t NTransformation, size_t NImplementation>
