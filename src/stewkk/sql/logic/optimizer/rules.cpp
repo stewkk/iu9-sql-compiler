@@ -25,4 +25,18 @@ Rules<7, 7> MakeMainRules() {
     };
 }
 
+Rules<0, 6> MakeNaiveRules() {
+    return {
+        .transformation_rules = {},
+        .implementation_rules = {
+            std::make_unique<ImplementTable>(),
+            std::make_unique<ImplementFilter>(),
+            std::make_unique<ImplementProjection>(),
+            std::make_unique<ImplementJoin>(),
+            std::make_unique<ImplementCrossJoin>(),
+            std::make_unique<ImplementAggregation>(),
+        },
+    };
+}
+
 }  // namespace stewkk::sql

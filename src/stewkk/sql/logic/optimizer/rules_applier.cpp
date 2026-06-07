@@ -31,5 +31,6 @@ utils::NotNull<PhysicalExpr*> RulesApplier<NTransformation, NImplementation>::Ap
 }
 
 template class RulesApplier<7, 7>;
+template class RulesApplier<0, 6>;
 
 }  // namespace stewkk::sql

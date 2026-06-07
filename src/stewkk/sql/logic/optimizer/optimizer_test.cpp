@@ -13,6 +13,7 @@
 #include <stewkk/sql/logic/executor/plan_serializer.hpp>
 
 using ::testing::Eq;
+using ::testing::Gt;
 using ::testing::IsTrue;
 using ::testing::IsFalse;
 using ::testing::HasSubstr;
@@ -218,6 +219,36 @@ TEST(OptimizerTest, PushesSelectiveFilterIntoHashBuildSide) {
       Eq("(HashJoin Inner (= (attr lo suppkey) (attr s id))"
          " (PhysicalFilter (= (attr s region) (str \"AMERICA\")) (SeqScan supplier s))"
          " (SeqScan lineorder lo))"));
+}
+
+TEST(OptimizerTest, NaiveRulesDisableLogicalTransformations) {
+  std::stringstream s{
+      "SELECT * FROM lineorder AS lo "
+      "JOIN supplier AS s ON lo.suppkey = s.id "
+      "WHERE s.region = 'AMERICA';"};
+  Operator op = GetAST(s).value().op;
+  SchemaCatalog schema({
+      {"lineorder", {Attribute{"lineorder", "suppkey"}, Attribute{"lineorder", "value"}}},
+      {"supplier", {Attribute{"supplier", "id"}, Attribute{"supplier", "region"}}},
+  });
+  CardinalityEstimates cardinality({
+      {"lineorder", 6000},
+      {"supplier", 100},
+  });
+  Optimizer optimizer(op, MakeMainRules(), cardinality, schema);
+  auto optimized = optimizer.Optimize();
+
+  Optimizer naive_optimizer(op, MakeNaiveRules(), std::move(cardinality), std::move(schema));
+  auto naive = naive_optimizer.Optimize();
+
+  ASSERT_THAT(Serialize(optimized),
+              HasSubstr("(PhysicalFilter (= (attr s region) (str \"AMERICA\")) "
+                         "(SeqScan supplier s))"));
+  ASSERT_THAT(Serialize(naive),
+              Eq("(PhysicalFilter (= (attr s region) (str \"AMERICA\"))"
+                 " (NestedLoopJoin Inner (= (attr lo suppkey) (attr s id))"
+                 " (SeqScan lineorder lo) (SeqScan supplier s)))"));
+  ASSERT_THAT(naive_optimizer.GetBestCost(), Gt(optimizer.GetBestCost()));
 }
 
 TEST(ReachabilityTest, SeqScanReachable) {

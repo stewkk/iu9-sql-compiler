@@ -249,6 +249,7 @@ int main(int argc, char** argv) {
 
   PhysicalPlanNode plan;
   std::int64_t plan_cost = 0;
+  std::int64_t naive_plan_cost = 0;
   try {
     PropertySet required = parsed.required_order
         ? PropertySet{SortProperty{*parsed.required_order}}
@@ -258,6 +259,17 @@ int main(int argc, char** argv) {
                         LoadSchemaFromCsvDir(args.data_dir), std::move(required));
     plan = optimizer.Optimize();
     plan_cost = optimizer.GetBestCost();
+
+    if (args.stats) {
+      PropertySet naive_required = parsed.required_order
+          ? PropertySet{SortProperty{*parsed.required_order}}
+          : PropertySet::Any();
+      Optimizer naive_optimizer(parsed.op, MakeNaiveRules(),
+                                CardinalityEstimates{LoadTableSizesFromCsvDir(args.data_dir)},
+                                LoadSchemaFromCsvDir(args.data_dir), std::move(naive_required));
+      naive_optimizer.Optimize();
+      naive_plan_cost = naive_optimizer.GetBestCost();
+    }
   } catch (const std::exception& e) {
     std::cerr << "optimizer error: " << e.what() << "\n";
     return kOptimizerError;
@@ -297,7 +309,9 @@ int main(int argc, char** argv) {
   PrintRelation(result.value(), parsed.required_order.has_value());
 
   if (args.stats) {
-    std::cerr << "STATS plan_cost=" << plan_cost << " exec_us=" << exec_us
+    std::cerr << "STATS plan_cost=" << plan_cost
+              << " naive_plan_cost=" << naive_plan_cost
+              << " exec_us=" << exec_us
               << " rows=" << result.value().tuples.size() << "\n";
   }
   return kOk;

@@ -526,5 +526,6 @@ utils::NotNull<Group*> Optimizer<NTransformation, NImplementation>::GetRootGroup
 }
 
 template class Optimizer<7, 7>;
+template class Optimizer<0, 6>;
 
 }  // namespace stewkk::sql

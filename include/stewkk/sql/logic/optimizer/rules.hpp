@@ -28,5 +28,6 @@ struct Rules {
 };
 
 Rules<7, 7> MakeMainRules();
+Rules<0, 6> MakeNaiveRules();
 
 }  // namespace stewkk::sql
