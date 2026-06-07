@@ -757,7 +757,7 @@ Cascades организует оптимизацию как выполнение
 
 На рисунке~\ref{fig:cascades-tasks} показана схема взаимодействия задач в
 оптимизаторе, а на
-листингах~\ref{alg:cascades-search}-\ref{alg:cascades-search-3} приведен
+листингах~\ref{alg:cascades-search}-\ref{alg:cascades-search-2} приведен
 псевдокод алгоритма поиска в архитектуре Cascades~\cite{DingNarasayya2024}.
 
 Алгоритм реализуется в виде управляемого стеком поиска в пространстве
@@ -1983,22 +1983,6 @@ TEST(ParserTest, SelectSingleColumnFromSingleTable) {
 коэффициенты модели. Благодаря этому оптимизатор принимает решения на основе
 оценок, соответствующих характеристикам реализованного исполнителя.
 
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.8\textwidth]{scaling.png}
-\caption{Зависимость времени выполнения физических операторов от размера входных
-   данных.}
-\label{fig:operator-benchmark}
-\end{figure}
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.8\textwidth]{calibration.png}
-\caption{Сопоставление расчетной стоимости физических операторов с фактическим
-   временем выполнения.}
-\label{fig:cost-model-calibration}
-\end{figure}
-
 \anonsection{ЗАКЛЮЧЕНИЕ}
 
 В ходе работы была изучена архитектура оптимизаторов Cascades и на ее основе
@@ -2046,10 +2030,19 @@ Microsoft SQL Server.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.8\textwidth]{cascades.pdf}
+\includegraphics[width=0.7\textwidth]{cascades.pdf}
 \caption{Схема взаимодействия задач в оптимизаторе Cascades}%
 \label{fig:cascades-tasks}
 \end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{scaling.png}
+\caption{Зависимость времени выполнения физических операторов от размера входных
+   данных.}
+\label{fig:operator-benchmark}
+\end{figure}
+
 
 \begin{figure}[H]
     \centering
@@ -2072,7 +2065,7 @@ Microsoft SQL Server.
             HashJoin(G1,G6)\\
             NestedLoopJoin(G1,G6)
         };
-        \node[group] (g4) at (3,-6) {
+        \node[group] (g4) at (3,-5.4) {
             \textbf{Группа G4}\\[2pt]
             \hrule\vspace{2pt}
             \textit{Логические:}\\
@@ -2082,7 +2075,7 @@ Microsoft SQL Server.
             HashJoin(G1,G2)\\
             NestedLoopJoin(G1,G2)
         };
-        \node[group] (g6) at (9,-6) {
+        \node[group] (g6) at (9,-5.4) {
             \textbf{Группа G6}\\[2pt]
             \hrule\vspace{2pt}
             \textit{Логические:}\\
@@ -2092,7 +2085,7 @@ Microsoft SQL Server.
             HashJoin(G2,G3)\\
             NestedLoopJoin(G2,G3)
         };
-        \node[group] (g1) at (0,-12) {
+        \node[group] (g1) at (0,-9.8) {
             \textbf{Группа G1}\\[2pt]
             \hrule\vspace{2pt}
             \textit{Логические:}\\
@@ -2101,7 +2094,7 @@ Microsoft SQL Server.
             \textit{Физические:}\\
             SeqScan(A)
         };
-        \node[group] (g2) at (6,-12) {
+        \node[group] (g2) at (6,-9.8) {
             \textbf{Группа G2}\\[2pt]
             \hrule\vspace{2pt}
             \textit{Логические:}\\
@@ -2110,7 +2103,7 @@ Microsoft SQL Server.
             \textit{Физические:}\\
             SeqScan(B)
         };
-        \node[group] (g3) at (12,-12) {
+        \node[group] (g3) at (12,-9.8) {
             \textbf{Группа G3}\\[2pt]
             \hrule\vspace{2pt}
             \textit{Логические:}\\
@@ -2122,10 +2115,10 @@ Microsoft SQL Server.
 
         \draw[arrow] (g5) -- (g4);
         \draw[arrow, rounded corners=5pt]
-            (g5.east) -- (15.5,0) -- (15.5,-12) -- (g3.east);
+            (g5.east) -- (15.5,0) -- (15.5,-9.8) -- (g3.east);
         \draw[altarrow] (g5) -- (g6);
         \draw[altarrow, rounded corners=5pt]
-            (g5.west) -- (-3.5,0) -- (-3.5,-12) -- (g1.west);
+            (g5.west) -- (-3.5,0) -- (-3.5,-9.8) -- (g1.west);
         \draw[arrow] (g4) -- (g1);
         \draw[arrow] (g4) -- (g2);
         \draw[arrow] (g6) -- (g2);
@@ -2187,33 +2180,41 @@ Microsoft SQL Server.
     \caption{Алгоритм поиска (часть 1).}%
     \label{alg:cascades-search}
     \begin{algorithmic}[1]
-
-    \Procedure{Optimize}{$root$}
-        \State Push task $\Call{OptimizeGroup}{root.group, \bot}$ onto task stack
+    \Procedure{Optimize}{$root, required$}
+        \State Push task $\Call{OptimizeGroup}{root.group, required, +\infty}$
         \While{task stack is not empty}
-            \State Pop and execute next task
+            \State Pop and execute top task
         \EndWhile
-        \State \Return $best\_plan[root.group]$
-    \EndProcedure
-
-    \Procedure{OptimizeGroup}{$group, limit$}
-        \If{$best\_cost[group]$ exists \textbf{and} ($limit = \bot$ \textbf{or} $best\_cost[group] < limit$)}
-            \State \Return
-        \EndIf
-        \If{$group$ is not explored}
-            \State Push task $\Call{OptimizeGroup}{group, limit}$ onto task stack
-            \State Push task $\Call{ExploreGroup}{group, limit}$ onto task stack
-            \State \Return
-        \EndIf
-        \For{each logical expression $expr \in group$}
-            \State Push task $\Call{OptimizeExpression}{expr, limit}$ onto task stack
-        \EndFor
+        \State \Return $\Call{BuildPlan}{root.group, required}$
     \EndProcedure
 
     \Procedure{ExploreGroup}{$group, limit$}
         \State Mark $group$ as explored
         \For{each logical expression $expr \in group$}
-            \State Push task $\Call{ExploreExpression}{expr, limit}$ onto task stack
+            \State Push task $\Call{ExploreExpression}{expr, limit}$
+        \EndFor
+    \EndProcedure
+
+    \Procedure{ExploreExpression}{$expr, limit$}
+        \State $\Call{TryRules}{expr, limit}$
+        \If{$expr$ is already explored}
+            \State \Return
+        \EndIf
+        \State Mark $expr$ as explored
+        \For{each $child \in \Call{Children}{expr}$}
+            \State Register $expr$ as parent of $child$
+            \If{$child$ is not explored}
+                \State Push task $\Call{ExploreGroup}{child, limit}$
+            \EndIf
+        \EndFor
+    \EndProcedure
+
+    \Procedure{TryRules}{$expr, limit$}
+        \For{each applicable transformation rule $r$}
+            \State Push task $\Call{ApplyTransformation}{r, expr, limit}$
+        \EndFor
+        \For{each applicable implementation rule $r$}
+            \State Push task $\Call{ApplyImplementation}{r, expr}$
         \EndFor
     \EndProcedure
     \end{algorithmic}
@@ -2223,67 +2224,44 @@ Microsoft SQL Server.
     \caption{Алгоритм поиска (часть 2).}%
     \label{alg:cascades-search-2}
     \begin{algorithmic}[1]
-    \Procedure{ExploreExpression}{$expr, limit$}
-        \For{each applicable transformation rule $r$}
-            \State Push task $\Call{ApplyTransformation}{r, expr, limit}$ onto task stack
-        \EndFor
-        \For{each child group $child \in \Call{Children}{expr}$}
-            \If{$child$ is not explored}
-                \State Push task $\Call{ExploreGroup}{child, limit}$ onto task stack
-            \EndIf
-        \EndFor
-    \EndProcedure
-
-    \Procedure{OptimizeExpression}{$expr, limit$}
-        \For{each applicable implementation rule $r$}
-            \State Push task $\Call{ApplyImplementation}{r, expr, limit}$ onto task stack
-        \EndFor
-        \For{each child group $child \in \Call{Children}{expr}$}
-            \If{$child$ is not explored}
-                \State Push task $\Call{ExploreGroup}{child, limit}$ onto task stack
-            \EndIf
-        \EndFor
-    \EndProcedure
-
-    \Procedure{ApplyTransformation}{$rule, expr, limit$}
-        \State $new\_expr \leftarrow \Call{Apply}{rule, expr}$
-        \State Push task $\Call{ExploreExpression}{new\_expr, limit}$ onto task stack
-    \EndProcedure
-
-    \Procedure{ApplyImplementation}{$rule, expr, limit$}
-        \State $phys \leftarrow \Call{Apply}{rule, expr}$
-        \State $lc \leftarrow \Call{CalcLocalCost}{phys}$
-        \If{$limit \neq \bot$ \textbf{and} $lc \geq limit$}
+    \Procedure{OptimizeGroup}{$group, required, limit$}
+        \If{$winner[group, required]$ exists \textbf{or} $group$ is explored \textbf{and} $\Call{LowerBound}{group} \geq limit$}
             \State \Return
         \EndIf
-        \State $child\_limit \leftarrow (limit = \bot) \mathbin{?} \bot \mathbin{:} limit - lc$
-        \State Push task $\Call{OptimizeInputs}{phys, child\_limit, 0}$ onto task stack
-    \EndProcedure
-    \end{algorithmic}
-\end{algorithm}
-
-\begin{algorithm}[H]
-    \caption{Алгоритм поиска (часть 3).}%
-    \label{alg:cascades-search-3}
-    \begin{algorithmic}[1]
-    \Procedure{OptimizeInputs}{$expr, limit, i$}
-        \State $children \leftarrow \Call{Children}{expr}$
-        \If{$i \geq |children|$}
-            \State $total \leftarrow local\_cost[expr] + accum\_child\_cost[expr]$
-            \If{$best\_cost[expr.group]$ does not exist \textbf{or} $total < best\_cost[expr.group]$}
-                \State $best\_cost[expr.group] \leftarrow total$
-                \State $best\_plan[expr.group] \leftarrow expr$
-            \EndIf
+        \If{$group$ is not explored}
+            \State Push task $\Call{OptimizeGroup}{group, required, limit}$
+            \State Push task $\Call{ExploreGroup}{group, limit}$
             \State \Return
         \EndIf
-        \State $child \leftarrow children[i]$
-        \State Push task: \textbf{if} $best\_cost[child]$ exists \textbf{then} accumulate child cost \textbf{and} push $\Call{OptimizeInputs}{expr, \ldots, i+1}$
-        \State Push task $\Call{OptimizeGroup}{child, limit}$ onto task stack
+        \For{each physical expression $phys \in group$}
+            \If{$phys$ is not enforcer \textbf{and} $local\_cost[phys] < limit$}
+                \State Push task $\Call{OptimizeInputs}{phys, required, \varnothing, local\_cost[phys], limit, 0}$
+            \EndIf
+        \EndFor
+        \For{each enforcer applicable to $(group, required)$}
+            \State Add enforcer expression $phys$ and compute $local\_cost[phys]$
+            \If{$local\_cost[phys] < limit$}
+                \State Push task $\Call{OptimizeInputs}{phys, required, \varnothing, local\_cost[phys], limit, 0}$
+            \EndIf
+        \EndFor
+    \Procedure{OptimizeInputs}{$phys, required, delivered, accum, limit, i$}
+        \If{$winner[phys.group, required]$ exists}
+            \State $limit \leftarrow \min(limit,\; winner[phys.group, required].cost)$
+        \EndIf
+        \If{$accum \geq limit$}
+            \State \Return
+        \EndIf
+        \If{$i = |children|$}
+            \State $props \leftarrow \Call{DeriveOutputProps}{phys, delivered}$
+            \State Update winner and \Return
+        \EndIf
+        \State Calc child limit and requirements
+        \State Push task $\Call{OptimizeGroup}{child, child\_required, child\_limit}$
     \EndProcedure
+    \EndProcedure
+
     \end{algorithmic}
 \end{algorithm}
-
-\newpage{}
 
 \begin{scriptsize}
 \begin{longtable}{|c|p{2.6cm}|c|p{4.2cm}|}
@@ -2352,28 +2330,47 @@ Microsoft SQL Server.
     Открывает для подплана правила, ограниченные внутренним соединением. \\
   \hline
 
-  11 & Правое внешнее соединение во внутреннее &
-    \(\TransRule{\Sel{p}{\ROJ{R}{\theta}{S}}}{p\ \text{null-отбрасывающий по}\ attrs(R)}{\Sel{p}{\InnerJoin{R}{\theta}{S}}}\) &
-    Симметричный случай. \\
-  \hline
+  % 11 & Правое внешнее соединение во внутреннее &
+  %   \(\TransRule{\Sel{p}{\ROJ{R}{\theta}{S}}}{p\ \text{null-отбрасывающий по}\ attrs(R)}{\Sel{p}{\InnerJoin{R}{\theta}{S}}}\) &
+  %   Симметричный случай. \\
+  % \hline
 
-  12 & Полное внешнее соединение во внутреннее &
+  11 & Полное внешнее соединение во внутреннее &
     \(\TransRule{\Sel{p}{\FOJ{R}{\theta}{S}}}{p\ \text{null-отбрасывающий по}\ attrs(R)\ \text{и}\ attrs(S)}{\Sel{p}{\InnerJoin{R}{\theta}{S}}}\) &
     Требует null-отбрасывания с обеих сторон. \\
   \hline
 
-  13 & Проталкивание агрегации ниже соединения &
+  12 & Проталкивание агрегации ниже соединения &
     \(\TransRule{\Agg{G}{F}{\InnerJoin{R}{R.k = S.k}{S}}}{\substack{F\text{ разделяема;}\\ \text{внутреннее соединение по равенству}}}{\Agg{G}{F'}{\InnerJoin{\AggP{G_R \cup \{R.k\}}{F_R}{R}}{R.k=S.k}{S}}}\) &
     Снижает кардинальность входа частичной группировкой. \(G_R = G \cap attrs(R)\); \(F_R\) --- частичные агрегаты по атрибутам \(R\); \(F'\) --- финальные комбинаторы. \\
   \hline
 
-  14 & Перестановка агрегации и соединения &
+  13 & Перестановка агрегации и соединения &
     \(\TransRule{\Agg{G}{F_R}{\InnerJoin{R}{R.k=S.k}{S}}}{\substack{\text{внутреннее соединение по равенству;}\\ F_R\subseteq attrs(R);\ R.k \in G; \\ S.k\text{ уникален и полон}}}{\InnerJoin{\Agg{G}{F_R}{R}}{R.k=S.k}{S}}\) &
     Полностью переносит агрегацию до соединения. \(S.k\) уникален: соединение не дублирует строки \(R\). \(S.k\) полон относительно \(R.k\): соединение не теряет строки \(R\). \\
   \hline
 \end{longtable}
 
-\newpage{}
+\begin{table}[H]
+  \centering
+  \caption{Стоимостные формулы физических операторов.}
+  \label{tbl:cost-model-coefficients}
+  \small
+  \begin{tabular}{|p{0.40\textwidth}|l|}
+    \hline
+    Физический оператор & Формула стоимости \\
+    \hline
+    Последовательное сканирование & $100\,n$ \\
+    Фильтрация                    & $100\,n_{out}$ \\
+    Проекция                      & $22\,n_{out}$ \\
+    Сортировка                    & $11\,n\bigl(\lfloor\log_2 n\rfloor + 1\bigr)$ \\
+    Агрегация                     & $510\,n$ \\
+    Соединение вложенными циклами & $70\,n_l n_r$ \\
+    Декартово произведение        & $104\,n_l n_r$ \\
+    Хеш-соединение                & $100\,n_b w_b + 35\,n_p + 10\,n_o w_o$ \\
+    \hline
+  \end{tabular}
+\end{table}
 
 \begin{longtable}{|c|p{2.8cm}|c|p{4.5cm}|}
   \caption{Правила реализации.}\label{tbl:implementation_rules}\\
@@ -2428,37 +2425,38 @@ Microsoft SQL Server.
 \end{longtable}
 \end{scriptsize}
 
-\begin{table}[H]
-  \centering
-  \caption{Стоимостные формулы физических операторов.}
-  \label{tbl:cost-model-coefficients}
-  \small
-  \begin{tabular}{|p{0.40\textwidth}|l|}
-    \hline
-    Физический оператор & Формула стоимости \\
-    \hline
-    Последовательное сканирование & $100\,n$ \\
-    Фильтрация                    & $100\,n_{out}$ \\
-    Проекция                      & $22\,n_{out}$ \\
-    Сортировка                    & $11\,n\bigl(\lfloor\log_2 n\rfloor + 1\bigr)$ \\
-    Агрегация                     & $510\,n$ \\
-    Соединение вложенными циклами & $70\,n_l n_r$ \\
-    Декартово произведение        & $104\,n_l n_r$ \\
-    Хеш-соединение                & $100\,n_b w_b + 35\,n_p + 10\,n_o w_o$ \\
-    \hline
-  \end{tabular}
-\end{table}
+\begin{listing}[H]
+  \caption{Вычисление локальной стоимости физических операторов.}
+  \label{lst:optimizer-cost}
+  \begin{minted}[style=bw, breaklines, frame=single,
+    fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{cpp}
+int64_t CalcCost(PhysicalExpr* expr, CardinalityEstimates& cardinality) {
+  return std::visit(utils::Overloaded{
+    [&](const physical::NestedLoopJoin& j) {
+      return 70 * cardinality.GetCardinality(j.lhs)
+                * cardinality.GetCardinality(j.rhs);},
+    [&](const physical::HashJoin& j) {
+      return 69 * (cardinality.GetCardinality(j.lhs)
+                  + cardinality.GetCardinality(j.rhs));}, ...
+  \end{minted}
+\end{listing}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{calibration.png}
+\caption{Сопоставление расчетной стоимости физических операторов с фактическим
+   временем выполнения.}
+\label{fig:cost-model-calibration}
+\end{figure}
 
 \begin{listing}[H]
   \caption{Правило коммутативности соединения.}
   \label{lst:join-commutativity}
   \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize,
     linenos=false, xleftmargin=1.5em]{cpp}
-LogicalOperator JoinCommutativity::ApplyImpl(
-    utils::NotNull<LogicalExpr*> expr, Memo&) {
+LogicalOperator JoinCommutativity::ApplyImpl(utils::NotNull<LogicalExpr*> expr, Memo&) {
   auto join = std::get<logical::Join>(expr->root_operator);
   std::swap(join.lhs, join.rhs);
-
   if (join.type == JoinType::kLeft) {
     join.type = JoinType::kRight;
   } else if (join.type == JoinType::kRight) {
@@ -2466,39 +2464,14 @@ LogicalOperator JoinCommutativity::ApplyImpl(
   }
   return join;
 }
-bool ImplementHashJoin::IsApplicable(
-    utils::NotNull<LogicalExpr*> expr) {
-  if (!std::holds_alternative<logical::Join>(
-          expr->root_operator)) {
+bool ImplementHashJoin::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
+  if (!std::holds_alternative<logical::Join>(expr->root_operator))
     return false;
-  }
-  const auto& join =
-      std::get<logical::Join>(expr->root_operator);
+  const auto& join = std::get<logical::Join>(expr->root_operator);
   if (join.type != JoinType::kInner) return false;
-  const auto* bin =
-      std::get_if<BinaryExpression>(&join.qual);
-  return bin && bin->binop == BinaryOp::kEq
-      && std::holds_alternative<Attribute>(*bin->lhs)
-      && std::holds_alternative<Attribute>(*bin->rhs);
+  const auto* bin = std::get_if<BinaryExpression>(&join.qual);
+  return bin && bin->binop == BinaryOp::kEq && std::holds_alternative<Attribute>(*bin->lhs) && std::holds_alternative<Attribute>(*bin->rhs);
 }
-  \end{minted}
-\end{listing}
-\begin{listing}[H]
-  \caption{Вычисление локальной стоимости физических операторов.}
-  \label{lst:optimizer-cost}
-  \begin{minted}[style=bw, breaklines, frame=single,
-    fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{cpp}
-int64_t CalcCost(PhysicalExpr* expr,
-                  CardinalityEstimates& cardinality) {
-  return std::visit(utils::Overloaded{
-    [&](const physical::NestedLoopJoin& j) {
-      return 70 * cardinality.GetCardinality(j.lhs)
-                * cardinality.GetCardinality(j.rhs);
-    },
-    [&](const physical::HashJoin& j) {
-      return 69 * (cardinality.GetCardinality(j.lhs)
-                  + cardinality.GetCardinality(j.rhs));
-    },
   \end{minted}
 \end{listing}
 
