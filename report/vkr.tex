@@ -5,7 +5,16 @@
 \addbibresource{biblio.bib}
 
 \usepackage{svg}
-    
+
+\newlength{\lblwd}
+\newcommand{\titlefield}[2]{%
+  \par\addvspace{1.6ex}%
+  \settowidth{\lblwd}{\small #1}%
+  \noindent\small #1\hspace{1em}%
+  \underline{\makebox[\dimexpr\linewidth-\lblwd-1em\relax][l]{\small #2}}%
+  \par
+}
+
 \begin{document}
 \sloppy
 
@@ -60,6 +69,89 @@
     \end{array}%
   }%
 }
+
+\begin{titlepage}
+	\thispagestyle{empty}
+	\newpage
+
+	\vspace*{-30pt}
+	\hspace{-45pt}
+	\begin{minipage}{0.17\textwidth}
+		\hspace*{-20pt}\centering
+		\includegraphics[width=1.3\textwidth]{emblem.png}
+	\end{minipage}
+	\begin{minipage}{0.82\textwidth}\small \textbf{
+			\vspace*{-0.7ex}
+			\hspace*{-10pt}\centerline{Министерство науки и высшего образования Российской Федерации}
+			\vspace*{-0.7ex}
+			\centerline{Федеральное государственное автономное образовательное учреждение }
+			\vspace*{-0.7ex}
+			\centerline{высшего образования}
+			\vspace*{-0.7ex}
+			\centerline{<<Московский государственный технический университет}
+			\vspace*{-0.7ex}
+			\centerline{имени Н.Э. Баумана}
+			\vspace*{-0.7ex}
+			\centerline{(национальный исследовательский университет)>>}
+			\vspace*{-0.7ex}
+			\centerline{(МГТУ им. Н.Э. Баумана)}}
+	\end{minipage}
+
+	\vspace{-2pt}
+	\hspace{-34.5pt}\rule{\textwidth}{2.5pt}
+
+	\vspace*{-20.3pt}
+	\hspace{-34.5pt}\rule{\textwidth}{0.4pt}
+
+\titlefield{ФАКУЛЬТЕТ}{<<Информатика и системы управления>>}
+\titlefield{КАФЕДРА}{<<Теоретическая информатика и компьютерные технологии>>}
+
+
+\vspace{3em}
+\begin{center}
+    {\Large\bfseries РАСЧЕТНО-ПОЯСНИТЕЛЬНАЯ ЗАПИСКА}\\[1.5ex]
+    {\Large\bfseries\itshape К ВЫПУСКНОЙ КВАЛИФИКАЦИОННОЙ РАБОТЕ НА ТЕМУ:}\\[1.5ex]
+    {\large\bfseries\itshape <<Автоматическая оптимизация планов выполнения SQL-запросов>>}
+\end{center}
+
+\vspace{\fill}
+
+
+	\newlength{\ML}
+	\settowidth{\ML}{«\underline{\hspace{0.7cm}}» \underline{\hspace{2cm}}}
+
+	\noindent Студент \underline{\text{ИУ9-81Б}} \hfill \underline{ \hspace{4cm}}\quad
+	\raisebox{0.42ex}{\underline{\parbox{4cm}{\centering Старовойтов А. И.}}}
+
+	\vspace{-0.5ex}
+	\noindent\hspace{9ex}\scriptsize{(Группа)}\normalsize\hspace{170pt}\hspace{2ex}\scriptsize{(Подпись, дата)}\normalsize\hspace{30pt}\hspace{6ex}\scriptsize{(Фамилия И.О.)}\normalsize
+
+	\bigskip
+
+	\noindent Научный руководитель  \hfill \underline{\hspace{4cm}}\quad
+	\raisebox{0.3ex}{\underline{\parbox{4cm}{\centering Непейвода А. Н.}}}
+
+	\vspace{-0.5ex}
+	\noindent\hspace{13.5ex}\normalsize\hspace{170pt}\hspace{2ex}\scriptsize{(Подпись, дата)}\normalsize\hspace{30pt}\hspace{6ex}\scriptsize{(Фамилия И.О.)}\normalsize
+
+	\bigskip
+
+	\noindent Нормоконтролёр  \hfill \underline{\hspace{4cm}}\quad
+	\raisebox{0.15ex}{\underline{\parbox{4cm}{\centering Алексеев С. М.}}}
+
+	\vspace{-0.5ex}
+	\noindent\hspace{13.5ex}\normalsize\hspace{170pt}\hspace{2ex}\scriptsize{(Подпись, дата)}\normalsize\hspace{30pt}\hspace{6ex}\scriptsize{(Фамилия И.О.)}\normalsize
+
+	\vfill
+
+	%\vspace{\fill}
+
+
+
+	\begin{center}
+		\textsl{2026}
+	\end{center}
+\end{titlepage}
 
 \setlength{\tabcolsep}{3pt}
 \setcounter{page}{2}
