@@ -31,7 +31,8 @@ from pathlib import Path
 
 from research.query_generator import DIALECTS, QueryGenerator, load_schema, render_query
 
-_STATS_RE = re.compile(r"STATS plan_cost=(-?\d+) exec_us=(-?\d+) rows=(\d+)")
+#STATS plan_cost=2074 naive_plan_cost=2074 exec_us=133 rows=17
+_STATS_RE = re.compile(r"STATS plan_cost=(-?\d+) naive_plan_cost=(-?\d+) exec_us=(-?\d+) rows=(\d+)")
 
 
 def _run_ours(cli: str, data_dir: str, query: str, jit: bool) -> subprocess.CompletedProcess:
@@ -87,6 +88,10 @@ def main() -> None:
             rng = random.Random(seed)
             query = QueryGenerator(schema, rng).generate()
             sql = render_query(query, pg) + ";"
+
+            if attempted%100==0:
+                print(f"collected={collected} attempted={attempted} skipped={skipped}",
+                      flush=True)
 
             cost: int | None = None
             rows: int | None = None
