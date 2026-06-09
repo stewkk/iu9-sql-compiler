@@ -74,6 +74,8 @@ private:
                                            TuplesChannel& tuples_chan);
   boost::asio::awaitable<void> ExecuteHashJoin(const HashJoin& join, AttributesInfoChannel& attr_chan,
                                                 TuplesChannel& tuples_chan);
+  boost::asio::awaitable<void> ExecuteMergeJoin(const MergeJoin& join, AttributesInfoChannel& attr_chan,
+                                                TuplesChannel& tuples_chan);
   boost::asio::awaitable<void> ExecuteHashAggregate(const PhysicalAggregation& agg,
                                                      AttributesInfoChannel& attr_chan,
                                                      TuplesChannel& tuples_chan);

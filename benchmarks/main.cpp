@@ -95,6 +95,26 @@ CardinalityEstimates MakeBenchCardinality() {
   });
 }
 
+SchemaCatalog MakeBenchSchema() {
+  return SchemaCatalog({
+      {"users", {Attribute{"users", "id"}, Attribute{"users", "age"}}},
+      {"employees", {Attribute{"employees", "id"}, Attribute{"employees", "department_id"}}},
+      {"employees_200", {Attribute{"employees_200", "id"},
+                         Attribute{"employees_200", "department_id"}}},
+      {"departments", {Attribute{"departments", "id"}}},
+      {"departments_500", {Attribute{"departments_500", "id"}}},
+      {"departments_1000", {Attribute{"departments_1000", "id"}}},
+      {"departments_2000", {Attribute{"departments_2000", "id"}}},
+      {"departments_4000", {Attribute{"departments_4000", "id"}}},
+      {"departments_8000", {Attribute{"departments_8000", "id"}}},
+      {"departments_16000", {Attribute{"departments_16000", "id"}}},
+      {"books", {Attribute{"books", "id"}}},
+      {"regions", {Attribute{"regions", "id"}}},
+      {"customers", {Attribute{"customers", "id"}, Attribute{"customers", "region_id"}}},
+      {"orders", {Attribute{"orders", "id"}, Attribute{"orders", "customer_id"}}},
+  });
+}
+
 CardinalityEstimates LoadCardinalityFromCsvDir(const std::filesystem::path& dir) {
   std::unordered_map<std::string, int64_t> counts;
   if (!std::filesystem::is_directory(dir)) {
@@ -133,7 +153,7 @@ PhysicalPlanNode MakePlan(const Operator& op) {
   if constexpr (Mode == PlannerMode::kNaive) {
     return ToPhysicalPlan(op);
   } else {
-    Optimizer optimizer(op, MakeMainRules(), MakeBenchCardinality());
+    Optimizer optimizer(op, MakeMainRules(), MakeBenchCardinality(), MakeBenchSchema());
     return optimizer.Optimize();
   }
 }

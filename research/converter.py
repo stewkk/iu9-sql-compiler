@@ -9,6 +9,7 @@ Serialized format (s-expressions):
   (PhysicalProjection (exprs EXPR...) SOURCE)
   (NestedLoopCrossJoin LHS RHS)
   (NestedLoopJoin JoinType EXPR LHS RHS)   JoinType: Inner | Full | Left | Right
+  (MergeJoin JoinType EXPR LHS RHS)        JoinType: Inner | Full | Left | Right
   (Sort (keys table.col Asc|Desc ...) SOURCE)
   (HashAggregate (group_by EXPR...) (aggs EXPR...) SOURCE)
 

@@ -113,6 +113,21 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             if (!rhs.ok) { rhs.reason = "HashJoin.rhs: " + rhs.reason; return rhs; }
             return {true, std::max(lhs.depth, rhs.depth), {}};
         },
+        [&](const physical::MergeJoin& op) -> InternalMatch {
+            const auto* t = std::get_if<MergeJoin>(&target.node);
+            if (!t) return {false, depth, "type mismatch: expected MergeJoin"};
+            if (op.type != t->type)
+                return {false, depth + 1, "MergeJoin join type mismatch"};
+            if (op.qual != t->qual)
+                return {false, depth + 1,
+                        std::format("MergeJoin qual '{}' != '{}'",
+                                    ToString(op.qual), ToString(t->qual))};
+            auto lhs = MatchGroup(op.lhs.get(), *t->lhs, depth + 1);
+            if (!lhs.ok) { lhs.reason = "MergeJoin.lhs: " + lhs.reason; return lhs; }
+            auto rhs = MatchGroup(op.rhs.get(), *t->rhs, depth + 1);
+            if (!rhs.ok) { rhs.reason = "MergeJoin.rhs: " + rhs.reason; return rhs; }
+            return {true, std::max(lhs.depth, rhs.depth), {}};
+        },
         [&](const physical::Sort& op) -> InternalMatch {
             const auto* t = std::get_if<PhysicalSort>(&target.node);
             if (!t) return {false, depth, "type mismatch: expected Sort"};

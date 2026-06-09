@@ -17,6 +17,7 @@
 #include <stewkk/sql/logic/implementation_rules/implement_join.hpp>
 #include <stewkk/sql/logic/implementation_rules/implement_cross_join.hpp>
 #include <stewkk/sql/logic/implementation_rules/implement_hash_join.hpp>
+#include <stewkk/sql/logic/implementation_rules/implement_merge_join.hpp>
 #include <stewkk/sql/logic/implementation_rules/implement_aggregation.hpp>
 #include <stewkk/sql/logic/implementation_rules/implement_index_seek.hpp>
 
@@ -28,7 +29,7 @@ struct Rules {
     std::array<std::unique_ptr<ImplementationRule>, NImplementation> implementation_rules;
 };
 
-Rules<7, 8> MakeMainRules(IndexCatalog indexes = {});
+Rules<7, 9> MakeMainRules(IndexCatalog indexes = {});
 Rules<0, 6> MakeNaiveRules();
 
 }  // namespace stewkk::sql

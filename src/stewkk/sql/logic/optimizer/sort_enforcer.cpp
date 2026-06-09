@@ -11,17 +11,16 @@ std::optional<PhysicalOperator> SortEnforcer::TryBuild(
     SchemaCatalog& schema) const {
   const auto* req = required.Get<SortProperty>();
   if (!req) return std::nullopt;
-  if (auto sch = schema.GetSchema(group)) {
-    for (const auto& sk : req->order.keys) {
-      bool found = false;
-      for (const auto& a : *sch) {
-        if (a.name == sk.column && (sk.table.empty() || a.table == sk.table)) {
-          found = true;
-          break;
-        }
+  auto sch = schema.GetSchema(group);
+  for (const auto& sk : req->order.keys) {
+    bool found = false;
+    for (const auto& a : sch) {
+      if (a.name == sk.column && (sk.table.empty() || a.table == sk.table)) {
+        found = true;
+        break;
       }
-      if (!found) return std::nullopt;
     }
+    if (!found) return std::nullopt;
   }
   return PhysicalOperator{physical::Sort{group, req->order}};
 }

@@ -4,7 +4,7 @@
 
 namespace stewkk::sql {
 
-Rules<7, 8> MakeMainRules(IndexCatalog indexes) {
+Rules<7, 9> MakeMainRules(IndexCatalog indexes) {
     return {
         .transformation_rules = {
             std::make_unique<JoinCommutativity>(),
@@ -23,6 +23,7 @@ Rules<7, 8> MakeMainRules(IndexCatalog indexes) {
             std::make_unique<ImplementJoin>(),
             std::make_unique<ImplementCrossJoin>(),
             std::make_unique<ImplementHashJoin>(),
+            std::make_unique<ImplementMergeJoin>(),
             std::make_unique<ImplementAggregation>(),
         },
     };

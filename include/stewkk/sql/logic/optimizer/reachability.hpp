@@ -20,8 +20,8 @@ struct MatchResult {
 MatchResult IsReachable(utils::NotNull<Group*> root, const PhysicalPlanNode& target);
 
 MatchResult IsPlanReachable(std::istream& sql, const PhysicalPlanNode& target,
-                             CardinalityEstimates cardinality = {},
-                             SchemaCatalog schema = {},
+                             CardinalityEstimates cardinality,
+                             SchemaCatalog schema,
                              IndexCatalog indexes = {});
 
 }  // namespace stewkk::sql

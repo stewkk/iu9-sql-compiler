@@ -234,6 +234,108 @@ TEST(ExecutorTest, OptimizedIndexSeekPlanExecutes) {
   std::filesystem::remove_all(dir);
 }
 
+TEST(ExecutorTest, MergeJoinFullOuterWithDuplicatesAndNulls) {
+  auto dir = std::filesystem::temp_directory_path() / "iu9_sql_merge_join_test";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  {
+    std::ofstream a{dir / "a.csv"};
+    a << "id:int,v:int\n"
+      << "1,10\n"
+      << "1,11\n"
+      << "2,20\n"
+      << "NULL,99\n";
+    std::ofstream b{dir / "b.csv"};
+    b << "id:int,w:int\n"
+      << "1,100\n"
+      << "1,101\n"
+      << "3,300\n"
+      << "NULL,999\n";
+  }
+
+  Expression qual = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"a", "id"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(Attribute{"b", "id"}),
+  };
+  PhysicalPlanNode plan = MergeJoin{
+      std::make_shared<PhysicalPlanNode>(PhysicalSort{
+          std::make_shared<PhysicalPlanNode>(SeqScan{"a"}),
+          SortOrder{{SortKey{"a", "id", Direction::kAsc}}}}),
+      std::make_shared<PhysicalPlanNode>(PhysicalSort{
+          std::make_shared<PhysicalPlanNode>(SeqScan{"b"}),
+          SortOrder{{SortKey{"b", "id", Direction::kAsc}}}}),
+      JoinType::kFull,
+      qual,
+  };
+
+  boost::asio::io_context ctx;
+  CsvDirSequentialScanner seq_scan{dir.string()};
+  Executor executor(std::move(seq_scan), ctx.get_executor());
+  auto fut = boost::asio::co_spawn(ctx, executor.Execute(plan), boost::asio::use_future);
+  ctx.run();
+  auto got = fut.get();
+
+  ASSERT_THAT(got.value().tuples,
+              Eq(Tuples{
+                  Tuple{Value{false, 1}, Value{false, 10}, Value{false, 1}, Value{false, 100}},
+                  Tuple{Value{false, 1}, Value{false, 10}, Value{false, 1}, Value{false, 101}},
+                  Tuple{Value{false, 1}, Value{false, 11}, Value{false, 1}, Value{false, 100}},
+                  Tuple{Value{false, 1}, Value{false, 11}, Value{false, 1}, Value{false, 101}},
+                  Tuple{Value{false, 2}, Value{false, 20}, Value{true}, Value{true}},
+                  Tuple{Value{true}, Value{false, 99}, Value{true}, Value{true}},
+                  Tuple{Value{true}, Value{true}, Value{false, 3}, Value{false, 300}},
+                  Tuple{Value{true}, Value{true}, Value{true}, Value{false, 999}},
+              }));
+  std::filesystem::remove_all(dir);
+}
+
+TEST(ExecutorTest, MergeJoinStringKeys) {
+  auto dir = std::filesystem::temp_directory_path() / "iu9_sql_merge_join_string_test";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  {
+    std::ofstream lhs{dir / "lhs.csv"};
+    lhs << "name:string,v:int\n"
+        << "alpha,1\n"
+        << "beta,2\n";
+    std::ofstream rhs{dir / "rhs.csv"};
+    rhs << "name:string,w:int\n"
+        << "alpha,10\n"
+        << "gamma,30\n";
+  }
+
+  Expression qual = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"lhs", "name"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(Attribute{"rhs", "name"}),
+  };
+  PhysicalPlanNode plan = MergeJoin{
+      std::make_shared<PhysicalPlanNode>(PhysicalSort{
+          std::make_shared<PhysicalPlanNode>(SeqScan{"lhs"}),
+          SortOrder{{SortKey{"lhs", "name", Direction::kAsc}}}}),
+      std::make_shared<PhysicalPlanNode>(PhysicalSort{
+          std::make_shared<PhysicalPlanNode>(SeqScan{"rhs"}),
+          SortOrder{{SortKey{"rhs", "name", Direction::kAsc}}}}),
+      JoinType::kInner,
+      qual,
+  };
+
+  boost::asio::io_context ctx;
+  CsvDirSequentialScanner seq_scan{dir.string()};
+  Executor executor(std::move(seq_scan), ctx.get_executor());
+  auto fut = boost::asio::co_spawn(ctx, executor.Execute(plan), boost::asio::use_future);
+  ctx.run();
+  auto got = fut.get();
+
+  ASSERT_THAT(got.value().tuples.size(), Eq(1u));
+  ASSERT_THAT(GetInternedString(got.value().tuples[0][0].value.string_id), Eq("alpha"));
+  ASSERT_THAT(GetInternedString(got.value().tuples[0][2].value.string_id), Eq("alpha"));
+  ASSERT_THAT(got.value().tuples[0][1], Eq(Value{false, 1}));
+  ASSERT_THAT(got.value().tuples[0][3], Eq(Value{false, 10}));
+  std::filesystem::remove_all(dir);
+}
+
 TEST(ExecutorTest, StringFilterProjectionAndCsvQuotes) {
   boost::asio::io_context ctx;
   boost::asio::co_spawn(

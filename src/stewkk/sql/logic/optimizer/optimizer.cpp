@@ -4,6 +4,7 @@
 #include <chrono>
 #include <stdexcept>
 #include <limits>
+#include <optional>
 
 #include <bit>
 
@@ -26,9 +27,56 @@ static const std::vector<std::unique_ptr<Enforcer>> kEnforcers = [] {
   return v;
 }();
 
+struct JoinKeys {
+  Attribute lhs;
+  Attribute rhs;
+};
+
+bool AttrMatchesSchema(const Attribute& attr, const Attribute& schema_attr) {
+  return attr.name == schema_attr.name
+      && (attr.table.empty() || attr.table == schema_attr.table);
+}
+
+bool AttrInSchema(const Attribute& attr, const Schema& schema) {
+  return std::ranges::any_of(schema, [&](const Attribute& schema_attr) {
+    return AttrMatchesSchema(attr, schema_attr);
+  });
+}
+
+std::optional<JoinKeys> ResolveJoinKeys(const Expression& qual,
+                                        utils::NotNull<Group*> lhs,
+                                        utils::NotNull<Group*> rhs,
+                                        SchemaCatalog& schema) {
+  const auto* bin = std::get_if<BinaryExpression>(&qual);
+  if (!bin || bin->binop != BinaryOp::kEq) return std::nullopt;
+  const auto* a = std::get_if<Attribute>(bin->lhs.get());
+  const auto* b = std::get_if<Attribute>(bin->rhs.get());
+  if (!a || !b) return std::nullopt;
+
+  auto lhs_schema = schema.GetSchema(lhs);
+  auto rhs_schema = schema.GetSchema(rhs);
+
+  const bool a_lhs = AttrInSchema(*a, lhs_schema);
+  const bool a_rhs = AttrInSchema(*a, rhs_schema);
+  const bool b_lhs = AttrInSchema(*b, lhs_schema);
+  const bool b_rhs = AttrInSchema(*b, rhs_schema);
+
+  if (a_lhs && !a_rhs && b_rhs && !b_lhs) {
+    return JoinKeys{*a, *b};
+  }
+  if (b_lhs && !b_rhs && a_rhs && !a_lhs) {
+    return JoinKeys{*b, *a};
+  }
+  return std::nullopt;
+}
+
+PropertySet SortOn(const Attribute& attr) {
+  return PropertySet{SortProperty{SortOrder{{SortKey{attr.table, attr.name, Direction::kAsc}}}}};
+}
 
 PropertySet RequiredInputProps(utils::NotNull<PhysicalExpr*> expr,
-                                      PropertySet required, size_t child_index) {
+                               PropertySet required, size_t child_index,
+                               SchemaCatalog& schema) {
   return std::visit(utils::Overloaded{
       [&](const physical::SeqScan&) { return PropertySet::Any(); },
       [&](const physical::IndexSeek&) { return PropertySet::Any(); },
@@ -39,13 +87,19 @@ PropertySet RequiredInputProps(utils::NotNull<PhysicalExpr*> expr,
       [&](const physical::HashJoin&) -> PropertySet {
           return PropertySet::Any();
       },
+      [&](const physical::MergeJoin& j) -> PropertySet {
+          auto keys = ResolveJoinKeys(j.qual, j.lhs, j.rhs, schema);
+          if (!keys) return PropertySet::Any();
+          return SortOn(child_index == 0 ? keys->lhs : keys->rhs);
+      },
       [&](const physical::Sort&) { return PropertySet::Any(); },
       [&](const physical::Aggregation&) { return PropertySet::Any(); },
   }, expr->root_operator);
 }
 
 PropertySet DeriveOutputProps(utils::NotNull<PhysicalExpr*> expr,
-                                     const std::vector<PropertySet>& child_delivered) {
+                              const std::vector<PropertySet>& child_delivered,
+                              SchemaCatalog& schema) {
   return std::visit(utils::Overloaded{
       [&](const physical::SeqScan&) { return PropertySet::Any(); },
       [&](const physical::IndexSeek&) { return PropertySet::Any(); },
@@ -54,6 +108,11 @@ PropertySet DeriveOutputProps(utils::NotNull<PhysicalExpr*> expr,
       [&](const physical::NestedLoopJoin&) { return PropertySet::Any(); },
       [&](const physical::NestedLoopCrossJoin&) { return PropertySet::Any(); },
       [&](const physical::HashJoin&) { return PropertySet::Any(); },
+      [&](const physical::MergeJoin& j) -> PropertySet {
+          auto keys = ResolveJoinKeys(j.qual, j.lhs, j.rhs, schema);
+          if (!keys) return PropertySet::Any();
+          return SortOn(j.type == JoinType::kRight ? keys->rhs : keys->lhs);
+      },
       [&](const physical::Sort& s) { return PropertySet{SortProperty{s.keys}}; },
       [&](const physical::Aggregation&) { return PropertySet::Any(); },
   }, expr->root_operator);
@@ -67,6 +126,15 @@ int64_t HashJoinCost(utils::NotNull<Group*> build, utils::NotNull<Group*> probe,
   constexpr int64_t kTupleCopy = 10;
   return kHashBuild * cardinality.GetCardinality(build) * schema.GetWidth(build)
        + kHashProbe * cardinality.GetCardinality(probe)
+       + kTupleCopy * cardinality.GetCardinality(output) * schema.GetWidth(output);
+}
+
+int64_t MergeJoinCost(utils::NotNull<Group*> lhs, utils::NotNull<Group*> rhs,
+                      utils::NotNull<Group*> output, CardinalityEstimates& cardinality,
+                      SchemaCatalog& schema) {
+  constexpr int64_t kMergeRead = 18;
+  constexpr int64_t kTupleCopy = 10;
+  return kMergeRead * (cardinality.GetCardinality(lhs) + cardinality.GetCardinality(rhs))
        + kTupleCopy * cardinality.GetCardinality(output) * schema.GetWidth(output);
 }
 
@@ -91,11 +159,15 @@ int64_t LowerBoundLocalCost(utils::NotNull<LogicalExpr*> expr, CardinalityEstima
       [&](const logical::Join& j) -> int64_t {
           auto n_l = cardinality.GetCardinality(j.lhs);
           auto n_r = cardinality.GetCardinality(j.rhs);
-          return std::min({
+          std::vector<int64_t> alternatives{
               HashJoinCost(j.lhs, j.rhs, expr->group, cardinality, schema),
               HashJoinCost(j.rhs, j.lhs, expr->group, cardinality, schema),
               70 * n_l * n_r,
-          });
+          };
+          if (ResolveJoinKeys(j.qual, j.lhs, j.rhs, schema)) {
+              alternatives.push_back(MergeJoinCost(j.lhs, j.rhs, expr->group, cardinality, schema));
+          }
+          return *std::ranges::min_element(alternatives);
       },
   }, expr->root_operator);
 }
@@ -129,6 +201,12 @@ int64_t CalcCost(utils::NotNull<PhysicalExpr*> expr, CardinalityEstimates& cardi
       },
       [&](const physical::HashJoin& j) -> int64_t {
           return HashJoinCost(j.lhs, j.rhs, expr->group, cardinality, schema);
+      },
+      [&](const physical::MergeJoin& j) -> int64_t {
+          if (!ResolveJoinKeys(j.qual, j.lhs, j.rhs, schema)) {
+              return std::numeric_limits<int64_t>::max() / 4;
+          }
+          return MergeJoinCost(j.lhs, j.rhs, expr->group, cardinality, schema);
       },
       [&](const physical::Sort& s) -> int64_t {
           auto n = cardinality.GetCardinality(s.input);
@@ -186,6 +264,9 @@ std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<PhysicalExpr*> ex
           return {j.lhs, j.rhs};
       },
       [](const physical::HashJoin& j) -> std::vector<utils::NotNull<Group*>> {
+          return {j.lhs, j.rhs};
+      },
+      [](const physical::MergeJoin& j) -> std::vector<utils::NotNull<Group*>> {
           return {j.lhs, j.rhs};
       },
       [](const physical::Sort& s) -> std::vector<utils::NotNull<Group*>> {
@@ -253,7 +334,7 @@ void Optimizer<NTransformation, NImplementation>::OptimizeInputs(
   if (limit && accum >= *limit) return;
   auto children = GetChildren(expr);
   if (child_index >= children.size()) {
-    auto delivered = DeriveOutputProps(expr, child_delivered);
+    auto delivered = DeriveOutputProps(expr, child_delivered, schema_);
     if (!delivered.Satisfies(required)) return;
     WinnerKey key{expr->group.get(), required};
     if (!winner_.contains(key) || accum < winner_.at(key).cost) {
@@ -264,7 +345,7 @@ void Optimizer<NTransformation, NImplementation>::OptimizeInputs(
   }
 
   auto child = children[child_index];
-  auto child_required = RequiredInputProps(expr, required, child_index);
+  auto child_required = RequiredInputProps(expr, required, child_index, schema_);
 
   tasks_.emplace([this, expr, child, child_index, required, child_delivered, accum, limit, child_required]() mutable {
     WinnerKey child_key{child.get(), child_required};
@@ -430,7 +511,7 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
           [this, best_expr_nn, required](const physical::Projection& op) -> PhysicalPlanNode {
             return PhysicalProjection{
                 .source = std::make_shared<PhysicalPlanNode>(
-                    BuildOptimalPlan(op.source.get(), RequiredInputProps(best_expr_nn, required, 0))),
+                    BuildOptimalPlan(op.source.get(), RequiredInputProps(best_expr_nn, required, 0, schema_))),
                 .expressions = op.expressions,
                 .aliases = op.aliases,
             };
@@ -438,16 +519,16 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
           [this, best_expr_nn, required](const physical::Filter& op) -> PhysicalPlanNode {
             return PhysicalFilter{
                 .source = std::make_shared<PhysicalPlanNode>(
-                    BuildOptimalPlan(op.source.get(), RequiredInputProps(best_expr_nn, required, 0))),
+                    BuildOptimalPlan(op.source.get(), RequiredInputProps(best_expr_nn, required, 0, schema_))),
                 .predicate = op.predicate,
             };
           },
           [this, best_expr_nn, required](const physical::NestedLoopJoin& op) -> PhysicalPlanNode {
             return NestedLoopJoin{
                 .lhs = std::make_shared<PhysicalPlanNode>(
-                    BuildOptimalPlan(op.lhs.get(), RequiredInputProps(best_expr_nn, required, 0))),
+                    BuildOptimalPlan(op.lhs.get(), RequiredInputProps(best_expr_nn, required, 0, schema_))),
                 .rhs = std::make_shared<PhysicalPlanNode>(
-                    BuildOptimalPlan(op.rhs.get(), RequiredInputProps(best_expr_nn, required, 1))),
+                    BuildOptimalPlan(op.rhs.get(), RequiredInputProps(best_expr_nn, required, 1, schema_))),
                 .type = op.type,
                 .qual = op.qual,
             };
@@ -455,17 +536,27 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
           [this, best_expr_nn, required](const physical::NestedLoopCrossJoin& op) -> PhysicalPlanNode {
             return NestedLoopCrossJoin{
                 .lhs = std::make_shared<PhysicalPlanNode>(
-                    BuildOptimalPlan(op.lhs.get(), RequiredInputProps(best_expr_nn, required, 0))),
+                    BuildOptimalPlan(op.lhs.get(), RequiredInputProps(best_expr_nn, required, 0, schema_))),
                 .rhs = std::make_shared<PhysicalPlanNode>(
-                    BuildOptimalPlan(op.rhs.get(), RequiredInputProps(best_expr_nn, required, 1))),
+                    BuildOptimalPlan(op.rhs.get(), RequiredInputProps(best_expr_nn, required, 1, schema_))),
             };
           },
           [this, best_expr_nn, required](const physical::HashJoin& op) -> PhysicalPlanNode {
             return HashJoin{
                 .lhs = std::make_shared<PhysicalPlanNode>(
-                    BuildOptimalPlan(op.lhs.get(), RequiredInputProps(best_expr_nn, required, 0))),
+                    BuildOptimalPlan(op.lhs.get(), RequiredInputProps(best_expr_nn, required, 0, schema_))),
                 .rhs = std::make_shared<PhysicalPlanNode>(
-                    BuildOptimalPlan(op.rhs.get(), RequiredInputProps(best_expr_nn, required, 1))),
+                    BuildOptimalPlan(op.rhs.get(), RequiredInputProps(best_expr_nn, required, 1, schema_))),
+                .type = op.type,
+                .qual = op.qual,
+            };
+          },
+          [this, best_expr_nn, required](const physical::MergeJoin& op) -> PhysicalPlanNode {
+            return MergeJoin{
+                .lhs = std::make_shared<PhysicalPlanNode>(
+                    BuildOptimalPlan(op.lhs.get(), RequiredInputProps(best_expr_nn, required, 0, schema_))),
+                .rhs = std::make_shared<PhysicalPlanNode>(
+                    BuildOptimalPlan(op.rhs.get(), RequiredInputProps(best_expr_nn, required, 1, schema_))),
                 .type = op.type,
                 .qual = op.qual,
             };
@@ -473,14 +564,14 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
           [this, best_expr_nn, required](const physical::Sort& op) -> PhysicalPlanNode {
             return PhysicalSort{
                 .source = std::make_shared<PhysicalPlanNode>(
-                    BuildOptimalPlan(op.input.get(), RequiredInputProps(best_expr_nn, required, 0))),
+                    BuildOptimalPlan(op.input.get(), RequiredInputProps(best_expr_nn, required, 0, schema_))),
                 .keys = op.keys,
             };
           },
           [this, best_expr_nn, required](const physical::Aggregation& op) -> PhysicalPlanNode {
             return PhysicalAggregation{
                 .source = std::make_shared<PhysicalPlanNode>(
-                    BuildOptimalPlan(op.source.get(), RequiredInputProps(best_expr_nn, required, 0))),
+                    BuildOptimalPlan(op.source.get(), RequiredInputProps(best_expr_nn, required, 0, schema_))),
                 .group_by = op.group_by,
                 .aggregates = op.aggregates,
             };
@@ -544,7 +635,7 @@ utils::NotNull<Group*> Optimizer<NTransformation, NImplementation>::GetRootGroup
   return root_->group;
 }
 
-template class Optimizer<7, 8>;
+template class Optimizer<7, 9>;
 template class Optimizer<0, 6>;
 
 }  // namespace stewkk::sql

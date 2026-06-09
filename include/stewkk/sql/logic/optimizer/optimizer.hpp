@@ -26,7 +26,7 @@ template<size_t NTransformation, size_t NImplementation>
 class Optimizer {
 public:
   Optimizer(const Operator& expr, Rules<NTransformation, NImplementation>&& rules,
-            CardinalityEstimates cardinality = {}, SchemaCatalog schema = {},
+            CardinalityEstimates cardinality, SchemaCatalog schema,
             PropertySet required = PropertySet::Any());
 
   PhysicalPlanNode Optimize();

@@ -5,6 +5,7 @@
 #include <format>
 #include <ranges>
 #include <regex>
+#include <stdexcept>
 #include <sstream>
 #include <utility>
 
@@ -24,7 +25,7 @@ bool IndexCatalog::HasSortedIndex(const std::string& table, const std::string& c
 SchemaCatalog::SchemaCatalog(std::unordered_map<std::string, Schema> tables)
     : tables_(std::move(tables)) {}
 
-std::optional<Schema> SchemaCatalog::GetSchema(utils::NotNull<Group*> group) {
+Schema SchemaCatalog::GetSchema(utils::NotNull<Group*> group) {
   if (auto it = cache_.find(group.get()); it != cache_.end()) {
     return it->second;
   }
@@ -34,27 +35,28 @@ std::optional<Schema> SchemaCatalog::GetSchema(utils::NotNull<Group*> group) {
 }
 
 std::int64_t SchemaCatalog::GetWidth(utils::NotNull<Group*> group) {
-  auto schema = GetSchema(group);
-  return schema ? std::max<std::int64_t>(1, schema->size()) : 1;
+  return std::max<std::int64_t>(1, GetSchema(group).size());
 }
 
 // TODO: refactor to remove duplicate logic: both executor and optimizer derive
 // attributes
-std::optional<Schema> SchemaCatalog::Derive(const LogicalOperator& op) {
+Schema SchemaCatalog::Derive(const LogicalOperator& op) {
   return std::visit(utils::Overloaded{
-      [this](const logical::Table& t) -> std::optional<Schema> {
+      [this](const logical::Table& t) -> Schema {
           auto it = tables_.find(t.name);
-          if (it == tables_.end()) return std::nullopt;
+          if (it == tables_.end()) {
+            throw std::runtime_error{std::format("missing schema for table '{}'", t.name)};
+          }
           auto schema = it->second;
           for (auto& attr : schema) {
               attr.table = std::string{VisibleName(t)};
           }
           return schema;
       },
-      [this](const logical::Filter& f) -> std::optional<Schema> {
+      [this](const logical::Filter& f) -> Schema {
           return GetSchema(f.source);
       },
-      [](const logical::Projection& p) -> std::optional<Schema> {
+      [](const logical::Projection& p) -> Schema {
           Schema out;
           for (size_t i = 0; i < p.expressions.size(); ++i) {
               if (i < p.aliases.size() && p.aliases[i]) {
@@ -65,9 +67,8 @@ std::optional<Schema> SchemaCatalog::Derive(const LogicalOperator& op) {
           }
           return out;
       },
-      [this](const logical::Aggregation& a) -> std::optional<Schema> {
-          auto input = GetSchema(a.source);
-          if (!input) return std::nullopt;
+      [this](const logical::Aggregation& a) -> Schema {
+          GetSchema(a.source);
           Schema out;
           for (const auto& expr : a.group_by) {
               if (const auto* attr = std::get_if<Attribute>(&expr)) {
@@ -79,18 +80,16 @@ std::optional<Schema> SchemaCatalog::Derive(const LogicalOperator& op) {
           }
           return out;
       },
-      [this](const logical::CrossJoin& j) -> std::optional<Schema> {
+      [this](const logical::CrossJoin& j) -> Schema {
           auto l = GetSchema(j.lhs);
           auto r = GetSchema(j.rhs);
-          if (!l || !r) return std::nullopt;
-          l->insert(l->end(), r->begin(), r->end());
+          l.insert(l.end(), r.begin(), r.end());
           return l;
       },
-      [this](const logical::Join& j) -> std::optional<Schema> {
+      [this](const logical::Join& j) -> Schema {
           auto l = GetSchema(j.lhs);
           auto r = GetSchema(j.rhs);
-          if (!l || !r) return std::nullopt;
-          l->insert(l->end(), r->begin(), r->end());
+          l.insert(l.end(), r.begin(), r.end());
           return l;
       },
   }, op);

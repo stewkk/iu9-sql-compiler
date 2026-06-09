@@ -53,6 +53,7 @@ add_library(libsql
   logic/implementation_rules/implement_join.cpp
   logic/implementation_rules/implement_cross_join.cpp
   logic/implementation_rules/implement_hash_join.cpp
+  logic/implementation_rules/implement_merge_join.cpp
   logic/implementation_rules/implement_aggregation.cpp
   logic/optimizer/properties/sort_order.cpp
   logic/optimizer/properties/sort_property.cpp

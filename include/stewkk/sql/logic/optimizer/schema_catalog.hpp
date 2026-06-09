@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <filesystem>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -36,14 +35,14 @@ class SchemaCatalog {
 public:
   SchemaCatalog(std::unordered_map<std::string, Schema> tables = {});
 
-  std::optional<Schema> GetSchema(utils::NotNull<Group*> group);
+  Schema GetSchema(utils::NotNull<Group*> group);
   std::int64_t GetWidth(utils::NotNull<Group*> group);
 
 private:
-  std::optional<Schema> Derive(const LogicalOperator& op);
+  Schema Derive(const LogicalOperator& op);
 
   std::unordered_map<std::string, Schema> tables_;
-  std::unordered_map<Group*, std::optional<Schema>> cache_;
+  std::unordered_map<Group*, Schema> cache_;
 };
 
 SchemaCatalog LoadSchemaFromCsvDir(const std::filesystem::path& dir);

@@ -1,6 +1,7 @@
 #include <gmock/gmock.h>
 
 #include <string_view>
+#include <stdexcept>
 #include <unordered_map>
 
 #include <stewkk/sql/logic/parser/parser.hpp>
@@ -33,6 +34,20 @@ int64_t EstimateCardinality(
   return cardinality.GetCardinality(root->group);
 }
 
+SchemaCatalog MakeTestSchema() {
+  return SchemaCatalog({
+      {"users", {Attribute{"users", "id"}, Attribute{"users", "age"},
+                 Attribute{"users", "name"}}},
+      {"orders", {Attribute{"orders", "id"}, Attribute{"orders", "user_id"},
+                  Attribute{"orders", "customer_id"}, Attribute{"orders", "total"}}},
+      {"customers", {Attribute{"customers", "id"}, Attribute{"customers", "region_id"}}},
+      {"regions", {Attribute{"regions", "id"}}},
+      {"departments", {Attribute{"departments", "id"}}},
+      {"lineorder", {Attribute{"lineorder", "suppkey"}, Attribute{"lineorder", "value"}}},
+      {"supplier", {Attribute{"supplier", "id"}, Attribute{"supplier", "region"}}},
+  });
+}
+
 TEST(CardinalityEstimatesTest, AppliesFilterHeuristics) {
   ASSERT_THAT(EstimateCardinality("SELECT * FROM users WHERE users.id = 1;", {{"users", 1000}}),
               Eq(100));
@@ -59,10 +74,19 @@ TEST(SchemaCatalogTest, DerivesJoinWidth) {
   ASSERT_THAT(schema.GetWidth(root->group), Eq(5));
 }
 
+TEST(SchemaCatalogTest, MissingTableSchemaThrows) {
+  std::stringstream s{"SELECT * FROM users;"};
+  Memo memo;
+  auto root = memo.Populate(GetAST(s).value().op);
+  SchemaCatalog schema;
+
+  ASSERT_THROW(schema.GetWidth(root->group), std::runtime_error);
+}
+
 TEST(OptimizerTest, Simple) {
   std::stringstream s{"SELECT * FROM users;"};
   Operator op = GetAST(s).value().op;
-  Optimizer optimizer(op, MakeMainRules());
+  Optimizer optimizer(op, MakeMainRules(), {}, MakeTestSchema());
 
   auto got = optimizer.Optimize();
 
@@ -79,7 +103,7 @@ TEST(OptimizerTest, JoinCommutativity) {
   Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({
       {"users", 10000},
       {"orders", 100},
-  }));
+  }), MakeTestSchema());
 
 
   auto got = optimizer.Optimize();
@@ -97,7 +121,7 @@ TEST(OptimizerTest, MultiwayJoinOCR) {
       {"regions", 10},
       {"customers", 500},
       {"orders", 5000},
-  }));
+  }), MakeTestSchema());
 
   auto got = optimizer.Optimize();
 
@@ -119,7 +143,7 @@ TEST(OptimizerTest, MultiwayJoinROC) {
       {"regions", 10},
       {"customers", 500},
       {"orders", 5000},
-  }));
+  }), MakeTestSchema());
 
   auto got = optimizer.Optimize();
 
@@ -189,7 +213,7 @@ TEST(OptimizerTest, AliasedJoinOptimizesWithAliasQualifiedAttrs) {
   Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({
       {"customers", 500},
       {"orders", 5000},
-  }));
+  }), MakeTestSchema());
 
   auto got = optimizer.Optimize();
   auto serialized = Serialize(got);
@@ -229,7 +253,7 @@ TEST(OptimizerTest, UsesIndexSeekForIndexedIntegerPredicate) {
   Operator op = GetAST(s).value().op;
   Optimizer optimizer(op, MakeMainRules(IndexCatalog({
       IndexInfo{.table = "users", .column = "id", .type = "sorted", .file = "users.id.sorted.idx"},
-  })), CardinalityEstimates({{"users", 1000}}));
+  })), CardinalityEstimates({{"users", 1000}}), MakeTestSchema());
 
   auto got = optimizer.Optimize();
 
@@ -239,7 +263,8 @@ TEST(OptimizerTest, UsesIndexSeekForIndexedIntegerPredicate) {
 TEST(OptimizerTest, KeepsSequentialFilterWhenIndexMetadataIsAbsent) {
   std::stringstream s{"SELECT * FROM users WHERE users.id = 8;"};
   Operator op = GetAST(s).value().op;
-  Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({{"users", 1000}}));
+  Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({{"users", 1000}}),
+                      MakeTestSchema());
 
   auto got = optimizer.Optimize();
 
@@ -252,7 +277,7 @@ TEST(OptimizerTest, IndexSeekSupportsAliasAndFullResidualPredicate) {
   Operator op = GetAST(s).value().op;
   Optimizer optimizer(op, MakeMainRules(IndexCatalog({
       IndexInfo{.table = "users", .column = "id", .type = "sorted", .file = "users.id.sorted.idx"},
-  })), CardinalityEstimates({{"users", 1000}}));
+  })), CardinalityEstimates({{"users", 1000}}), MakeTestSchema());
 
   auto got = optimizer.Optimize();
 
@@ -292,13 +317,13 @@ TEST(OptimizerTest, NaiveRulesDisableLogicalTransformations) {
 
 TEST(ReachabilityTest, SeqScanReachable) {
   std::stringstream s{"SELECT * FROM users;"};
-  auto result = IsPlanReachable(s, SeqScan{"users"});
+  auto result = IsPlanReachable(s, SeqScan{"users"}, {}, MakeTestSchema());
   ASSERT_THAT(result.reachable, IsTrue());
 }
 
 TEST(ReachabilityTest, SeqScanWrongTable) {
   std::stringstream s{"SELECT * FROM users;"};
-  auto result = IsPlanReachable(s, SeqScan{"orders"});
+  auto result = IsPlanReachable(s, SeqScan{"orders"}, {}, MakeTestSchema());
   ASSERT_THAT(result.reachable, IsFalse());
   ASSERT_THAT(result.mismatch, HasSubstr("users"));
 }
@@ -310,7 +335,7 @@ TEST(ReachabilityTest, IndexSeekReachableWithIndexCatalog) {
       BinaryOp::kGe,
       std::make_shared<Expression>(IntConst{8})};
   auto result = IsPlanReachable(
-      s, IndexSeek{"users", std::nullopt, predicate}, {}, {},
+      s, IndexSeek{"users", std::nullopt, predicate}, {}, MakeTestSchema(),
       IndexCatalog({
           IndexInfo{.table = "users", .column = "id", .type = "sorted",
                     .file = "users.id.sorted.idx"},
@@ -328,7 +353,7 @@ TEST(ReachabilityTest, WrongOperatorType) {
       std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
       std::make_shared<PhysicalPlanNode>(SeqScan{"orders"}),
       JoinType::kInner,
-      qual});
+      qual}, {}, MakeTestSchema());
   ASSERT_THAT(result.reachable, IsFalse());
 }
 
@@ -344,13 +369,13 @@ TEST(ReachabilityTest, BothJoinOrdersReachable) {
   auto optimal = IsPlanReachable(s1, NestedLoopJoin{
       std::make_shared<PhysicalPlanNode>(SeqScan{"orders"}),
       std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
-      JoinType::kInner, qual}, cardinality);
+      JoinType::kInner, qual}, cardinality, MakeTestSchema());
   ASSERT_THAT(optimal.reachable, IsTrue());
 
   auto suboptimal = IsPlanReachable(s2, NestedLoopJoin{
       std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
       std::make_shared<PhysicalPlanNode>(SeqScan{"orders"}),
-      JoinType::kInner, qual}, cardinality);
+      JoinType::kInner, qual}, cardinality, MakeTestSchema());
   ASSERT_THAT(suboptimal.reachable, IsTrue());
 }
 
@@ -363,7 +388,50 @@ TEST(ReachabilityTest, HashJoinReachable) {
   auto result = IsPlanReachable(s, HashJoin{
       std::make_shared<PhysicalPlanNode>(SeqScan{"orders"}),
       std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
-      JoinType::kInner, qual});
+      JoinType::kInner, qual}, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
+TEST(ReachabilityTest, MergeJoinReachableWithSortedInputs) {
+  std::stringstream s{"SELECT * FROM users JOIN orders ON users.id = orders.user_id;"};
+  Expression qual = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(Attribute{"orders", "user_id"})};
+  SchemaCatalog schema({
+      {"users", {Attribute{"users", "id"}}},
+      {"orders", {Attribute{"orders", "user_id"}}},
+  });
+  auto result = IsPlanReachable(s, MergeJoin{
+      std::make_shared<PhysicalPlanNode>(PhysicalSort{
+          std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
+          SortOrder{{SortKey{"users", "id", Direction::kAsc}}}}),
+      std::make_shared<PhysicalPlanNode>(PhysicalSort{
+          std::make_shared<PhysicalPlanNode>(SeqScan{"orders"}),
+          SortOrder{{SortKey{"orders", "user_id", Direction::kAsc}}}}),
+      JoinType::kInner, qual}, {}, std::move(schema));
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
+TEST(ReachabilityTest, MergeJoinCanSatisfyOrderByJoinKey) {
+  std::stringstream s{
+      "SELECT * FROM users JOIN orders ON users.id = orders.user_id ORDER BY users.id;"};
+  Expression qual = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(Attribute{"orders", "user_id"})};
+  SchemaCatalog schema({
+      {"users", {Attribute{"users", "id"}}},
+      {"orders", {Attribute{"orders", "user_id"}}},
+  });
+  auto result = IsPlanReachable(s, MergeJoin{
+      std::make_shared<PhysicalPlanNode>(PhysicalSort{
+          std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
+          SortOrder{{SortKey{"users", "id", Direction::kAsc}}}}),
+      std::make_shared<PhysicalPlanNode>(PhysicalSort{
+          std::make_shared<PhysicalPlanNode>(SeqScan{"orders"}),
+          SortOrder{{SortKey{"orders", "user_id", Direction::kAsc}}}}),
+      JoinType::kInner, qual}, {}, std::move(schema));
   ASSERT_THAT(result.reachable, IsTrue());
 }
 
@@ -376,7 +444,7 @@ TEST(ReachabilityTest, WrongJoinQual) {
   auto result = IsPlanReachable(s, NestedLoopJoin{
       std::make_shared<PhysicalPlanNode>(SeqScan{"orders"}),
       std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
-      JoinType::kInner, wrong_qual});
+      JoinType::kInner, wrong_qual}, {}, MakeTestSchema());
   ASSERT_THAT(result.reachable, IsFalse());
   ASSERT_THAT(result.mismatch, HasSubstr("qual"));
 }
@@ -403,7 +471,7 @@ TEST(ReachabilityTest, InExpandsToOrChain) {
       BinaryOp::kOr,
       std::make_shared<Expression>(std::move(eq3))};
   auto result = IsPlanReachable(s, PhysicalFilter{
-      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}), or_chain});
+      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}), or_chain}, {}, MakeTestSchema());
   ASSERT_THAT(result.reachable, IsTrue());
 }
 
@@ -417,7 +485,7 @@ TEST(ReachabilityTest, OrderByReachableViaSortEnforcer) {
           {Attribute{"users", "id"}},
           {}}),
       SortOrder{{SortKey{"users", "id", Direction::kAsc}}}};
-  auto result = IsPlanReachable(s, target);
+  auto result = IsPlanReachable(s, target, {}, MakeTestSchema());
   ASSERT_THAT(result.reachable, IsTrue());
 }
 
@@ -431,7 +499,7 @@ TEST(ReachabilityTest, OrderByWrongDirectionNotReachable) {
           {Attribute{"users", "id"}},
           {}}),
       SortOrder{{SortKey{"users", "id", Direction::kDesc}}}};
-  auto result = IsPlanReachable(s, target);
+  auto result = IsPlanReachable(s, target, {}, MakeTestSchema());
   ASSERT_THAT(result.reachable, IsFalse());
 }
 
@@ -445,7 +513,7 @@ TEST(ReachabilityTest, SortNotReachableWithoutOrderBy) {
           {Attribute{"users", "id"}},
           {}}),
       SortOrder{{SortKey{"users", "id", Direction::kAsc}}}};
-  auto result = IsPlanReachable(s, target);
+  auto result = IsPlanReachable(s, target, {}, MakeTestSchema());
   ASSERT_THAT(result.reachable, IsFalse());
 }
 

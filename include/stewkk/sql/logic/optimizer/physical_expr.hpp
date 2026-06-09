@@ -70,6 +70,15 @@ struct HashJoin {
   bool operator==(const HashJoin&) const = default;
 };
 
+struct MergeJoin {
+  utils::NotNull<Group*> lhs;
+  utils::NotNull<Group*> rhs;
+  JoinType type;
+  Expression qual;
+
+  bool operator==(const MergeJoin&) const = default;
+};
+
 struct Sort {
   utils::NotNull<Group*> input;
   SortOrder keys;
@@ -90,8 +99,8 @@ struct Aggregation {
 struct PhysicalExpr {
     std::variant<physical::SeqScan, physical::Projection, physical::Filter,
                  physical::NestedLoopJoin, physical::NestedLoopCrossJoin,
-                 physical::HashJoin, physical::Sort, physical::Aggregation,
-                 physical::IndexSeek> root_operator;
+                 physical::HashJoin, physical::MergeJoin, physical::Sort,
+                 physical::Aggregation, physical::IndexSeek> root_operator;
     utils::NotNull<Group*> group;
     bool is_enforcer = false;
 };

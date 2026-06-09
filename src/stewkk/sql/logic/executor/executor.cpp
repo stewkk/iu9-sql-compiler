@@ -658,8 +658,8 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
     boost::asio::awaitable<void> operator()(const PhysicalAggregation& agg) const {
       return executor.ExecuteHashAggregate(agg, attr_chan, tuples_chan);
     }
-    boost::asio::awaitable<void> operator()(const MergeJoin&) const {
-      throw std::runtime_error("MergeJoin execution not implemented");
+    boost::asio::awaitable<void> operator()(const MergeJoin& join) const {
+      return executor.ExecuteMergeJoin(join, attr_chan, tuples_chan);
     }
     boost::asio::awaitable<void> operator()(const IndexSeek& seek) const {
       return executor.ExecuteIndexSeek(seek, attr_chan, tuples_chan);
@@ -1092,6 +1092,84 @@ size_t FindAttrIndex(const AttributesInfo& attrs, const Attribute& a) {
   return static_cast<size_t>(it - attrs.begin());
 }
 
+bool AttrMatches(const AttributeInfo& ai, const Attribute& a) {
+  return ai.name == a.name && (a.table.empty() || ai.table == a.table);
+}
+
+bool HasAttr(const AttributesInfo& attrs, const Attribute& a) {
+  return std::ranges::any_of(attrs, [&](const AttributeInfo& ai) {
+    return AttrMatches(ai, a);
+  });
+}
+
+size_t FindAttrIndexFlexible(const AttributesInfo& attrs, const Attribute& a) {
+  auto it = std::find_if(attrs.begin(), attrs.end(), [&](const AttributeInfo& ai) {
+    return AttrMatches(ai, a);
+  });
+  if (it == attrs.end()) {
+    throw std::runtime_error{"merge join key attribute not found: " + a.table + "." + a.name};
+  }
+  return static_cast<size_t>(it - attrs.begin());
+}
+
+struct ExecutorJoinKeys {
+  Attribute lhs;
+  Attribute rhs;
+};
+
+ExecutorJoinKeys ResolveExecutorJoinKeys(const Expression& qual,
+                                         const AttributesInfo& lhs_attrs,
+                                         const AttributesInfo& rhs_attrs) {
+  const auto* bin = std::get_if<BinaryExpression>(&qual);
+  if (!bin || bin->binop != BinaryOp::kEq) {
+    throw std::logic_error{"MergeJoin qual must be an equality"};
+  }
+  const auto* a = std::get_if<Attribute>(bin->lhs.get());
+  const auto* b = std::get_if<Attribute>(bin->rhs.get());
+  if (!a || !b) {
+    throw std::logic_error{"MergeJoin qual must be `attr = attr`"};
+  }
+
+  const bool a_lhs = HasAttr(lhs_attrs, *a);
+  const bool a_rhs = HasAttr(rhs_attrs, *a);
+  const bool b_lhs = HasAttr(lhs_attrs, *b);
+  const bool b_rhs = HasAttr(rhs_attrs, *b);
+  if (a_lhs && !a_rhs && b_rhs && !b_lhs) {
+    return {*a, *b};
+  }
+  if (b_lhs && !b_rhs && a_rhs && !a_lhs) {
+    return {*b, *a};
+  }
+  throw std::runtime_error{"MergeJoin qual cannot be mapped unambiguously to inputs"};
+}
+
+boost::asio::awaitable<Tuples> CollectAllTuples(TuplesChannel& tuples_chan) {
+  Tuples result;
+  for (;;) {
+    auto buf = co_await ReceiveTuples(tuples_chan);
+    if (buf.empty()) break;
+    std::move(buf.begin(), buf.end(), std::back_inserter(result));
+  }
+  co_return result;
+}
+
+int CompareNonNullValues(const Value& lhs, const Value& rhs, Type type) {
+  switch (type) {
+    case Type::kInt:
+      return (lhs.value.int_value > rhs.value.int_value)
+           - (lhs.value.int_value < rhs.value.int_value);
+    case Type::kBool:
+      return (lhs.value.bool_value > rhs.value.bool_value)
+           - (lhs.value.bool_value < rhs.value.bool_value);
+    case Type::kString: {
+      const auto& l = GetInternedString(lhs.value.string_id);
+      const auto& r = GetInternedString(rhs.value.string_id);
+      return (l > r) - (l < r);
+    }
+  }
+  std::unreachable();
+}
+
 } // namespace
 
 
@@ -1191,6 +1269,167 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashJoin(
     co_await tuples_chan.async_send(boost::system::error_code{}, std::move(out_buf),
                                     boost::asio::use_awaitable);
   }
+  co_await lhs_task(boost::asio::use_awaitable);
+  co_await rhs_task(boost::asio::use_awaitable);
+  tuples_chan.close();
+}
+
+template <typename ExpressionExecutor>
+boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteMergeJoin(
+    const MergeJoin& join, AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan) {
+  Log("Executing merge join");
+  auto close_on_fail = boost::scope::make_scope_fail(
+      [&] { attr_chan.close(); tuples_chan.close(); });
+
+  auto exec = co_await boost::asio::this_coro::executor;
+  auto [lhs_attrs_chan, lhs_tuples_chan] = co_await GetChannels();
+  auto lhs_task = SpawnExecutor(exec, *join.lhs, lhs_attrs_chan, lhs_tuples_chan);
+  auto [rhs_attrs_chan, rhs_tuples_chan] = co_await GetChannels();
+  auto rhs_task = SpawnExecutor(exec, *join.rhs, rhs_attrs_chan, rhs_tuples_chan);
+
+  auto lhs_attrs = co_await lhs_attrs_chan.async_receive(boost::asio::use_awaitable);
+  auto rhs_attrs = co_await rhs_attrs_chan.async_receive(boost::asio::use_awaitable);
+  auto keys = ResolveExecutorJoinKeys(join.qual, lhs_attrs, rhs_attrs);
+  const size_t lhs_key_idx = FindAttrIndexFlexible(lhs_attrs, keys.lhs);
+  const size_t rhs_key_idx = FindAttrIndexFlexible(rhs_attrs, keys.rhs);
+  if (lhs_attrs[lhs_key_idx].type != rhs_attrs[rhs_key_idx].type) {
+    throw std::logic_error{"MergeJoin key types mismatch"};
+  }
+  const Type key_type = lhs_attrs[lhs_key_idx].type;
+
+  AttributesInfo out_attrs = lhs_attrs;
+  std::ranges::copy(rhs_attrs, std::back_inserter(out_attrs));
+  co_await attr_chan.async_send(boost::system::error_code{}, out_attrs,
+                                boost::asio::use_awaitable);
+  attr_chan.close();
+
+  auto lhs = co_await CollectAllTuples(lhs_tuples_chan);
+  auto rhs = co_await CollectAllTuples(rhs_tuples_chan);
+
+  Tuples out_buf;
+  out_buf.reserve(kBufSize);
+  auto emit = [&](Tuple tuple) -> boost::asio::awaitable<void> {
+    out_buf.push_back(std::move(tuple));
+    if (out_buf.size() == kBufSize) {
+      co_await tuples_chan.async_send(boost::system::error_code{}, std::move(out_buf),
+                                      boost::asio::use_awaitable);
+      out_buf.clear();
+      out_buf.reserve(kBufSize);
+    }
+  };
+  auto flush = [&]() -> boost::asio::awaitable<void> {
+    if (!out_buf.empty()) {
+      co_await tuples_chan.async_send(boost::system::error_code{}, std::move(out_buf),
+                                      boost::asio::use_awaitable);
+      out_buf.clear();
+      out_buf.reserve(kBufSize);
+    }
+  };
+
+  auto same_lhs_key = [&](size_t a, size_t b) {
+    const auto& av = lhs[a][lhs_key_idx];
+    const auto& bv = lhs[b][lhs_key_idx];
+    return !av.is_null && !bv.is_null && CompareNonNullValues(av, bv, key_type) == 0;
+  };
+  auto same_rhs_key = [&](size_t a, size_t b) {
+    const auto& av = rhs[a][rhs_key_idx];
+    const auto& bv = rhs[b][rhs_key_idx];
+    return !av.is_null && !bv.is_null && CompareNonNullValues(av, bv, key_type) == 0;
+  };
+
+  if (join.type == JoinType::kRight) {
+    size_t i = 0;
+    size_t j = 0;
+    while (j < rhs.size()) {
+      const auto& rhs_key = rhs[j][rhs_key_idx];
+      size_t rhs_end = j + 1;
+      while (rhs_end < rhs.size() && same_rhs_key(j, rhs_end)) ++rhs_end;
+
+      if (rhs_key.is_null) {
+        for (size_t r = j; r < rhs_end; ++r) {
+          co_await emit(ConcatTuples(Tuple(lhs_attrs.size(), Value{true}), rhs[r]));
+        }
+        j = rhs_end;
+        continue;
+      }
+
+      while (i < lhs.size()) {
+        const auto& lhs_key = lhs[i][lhs_key_idx];
+        if (lhs_key.is_null || CompareNonNullValues(lhs_key, rhs_key, key_type) >= 0) break;
+        ++i;
+      }
+
+      if (i < lhs.size() && !lhs[i][lhs_key_idx].is_null
+          && CompareNonNullValues(lhs[i][lhs_key_idx], rhs_key, key_type) == 0) {
+        size_t lhs_end = i + 1;
+        while (lhs_end < lhs.size() && same_lhs_key(i, lhs_end)) ++lhs_end;
+        for (size_t l = i; l < lhs_end; ++l) {
+          for (size_t r = j; r < rhs_end; ++r) {
+            co_await emit(ConcatTuples(lhs[l], rhs[r]));
+          }
+        }
+        i = lhs_end;
+      } else {
+        for (size_t r = j; r < rhs_end; ++r) {
+          co_await emit(ConcatTuples(Tuple(lhs_attrs.size(), Value{true}), rhs[r]));
+        }
+      }
+      j = rhs_end;
+    }
+  } else {
+    std::vector<char> rhs_used(rhs.size(), false);
+    size_t i = 0;
+    size_t j = 0;
+    while (i < lhs.size()) {
+      const auto& lhs_key = lhs[i][lhs_key_idx];
+      size_t lhs_end = i + 1;
+      while (lhs_end < lhs.size() && same_lhs_key(i, lhs_end)) ++lhs_end;
+
+      if (lhs_key.is_null) {
+        if (join.type == JoinType::kLeft || join.type == JoinType::kFull) {
+          for (size_t l = i; l < lhs_end; ++l) {
+            co_await emit(ConcatTuples(lhs[l], Tuple(rhs_attrs.size(), Value{true})));
+          }
+        }
+        i = lhs_end;
+        continue;
+      }
+
+      while (j < rhs.size()) {
+        const auto& rhs_key = rhs[j][rhs_key_idx];
+        if (rhs_key.is_null || CompareNonNullValues(rhs_key, lhs_key, key_type) >= 0) break;
+        ++j;
+      }
+
+      if (j < rhs.size() && !rhs[j][rhs_key_idx].is_null
+          && CompareNonNullValues(rhs[j][rhs_key_idx], lhs_key, key_type) == 0) {
+        size_t rhs_end = j + 1;
+        while (rhs_end < rhs.size() && same_rhs_key(j, rhs_end)) ++rhs_end;
+        for (size_t l = i; l < lhs_end; ++l) {
+          for (size_t r = j; r < rhs_end; ++r) {
+            rhs_used[r] = true;
+            co_await emit(ConcatTuples(lhs[l], rhs[r]));
+          }
+        }
+        j = rhs_end;
+      } else if (join.type == JoinType::kLeft || join.type == JoinType::kFull) {
+        for (size_t l = i; l < lhs_end; ++l) {
+          co_await emit(ConcatTuples(lhs[l], Tuple(rhs_attrs.size(), Value{true})));
+        }
+      }
+      i = lhs_end;
+    }
+
+    if (join.type == JoinType::kFull) {
+      for (size_t r = 0; r < rhs.size(); ++r) {
+        if (!rhs_used[r]) {
+          co_await emit(ConcatTuples(Tuple(lhs_attrs.size(), Value{true}), rhs[r]));
+        }
+      }
+    }
+  }
+
+  co_await flush();
   co_await lhs_task(boost::asio::use_awaitable);
   co_await rhs_task(boost::asio::use_awaitable);
   tuples_chan.close();
