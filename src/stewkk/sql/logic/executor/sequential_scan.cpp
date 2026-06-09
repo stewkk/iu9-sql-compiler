@@ -20,6 +20,7 @@
 #include <stewkk/sql/logic/executor/executor.hpp>
 #include <stewkk/sql/models/executor/tuple.hpp>
 #include <stewkk/sql/logic/executor/buffer_size.hpp>
+#include <stewkk/sql/logic/transformation_rules/predicate_utils.hpp>
 
 namespace stewkk::sql {
 
@@ -381,12 +382,25 @@ boost::asio::awaitable<Result<>> CsvDirSequentialScanner::operator()(
 boost::asio::awaitable<Result<>> CsvDirIndexedScanner::operator()(
     const std::string& table_name, const std::string& output_table_name,
     const Expression& predicate,
+    const std::optional<std::string>& index_column,
     AttributesInfoChannel& attrs_chan,
     TuplesChannel& tuples_chan) const {
 #ifdef DEBUG
   std::clog << "Executing index seek\n";
 #endif
   auto condition = ExtractSeekCondition(predicate, table_name, output_table_name);
+  if (index_column && (!condition || condition->column != *index_column)) {
+    std::vector<Expression> conjuncts;
+    CollectConjuncts(predicate, conjuncts);
+    condition = std::nullopt;
+    for (const auto& conjunct : conjuncts) {
+      auto candidate = ExtractSeekCondition(conjunct, table_name, output_table_name);
+      if (candidate && candidate->column == *index_column) {
+        condition = std::move(candidate);
+        break;
+      }
+    }
+  }
   if (!condition) {
     throw std::runtime_error{"IndexSeek predicate must be a comparison between one indexed int column and an int constant"};
   }

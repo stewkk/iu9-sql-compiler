@@ -20,10 +20,10 @@ bool ImplementHashJoin::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
     return IsSimpleEquiJoin(join.qual);
 }
 
-utils::NotNull<PhysicalExpr*> ImplementHashJoin::Apply(utils::NotNull<LogicalExpr*> expr, Memo&) {
+std::vector<utils::NotNull<PhysicalExpr*>> ImplementHashJoin::Apply(utils::NotNull<LogicalExpr*> expr, Memo&) {
     auto& join = std::get<logical::Join>(expr->root_operator);
-    return expr->group->AddPhysicalExpr(
-        physical::HashJoin{join.lhs, join.rhs, join.type, join.qual});
+    return {expr->group->AddPhysicalExpr(
+        physical::HashJoin{join.lhs, join.rhs, join.type, join.qual})};
 }
 
 }  // namespace stewkk::sql

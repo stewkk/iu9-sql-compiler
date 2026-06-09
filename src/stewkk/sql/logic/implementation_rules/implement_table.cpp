@@ -6,9 +6,9 @@ bool ImplementTable::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
     return std::holds_alternative<logical::Table>(expr->root_operator);
 }
 
-utils::NotNull<PhysicalExpr*> ImplementTable::Apply(utils::NotNull<LogicalExpr*> expr, Memo&) {
+std::vector<utils::NotNull<PhysicalExpr*>> ImplementTable::Apply(utils::NotNull<LogicalExpr*> expr, Memo&) {
     auto& table = std::get<logical::Table>(expr->root_operator);
-    return expr->group->AddPhysicalExpr(physical::SeqScan{table.name, table.alias});
+    return {expr->group->AddPhysicalExpr(physical::SeqScan{table.name, table.alias})};
 }
 
 }  // namespace stewkk::sql

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <vector>
 
 #include <stewkk/sql/logic/optimizer/logical_expr.hpp>
 #include <stewkk/sql/logic/optimizer/physical_expr.hpp>
@@ -23,7 +24,7 @@ class TransformationRule {
 class ImplementationRule {
   public:
     virtual bool IsApplicable(utils::NotNull<LogicalExpr*> expr) = 0;
-    virtual utils::NotNull<PhysicalExpr*> Apply(utils::NotNull<LogicalExpr*>, Memo& memo) = 0;
+    virtual std::vector<utils::NotNull<PhysicalExpr*>> Apply(utils::NotNull<LogicalExpr*>, Memo& memo) = 0;
     virtual ~ImplementationRule() = default;
 };
 

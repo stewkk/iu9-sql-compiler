@@ -26,7 +26,7 @@ class RulesApplier {
     utils::NotNull<LogicalExpr*> Apply(TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr, Memo& memo);
 
     bool IsApplicable(ImplementationRuleId rule, utils::NotNull<LogicalExpr*> expr);
-    utils::NotNull<PhysicalExpr*> Apply(ImplementationRuleId rule, utils::NotNull<LogicalExpr*> expr, Memo& memo);
+    std::vector<utils::NotNull<PhysicalExpr*>> Apply(ImplementationRuleId rule, utils::NotNull<LogicalExpr*> expr, Memo& memo);
 
   private:
     Rules<NTransformation, NImplementation> rules_;

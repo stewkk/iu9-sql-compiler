@@ -25,7 +25,7 @@ bool RulesApplier<NTransformation, NImplementation>::IsApplicable(Implementation
 }
 
 template<size_t NTransformation, size_t NImplementation>
-utils::NotNull<PhysicalExpr*> RulesApplier<NTransformation, NImplementation>::Apply(ImplementationRuleId rule, utils::NotNull<LogicalExpr*> expr, Memo& memo) {
+std::vector<utils::NotNull<PhysicalExpr*>> RulesApplier<NTransformation, NImplementation>::Apply(ImplementationRuleId rule, utils::NotNull<LogicalExpr*> expr, Memo& memo) {
     applied_implementation_rules_[expr.get()][rule.value] = 1;
     return rules_.implementation_rules[rule.value]->Apply(expr, memo);
 }

@@ -148,6 +148,17 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             if (!child.ok) child.reason = "Aggregation.source: " + child.reason;
             return child;
         },
+        [&](const physical::StreamAggregation& op) -> InternalMatch {
+            const auto* t = std::get_if<PhysicalStreamAggregation>(&target.node);
+            if (!t) return {false, depth, "type mismatch: expected StreamAggregate"};
+            if (op.group_by != t->group_by)
+                return {false, depth + 1, "StreamAggregation group_by mismatch"};
+            if (op.aggregates != t->aggregates)
+                return {false, depth + 1, "StreamAggregation aggregates mismatch"};
+            auto child = MatchGroup(op.source.get(), *t->source, depth + 1);
+            if (!child.ok) child.reason = "StreamAggregation.source: " + child.reason;
+            return child;
+        },
     }, pe->root_operator);
 }
 

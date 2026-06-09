@@ -223,6 +223,20 @@ std::string SerializeNode(const PhysicalPlanNode& node) {
             return std::format("(HashAggregate (group_by {}) (aggs {}) {})",
                                group_by_str, aggs_str, SerializeNode(*n.source));
         }
+        std::string operator()(const PhysicalStreamAggregation& n) const {
+            std::string group_by_str;
+            for (const auto& e : n.group_by) {
+                if (!group_by_str.empty()) group_by_str += ' ';
+                group_by_str += SerializeExpr(e);
+            }
+            std::string aggs_str;
+            for (const auto& e : n.aggregates) {
+                if (!aggs_str.empty()) aggs_str += ' ';
+                aggs_str += SerializeExpr(e);
+            }
+            return std::format("(StreamAggregate (group_by {}) (aggs {}) {})",
+                               group_by_str, aggs_str, SerializeNode(*n.source));
+        }
     };
     return std::visit(Visitor{}, node.node);
 }
@@ -544,7 +558,7 @@ PhysicalPlanNode ParseNode(ParseState& s) {
         };
     }
 
-    if (head == "HashAggregate") {
+    if (head == "HashAggregate" || head == "StreamAggregate") {
         s.ExpectLParen();
         auto kw1 = s.ExpectAtom();
         if (kw1 != "group_by")
@@ -563,6 +577,13 @@ PhysicalPlanNode ParseNode(ParseState& s) {
         s.ExpectRParen();
         auto source = ParseNode(s);
         s.ExpectRParen();
+        if (head == "StreamAggregate") {
+            return PhysicalStreamAggregation{
+                std::make_shared<PhysicalPlanNode>(std::move(source)),
+                std::move(group_by),
+                std::move(aggregates),
+            };
+        }
         return PhysicalAggregation{
             std::make_shared<PhysicalPlanNode>(std::move(source)),
             std::move(group_by),
@@ -713,6 +734,25 @@ struct DotBuilder {
             group_by += ToString(e);
         }
         int id = Emit(std::format("HashAgg\\nGROUP BY {}\\n{}", group_by, aggs),
+                      metadata);
+        EmitEdge(src, id);
+        return id;
+    }
+
+    int EmitAlternative(const PhysicalStreamAggregation& n,
+                        const std::optional<PlanNodeMetadata>& metadata) {
+        int src = EmitNode(*n.source);
+        std::string aggs;
+        for (const auto& e : n.aggregates) {
+            if (!aggs.empty()) aggs += ", ";
+            aggs += ToString(e);
+        }
+        std::string group_by;
+        for (const auto& e : n.group_by) {
+            if (!group_by.empty()) group_by += ", ";
+            group_by += ToString(e);
+        }
+        int id = Emit(std::format("StreamAgg\\nGROUP BY {}\\n{}", group_by, aggs),
                       metadata);
         EmitEdge(src, id);
         return id;

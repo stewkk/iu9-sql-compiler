@@ -6,10 +6,10 @@ bool ImplementJoin::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
     return std::holds_alternative<logical::Join>(expr->root_operator);
 }
 
-utils::NotNull<PhysicalExpr*> ImplementJoin::Apply(utils::NotNull<LogicalExpr*> expr, Memo&) {
+std::vector<utils::NotNull<PhysicalExpr*>> ImplementJoin::Apply(utils::NotNull<LogicalExpr*> expr, Memo&) {
     auto& join = std::get<logical::Join>(expr->root_operator);
-    return expr->group->AddPhysicalExpr(
-        physical::NestedLoopJoin{join.lhs, join.rhs, join.type, join.qual});
+    return {expr->group->AddPhysicalExpr(
+        physical::NestedLoopJoin{join.lhs, join.rhs, join.type, join.qual})};
 }
 
 }  // namespace stewkk::sql

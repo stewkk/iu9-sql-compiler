@@ -27,6 +27,7 @@ struct MergeJoin;
 struct IndexSeek;
 struct PhysicalSort;
 struct PhysicalAggregation;
+struct PhysicalStreamAggregation;
 struct PhysicalPlanNode;
 
 struct SeqScan {
@@ -91,6 +92,7 @@ struct IndexSeek {
   std::string table;
   std::optional<std::string> alias;
   Expression predicate;
+  std::optional<std::string> index_column = std::nullopt;
 
   bool operator==(const IndexSeek&) const;
 };
@@ -110,6 +112,14 @@ struct PhysicalAggregation {
   bool operator==(const PhysicalAggregation&) const;
 };
 
+struct PhysicalStreamAggregation {
+  std::shared_ptr<PhysicalPlanNode> source;
+  std::vector<Expression> group_by;
+  std::vector<Expression> aggregates;
+
+  bool operator==(const PhysicalStreamAggregation&) const;
+};
+
 struct PlanNodeMetadata {
   std::int64_t cardinality = 0;
   std::int64_t local_cost = 0;
@@ -117,7 +127,7 @@ struct PlanNodeMetadata {
   bool operator==(const PlanNodeMetadata&) const = default;
 };
 
-using PhysicalPlanAlternative = std::variant<SeqScan, PhysicalProjection, PhysicalFilter, NestedLoopCrossJoin, NestedLoopJoin, HashJoin, MergeJoin, IndexSeek, PhysicalSort, PhysicalAggregation>;
+using PhysicalPlanAlternative = std::variant<SeqScan, PhysicalProjection, PhysicalFilter, NestedLoopCrossJoin, NestedLoopJoin, HashJoin, MergeJoin, IndexSeek, PhysicalSort, PhysicalAggregation, PhysicalStreamAggregation>;
 
 struct PhysicalPlanNode {
   PhysicalPlanAlternative node;

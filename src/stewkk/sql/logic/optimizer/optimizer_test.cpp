@@ -169,6 +169,21 @@ TEST(OptimizerTest, OrderBy) {
   ASSERT_THAT(Serialize(got), Eq("(Sort (keys users.id Asc) (SeqScan users))"));
 }
 
+TEST(OptimizerTest, UsesStreamAggregateWhenOrderCanBeProvided) {
+  std::stringstream s{"SELECT users.id, COUNT(*) FROM users GROUP BY users.id ORDER BY users.id;"};
+  auto parsed = GetAST(s).value();
+  PropertySet required{SortProperty{*parsed.required_order}};
+  Optimizer optimizer(parsed.op, MakeMainRules(), CardinalityEstimates({{"users", 1000}}),
+                      MakeTestSchema(), std::move(required));
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(
+      Serialize(got),
+      HasSubstr("(StreamAggregate (group_by (attr users id)) (aggs (COUNT *))"
+                " (Sort (keys users.id Asc) (SeqScan users)))"));
+}
+
 TEST(OptimizerTest, OrderBySortsAfterCrossJoin) {
   std::stringstream s{
       "SELECT * FROM departments CROSS JOIN orders ORDER BY departments.id;"};
@@ -278,6 +293,35 @@ TEST(OptimizerTest, IndexSeekSupportsAliasAndFullResidualPredicate) {
   Optimizer optimizer(op, MakeMainRules(IndexCatalog({
       IndexInfo{.table = "users", .column = "id", .type = "sorted", .file = "users.id.sorted.idx"},
   })), CardinalityEstimates({{"users", 1000}}), MakeTestSchema());
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(Serialize(got),
+              Eq("(IndexSeek (and (>= (attr u id) 8) (< (attr u age) 70)) users u)"));
+}
+
+TEST(OptimizerTest, IndexSeekDeliversSortedIndexOrder) {
+  std::stringstream s{"SELECT * FROM users WHERE users.id >= 8 ORDER BY users.id;"};
+  auto parsed = GetAST(s).value();
+  Optimizer optimizer(parsed.op, MakeMainRules(IndexCatalog({
+      IndexInfo{.table = "users", .column = "id", .type = "sorted", .file = "users.id.sorted.idx"},
+  })), CardinalityEstimates({{"users", 1000}}), MakeTestSchema(),
+      PropertySet{SortProperty{*parsed.required_order}});
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(Serialize(got), Eq("(IndexSeek (>= (attr users id) 8) users)"));
+}
+
+TEST(OptimizerTest, IndexSeekCanChooseOrderCompatibleIndexedConjunct) {
+  std::stringstream s{
+      "SELECT * FROM users AS u WHERE u.id >= 8 AND u.age < 70 ORDER BY u.age;"};
+  auto parsed = GetAST(s).value();
+  Optimizer optimizer(parsed.op, MakeMainRules(IndexCatalog({
+      IndexInfo{.table = "users", .column = "id", .type = "sorted", .file = "users.id.sorted.idx"},
+      IndexInfo{.table = "users", .column = "age", .type = "sorted", .file = "users.age.sorted.idx"},
+  })), CardinalityEstimates({{"users", 1000}}), MakeTestSchema(),
+      PropertySet{SortProperty{*parsed.required_order}});
 
   auto got = optimizer.Optimize();
 

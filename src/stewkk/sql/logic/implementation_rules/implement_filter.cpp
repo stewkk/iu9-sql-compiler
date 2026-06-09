@@ -6,9 +6,9 @@ bool ImplementFilter::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
     return std::holds_alternative<logical::Filter>(expr->root_operator);
 }
 
-utils::NotNull<PhysicalExpr*> ImplementFilter::Apply(utils::NotNull<LogicalExpr*> expr, Memo&) {
+std::vector<utils::NotNull<PhysicalExpr*>> ImplementFilter::Apply(utils::NotNull<LogicalExpr*> expr, Memo&) {
     auto& filter = std::get<logical::Filter>(expr->root_operator);
-    return expr->group->AddPhysicalExpr(physical::Filter{filter.source, filter.predicate});
+    return {expr->group->AddPhysicalExpr(physical::Filter{filter.source, filter.predicate})};
 }
 
 }  // namespace stewkk::sql

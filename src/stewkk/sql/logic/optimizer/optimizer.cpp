@@ -74,6 +74,21 @@ PropertySet SortOn(const Attribute& attr) {
   return PropertySet{SortProperty{SortOrder{{SortKey{attr.table, attr.name, Direction::kAsc}}}}};
 }
 
+PropertySet SortOn(const std::string& table, const std::string& column) {
+  return PropertySet{SortProperty{SortOrder{{SortKey{table, column, Direction::kAsc}}}}};
+}
+
+PropertySet SortOnGroupBy(const std::vector<Expression>& group_by) {
+  SortOrder order;
+  for (const auto& expr : group_by) {
+    const auto* attr = std::get_if<Attribute>(&expr);
+    if (!attr) return PropertySet::Any();
+    order.keys.push_back(SortKey{attr->table, attr->name, Direction::kAsc});
+  }
+  if (order.keys.empty()) return PropertySet::Any();
+  return PropertySet{SortProperty{std::move(order)}};
+}
+
 PropertySet RequiredInputProps(utils::NotNull<PhysicalExpr*> expr,
                                PropertySet required, size_t child_index,
                                SchemaCatalog& schema) {
@@ -94,6 +109,7 @@ PropertySet RequiredInputProps(utils::NotNull<PhysicalExpr*> expr,
       },
       [&](const physical::Sort&) { return PropertySet::Any(); },
       [&](const physical::Aggregation&) { return PropertySet::Any(); },
+      [&](const physical::StreamAggregation& a) { return SortOnGroupBy(a.group_by); },
   }, expr->root_operator);
 }
 
@@ -102,7 +118,9 @@ PropertySet DeriveOutputProps(utils::NotNull<PhysicalExpr*> expr,
                               SchemaCatalog& schema) {
   return std::visit(utils::Overloaded{
       [&](const physical::SeqScan&) { return PropertySet::Any(); },
-      [&](const physical::IndexSeek&) { return PropertySet::Any(); },
+      [&](const physical::IndexSeek& s) {
+          return SortOn(s.alias.value_or(s.table), s.index_column);
+      },
       [&](const physical::Filter&) { return child_delivered[0]; },
       [&](const physical::Projection&) { return child_delivered[0]; },
       [&](const physical::NestedLoopJoin&) { return PropertySet::Any(); },
@@ -115,6 +133,7 @@ PropertySet DeriveOutputProps(utils::NotNull<PhysicalExpr*> expr,
       },
       [&](const physical::Sort& s) { return PropertySet{SortProperty{s.keys}}; },
       [&](const physical::Aggregation&) { return PropertySet::Any(); },
+      [&](const physical::StreamAggregation& a) { return SortOnGroupBy(a.group_by); },
   }, expr->root_operator);
 }
 
@@ -215,6 +234,9 @@ int64_t CalcCost(utils::NotNull<PhysicalExpr*> expr, CardinalityEstimates& cardi
       [&](const physical::Aggregation& a) -> int64_t {
           return 510 * cardinality.GetCardinality(a.source);
       },
+      [&](const physical::StreamAggregation& a) -> int64_t {
+          return 130 * cardinality.GetCardinality(a.source);
+      },
   }, expr->root_operator);
 }
 
@@ -273,6 +295,9 @@ std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<PhysicalExpr*> ex
           return {s.input};
       },
       [](const physical::Aggregation& a) -> std::vector<utils::NotNull<Group*>> {
+          return {a.source};
+      },
+      [](const physical::StreamAggregation& a) -> std::vector<utils::NotNull<Group*>> {
           return {a.source};
       },
   }, expr->root_operator);
@@ -405,10 +430,12 @@ void Optimizer<NTransformation, NImplementation>::TryRules(
     }
     tasks_.emplace([this, expr, rule]() {
       Log("Applying implementation rule {} to group {}", rule, expr->group->GetId());
-      auto new_expr = rules_applier_.Apply(ImplementationRuleId{rule}, expr, memo_);
-      auto lc = CalcCost(new_expr, cardinality_, schema_);
-      Log("Local cost for group {} expression: {}", new_expr->group->GetId(), lc);
-      local_cost_[new_expr.get()] = lc;
+      auto new_exprs = rules_applier_.Apply(ImplementationRuleId{rule}, expr, memo_);
+      for (auto new_expr : new_exprs) {
+        auto lc = CalcCost(new_expr, cardinality_, schema_);
+        Log("Local cost for group {} expression: {}", new_expr->group->GetId(), lc);
+        local_cost_[new_expr.get()] = lc;
+      }
     });
   }
 }
@@ -506,7 +533,12 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
             return SeqScan{.table = op.table, .alias = op.alias};
           },
           [](const physical::IndexSeek& op) -> PhysicalPlanNode {
-            return IndexSeek{.table = op.table, .alias = op.alias, .predicate = op.predicate};
+            return IndexSeek{
+                .table = op.table,
+                .alias = op.alias,
+                .predicate = op.predicate,
+                .index_column = op.index_column,
+            };
           },
           [this, best_expr_nn, required](const physical::Projection& op) -> PhysicalPlanNode {
             return PhysicalProjection{
@@ -570,6 +602,14 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
           },
           [this, best_expr_nn, required](const physical::Aggregation& op) -> PhysicalPlanNode {
             return PhysicalAggregation{
+                .source = std::make_shared<PhysicalPlanNode>(
+                    BuildOptimalPlan(op.source.get(), RequiredInputProps(best_expr_nn, required, 0, schema_))),
+                .group_by = op.group_by,
+                .aggregates = op.aggregates,
+            };
+          },
+          [this, best_expr_nn, required](const physical::StreamAggregation& op) -> PhysicalPlanNode {
+            return PhysicalStreamAggregation{
                 .source = std::make_shared<PhysicalPlanNode>(
                     BuildOptimalPlan(op.source.get(), RequiredInputProps(best_expr_nn, required, 0, schema_))),
                 .group_by = op.group_by,

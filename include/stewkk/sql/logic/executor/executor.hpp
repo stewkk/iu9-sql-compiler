@@ -51,7 +51,8 @@ public:
       AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan)>;
   using IndexScan = std::function<boost::asio::awaitable<Result<>>(
       const std::string& table_name, const std::string& output_table_name,
-      const Expression& predicate, AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan)>;
+      const Expression& predicate, const std::optional<std::string>& index_column,
+      AttributesInfoChannel& attr_chan, TuplesChannel& tuples_chan)>;
   Executor(SequentialScan seq_scan, boost::asio::any_io_executor executor);
   Executor(SequentialScan seq_scan, IndexScan index_scan, boost::asio::any_io_executor executor);
 
@@ -79,6 +80,9 @@ private:
   boost::asio::awaitable<void> ExecuteHashAggregate(const PhysicalAggregation& agg,
                                                      AttributesInfoChannel& attr_chan,
                                                      TuplesChannel& tuples_chan);
+  boost::asio::awaitable<void> ExecuteStreamAggregate(const PhysicalStreamAggregation& agg,
+                                                       AttributesInfoChannel& attr_chan,
+                                                       TuplesChannel& tuples_chan);
   boost::asio::awaitable<void> ExecuteSort(const PhysicalSort& sort, AttributesInfoChannel& attr_chan,
                                            TuplesChannel& tuples_chan);
   boost::asio::experimental::promise<void(std::exception_ptr)> SpawnExecutor(

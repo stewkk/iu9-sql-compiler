@@ -6,9 +6,9 @@ bool ImplementCrossJoin::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
     return std::holds_alternative<logical::CrossJoin>(expr->root_operator);
 }
 
-utils::NotNull<PhysicalExpr*> ImplementCrossJoin::Apply(utils::NotNull<LogicalExpr*> expr, Memo&) {
+std::vector<utils::NotNull<PhysicalExpr*>> ImplementCrossJoin::Apply(utils::NotNull<LogicalExpr*> expr, Memo&) {
     auto& cj = std::get<logical::CrossJoin>(expr->root_operator);
-    return expr->group->AddPhysicalExpr(physical::NestedLoopCrossJoin{cj.lhs, cj.rhs});
+    return {expr->group->AddPhysicalExpr(physical::NestedLoopCrossJoin{cj.lhs, cj.rhs})};
 }
 
 }  // namespace stewkk::sql

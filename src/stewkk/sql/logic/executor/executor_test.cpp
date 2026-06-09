@@ -897,4 +897,40 @@ TEST(ExecutorTest, GroupByCountStar) {
   ctx.run();
 }
 
+TEST(ExecutorTest, StreamGroupByCountStar) {
+  boost::asio::io_context ctx;
+  boost::asio::co_spawn(
+      ctx,
+      []() -> boost::asio::awaitable<Result<Relation>> {
+        std::stringstream s{"SELECT users.age, COUNT(*) FROM users GROUP BY users.age;"};
+        auto ast = GetAST(s).value().op;
+        const auto& projection = std::get<Projection>(ast);
+        const auto& agg = std::get<Aggregation>(*projection.source);
+        PhysicalPlanNode op = PhysicalStreamAggregation{
+            .source = std::make_shared<PhysicalPlanNode>(PhysicalSort{
+                .source = std::make_shared<PhysicalPlanNode>(ToPhysicalPlan(*agg.source)),
+                .keys = SortOrder{{SortKey{"users", "age", Direction::kAsc}}},
+            }),
+            .group_by = agg.group_by,
+            .aggregates = agg.aggregates,
+        };
+        CsvDirSequentialScanner seq_scan{kProjectDir + "/test/static/executor/test_data"};
+        Executor<InterpretedExpressionExecutor> executor(
+            std::move(seq_scan), co_await boost::asio::this_coro::executor);
+        auto got = co_await executor.Execute(op);
+        co_return got;
+      }(),
+      [](std::exception_ptr p, Result<Relation> got) {
+        if (p) std::rethrow_exception(p);
+        ASSERT_THAT(got.value().tuples.size(), Eq(11u));
+
+        int64_t total = 0;
+        for (const auto& t : got.value().tuples) {
+          total += t[1].value.int_value;
+        }
+        ASSERT_THAT(total, Eq(17));
+      });
+  ctx.run();
+}
+
 }  // namespace stewkk::sql

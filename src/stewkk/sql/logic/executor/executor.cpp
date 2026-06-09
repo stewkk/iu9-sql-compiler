@@ -658,6 +658,9 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
     boost::asio::awaitable<void> operator()(const PhysicalAggregation& agg) const {
       return executor.ExecuteHashAggregate(agg, attr_chan, tuples_chan);
     }
+    boost::asio::awaitable<void> operator()(const PhysicalStreamAggregation& agg) const {
+      return executor.ExecuteStreamAggregate(agg, attr_chan, tuples_chan);
+    }
     boost::asio::awaitable<void> operator()(const MergeJoin& join) const {
       return executor.ExecuteMergeJoin(join, attr_chan, tuples_chan);
     }
@@ -690,7 +693,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteIndexSeek(
     throw std::runtime_error("IndexSeek execution requested, but no index scanner is configured");
   }
   co_await index_scan_(seek.table, seek.alias ? *seek.alias : seek.table, seek.predicate,
-                       attr_chan, tuples_chan);
+                       seek.index_column, attr_chan, tuples_chan);
 }
 
 template <typename ExpressionExecutor>
@@ -1564,6 +1567,141 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashAggregate(
     co_await out_tuples_chan.async_send(boost::system::error_code{}, std::move(out_buf),
                                         boost::asio::use_awaitable);
   }
+  co_await task(boost::asio::use_awaitable);
+  out_tuples_chan.close();
+}
+
+template <typename ExpressionExecutor>
+boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteStreamAggregate(
+    const PhysicalStreamAggregation& agg, AttributesInfoChannel& out_attr_chan,
+    TuplesChannel& out_tuples_chan) {
+  Log("Executing stream aggregate");
+  auto close_on_fail = boost::scope::make_scope_fail(
+      [&] { out_attr_chan.close(); out_tuples_chan.close(); });
+  auto exec = co_await boost::asio::this_coro::executor;
+  auto [in_attrs_chan, in_tuples_chan] = co_await GetChannels();
+  auto task = SpawnExecutor(exec, *agg.source, in_attrs_chan, in_tuples_chan);
+
+  auto in_attrs = co_await in_attrs_chan.async_receive(boost::asio::use_awaitable);
+
+  AttributesInfo out_attrs;
+  for (const auto& expr : agg.group_by) {
+    if (const auto* attr = std::get_if<Attribute>(&expr)) {
+      auto it = std::find_if(in_attrs.begin(), in_attrs.end(), [&](const AttributeInfo& ai) {
+        return ai.table == attr->table && ai.name == attr->name;
+      });
+      if (it != in_attrs.end()) {
+        out_attrs.push_back(*it);
+      }
+    }
+  }
+  for (size_t i = 0; i < agg.aggregates.size(); ++i) {
+    const auto& agg_expr = std::get<AggregateExpression>(agg.aggregates[i]);
+    Type t = (agg_expr.function == AggregateFunction::kCount)
+                 ? Type::kInt
+                 : (agg_expr.is_star ? Type::kInt : GetExpressionTypeUnchecked(*agg_expr.argument, in_attrs));
+    out_attrs.push_back(AttributeInfo{"", std::format("__agg{}", i), t});
+  }
+  co_await out_attr_chan.async_send(boost::system::error_code{}, out_attrs,
+                                    boost::asio::use_awaitable);
+  out_attr_chan.close();
+
+  struct GroupState {
+    std::vector<int64_t> accumulators;
+    std::vector<bool> any_non_null;
+  };
+
+  auto do_scalar = [&](const Expression& expr, const Tuple& tuple) -> Value {
+    return CalcExpression(tuple, in_attrs, expr);
+  };
+  auto init_state = [&]() -> GroupState {
+    GroupState s;
+    s.accumulators.resize(agg.aggregates.size(), 0);
+    s.any_non_null.resize(agg.aggregates.size(), false);
+    return s;
+  };
+  auto update_state = [&](GroupState& state, const Tuple& tuple) {
+    for (size_t i = 0; i < agg.aggregates.size(); ++i) {
+      const auto& agg_expr = std::get<AggregateExpression>(agg.aggregates[i]);
+      if (agg_expr.function == AggregateFunction::kCount) {
+        if (agg_expr.is_star) {
+          state.accumulators[i]++;
+        } else {
+          auto v = do_scalar(*agg_expr.argument, tuple);
+          if (!v.is_null) state.accumulators[i]++;
+        }
+      } else {
+        auto v = do_scalar(*agg_expr.argument, tuple);
+        if (!v.is_null) {
+          state.accumulators[i] += v.value.int_value;
+          state.any_non_null[i] = true;
+        }
+      }
+    }
+  };
+
+  Tuples out_buf;
+  out_buf.reserve(kBufSize);
+  auto emit_group = [&](const std::vector<Value>& key, const GroupState& state)
+      -> boost::asio::awaitable<void> {
+    Tuple tuple = key;
+    for (size_t i = 0; i < agg.aggregates.size(); ++i) {
+      const auto& agg_expr = std::get<AggregateExpression>(agg.aggregates[i]);
+      if (agg_expr.function == AggregateFunction::kSum && !state.any_non_null[i]) {
+        tuple.push_back(Value{true});
+      } else {
+        tuple.push_back(Value{false, {.int_value = state.accumulators[i]}});
+      }
+    }
+    out_buf.push_back(std::move(tuple));
+    if (out_buf.size() == kBufSize) {
+      co_await out_tuples_chan.async_send(boost::system::error_code{}, std::move(out_buf),
+                                          boost::asio::use_awaitable);
+      out_buf.clear();
+      out_buf.reserve(kBufSize);
+    }
+  };
+  auto flush_output = [&]() -> boost::asio::awaitable<void> {
+    if (!out_buf.empty()) {
+      co_await out_tuples_chan.async_send(boost::system::error_code{}, std::move(out_buf),
+                                          boost::asio::use_awaitable);
+      out_buf.clear();
+      out_buf.reserve(kBufSize);
+    }
+  };
+
+  std::vector<Value> current_key;
+  GroupState current_state = init_state();
+  bool has_current = false;
+
+  for (;;) {
+    auto buf = co_await ReceiveTuples(in_tuples_chan);
+    if (buf.empty()) break;
+    for (const auto& tuple : buf) {
+      std::vector<Value> key;
+      key.reserve(agg.group_by.size());
+      for (const auto& expr : agg.group_by) {
+        key.push_back(do_scalar(expr, tuple));
+      }
+      if (!has_current) {
+        current_key = std::move(key);
+        current_state = init_state();
+        has_current = true;
+      } else if (key != current_key) {
+        co_await emit_group(current_key, current_state);
+        current_key = std::move(key);
+        current_state = init_state();
+      }
+      update_state(current_state, tuple);
+    }
+  }
+
+  if (has_current) {
+    co_await emit_group(current_key, current_state);
+  } else if (agg.group_by.empty()) {
+    co_await emit_group(std::vector<Value>{}, init_state());
+  }
+  co_await flush_output();
   co_await task(boost::asio::use_awaitable);
   out_tuples_chan.close();
 }

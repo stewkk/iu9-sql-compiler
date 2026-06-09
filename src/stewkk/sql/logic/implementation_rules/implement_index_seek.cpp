@@ -48,6 +48,41 @@ bool IsIndexedComparison(const Expression& expr, const logical::Table& table,
   return false;
 }
 
+void CollectIndexedColumns(const Expression& expr, const logical::Table& table,
+                           const IndexCatalog& indexes, std::vector<std::string>& columns) {
+  const auto* binary = std::get_if<BinaryExpression>(&expr);
+  if (!binary) {
+    return;
+  }
+  if (binary->binop == BinaryOp::kAnd) {
+    CollectIndexedColumns(*binary->lhs, table, indexes, columns);
+    CollectIndexedColumns(*binary->rhs, table, indexes, columns);
+    return;
+  }
+  if (!IsSupportedComparison(binary->binop)) {
+    return;
+  }
+
+  auto add_if_indexed = [&](const Attribute& attr, const Expression& other) {
+    if (!AttrMatchesTable(attr, table) || !std::holds_alternative<IntConst>(other)) {
+      return;
+    }
+    if (!indexes.HasSortedIndex(table.name, attr.name)) {
+      return;
+    }
+    if (!std::ranges::contains(columns, attr.name)) {
+      columns.push_back(attr.name);
+    }
+  };
+
+  if (const auto* attr = std::get_if<Attribute>(binary->lhs.get())) {
+    add_if_indexed(*attr, *binary->rhs);
+  }
+  if (const auto* attr = std::get_if<Attribute>(binary->rhs.get())) {
+    add_if_indexed(*attr, *binary->lhs);
+  }
+}
+
 }  // namespace
 
 ImplementIndexSeek::ImplementIndexSeek(IndexCatalog indexes)
@@ -73,14 +108,23 @@ bool ImplementIndexSeek::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
   return HasCompatibleIndexSeek(std::get<logical::Filter>(expr->root_operator), indexes_);
 }
 
-utils::NotNull<PhysicalExpr*> ImplementIndexSeek::Apply(utils::NotNull<LogicalExpr*> expr, Memo&) {
+std::vector<utils::NotNull<PhysicalExpr*>> ImplementIndexSeek::Apply(utils::NotNull<LogicalExpr*> expr, Memo&) {
   auto& filter = std::get<logical::Filter>(expr->root_operator);
   const auto* table = SourceTable(filter.source);
-  return expr->group->AddPhysicalExpr(physical::IndexSeek{
-      .table = table->name,
-      .alias = table->alias,
-      .predicate = filter.predicate,
-  });
+  std::vector<std::string> columns;
+  CollectIndexedColumns(filter.predicate, *table, indexes_, columns);
+
+  std::vector<utils::NotNull<PhysicalExpr*>> result;
+  result.reserve(columns.size());
+  for (const auto& column : columns) {
+    result.push_back(expr->group->AddPhysicalExpr(physical::IndexSeek{
+        .table = table->name,
+        .alias = table->alias,
+        .predicate = filter.predicate,
+        .index_column = column,
+    }));
+  }
+  return result;
 }
 
 }  // namespace stewkk::sql

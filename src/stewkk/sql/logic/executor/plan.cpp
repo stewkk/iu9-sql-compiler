@@ -35,7 +35,8 @@ bool MergeJoin::operator==(const MergeJoin& other) const {
 }
 
 bool IndexSeek::operator==(const IndexSeek& other) const {
-  return table == other.table && alias == other.alias && predicate == other.predicate;
+  return table == other.table && alias == other.alias && predicate == other.predicate
+      && index_column == other.index_column;
 }
 
 bool PhysicalSort::operator==(const PhysicalSort& other) const {
@@ -43,6 +44,10 @@ bool PhysicalSort::operator==(const PhysicalSort& other) const {
 }
 
 bool PhysicalAggregation::operator==(const PhysicalAggregation& other) const {
+  return *source == *other.source && group_by == other.group_by && aggregates == other.aggregates;
+}
+
+bool PhysicalStreamAggregation::operator==(const PhysicalStreamAggregation& other) const {
   return *source == *other.source && group_by == other.group_by && aggregates == other.aggregates;
 }
 

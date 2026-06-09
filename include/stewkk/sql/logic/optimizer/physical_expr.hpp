@@ -26,6 +26,7 @@ struct IndexSeek {
   std::string table;
   std::optional<std::string> alias;
   Expression predicate;
+  std::string index_column;
 
   bool operator==(const IndexSeek&) const = default;
 };
@@ -94,13 +95,22 @@ struct Aggregation {
   bool operator==(const Aggregation&) const = default;
 };
 
+struct StreamAggregation {
+  utils::NotNull<Group*> source;
+  std::vector<Expression> group_by;
+  std::vector<Expression> aggregates;
+
+  bool operator==(const StreamAggregation&) const = default;
+};
+
 } // namespace physical
 
 struct PhysicalExpr {
     std::variant<physical::SeqScan, physical::Projection, physical::Filter,
                  physical::NestedLoopJoin, physical::NestedLoopCrossJoin,
                  physical::HashJoin, physical::MergeJoin, physical::Sort,
-                 physical::Aggregation, physical::IndexSeek> root_operator;
+                 physical::Aggregation, physical::StreamAggregation,
+                 physical::IndexSeek> root_operator;
     utils::NotNull<Group*> group;
     bool is_enforcer = false;
 };

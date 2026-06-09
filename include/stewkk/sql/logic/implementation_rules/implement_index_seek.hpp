@@ -10,7 +10,7 @@ public:
   explicit ImplementIndexSeek(IndexCatalog indexes);
 
   bool IsApplicable(utils::NotNull<LogicalExpr*> expr) override;
-  utils::NotNull<PhysicalExpr*> Apply(utils::NotNull<LogicalExpr*> expr, Memo& memo) override;
+  std::vector<utils::NotNull<PhysicalExpr*>> Apply(utils::NotNull<LogicalExpr*> expr, Memo& memo) override;
 
 private:
   IndexCatalog indexes_;
