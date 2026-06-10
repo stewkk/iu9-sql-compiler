@@ -62,13 +62,13 @@ Expression ExpandIn(const InExpression& in) {
 
 }  // namespace
 
-bool InToOrChain::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
+bool InToOrChain::IsApplicable(utils::NotNull<LogicalExpr*> expr, RuleContext&) {
   if (!std::holds_alternative<logical::Filter>(expr->root_operator)) return false;
   const auto& f = std::get<logical::Filter>(expr->root_operator);
   return ContainsIn(f.predicate);
 }
 
-LogicalOperator InToOrChain::ApplyImpl(utils::NotNull<LogicalExpr*> expr, Memo& memo) {
+LogicalOperator InToOrChain::ApplyImpl(utils::NotNull<LogicalExpr*> expr, Memo&, RuleContext&) {
   const auto& f = std::get<logical::Filter>(expr->root_operator);
   return logical::Filter{f.source, Expand(f.predicate)};
 }

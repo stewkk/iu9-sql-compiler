@@ -46,6 +46,13 @@ add_library(libsql
   logic/transformation_rules/filter_pushdown_through_projection.cpp
   logic/transformation_rules/filter_pushdown_through_join.cpp
   logic/transformation_rules/in_to_or_chain.cpp
+  logic/transformation_rules/filter_to_join_predicate.cpp
+  logic/transformation_rules/cross_join_to_join.cpp
+  logic/transformation_rules/filter_lift_through_join.cpp
+  logic/transformation_rules/projection_pushdown_through_join.cpp
+  logic/transformation_rules/outer_join_to_inner.cpp
+  logic/transformation_rules/aggregation_pushdown_through_join.cpp
+  logic/transformation_rules/aggregation_join_transpose.cpp
   logic/implementation_rules/implement_table.cpp
   logic/implementation_rules/implement_filter.cpp
   logic/implementation_rules/implement_index_seek.cpp

@@ -4,7 +4,7 @@
 
 namespace stewkk::sql {
 
-Rules<7, 9> MakeMainRules(IndexCatalog indexes) {
+Rules<14, 9> MakeMainRules(IndexCatalog indexes) {
     return {
         .transformation_rules = {
             std::make_unique<JoinCommutativity>(),
@@ -14,6 +14,13 @@ Rules<7, 9> MakeMainRules(IndexCatalog indexes) {
             std::make_unique<FilterPushdownThroughProjection>(),
             std::make_unique<FilterPushdownThroughJoin>(),
             std::make_unique<InToOrChain>(),
+            std::make_unique<FilterToJoinPredicate>(),
+            std::make_unique<CrossJoinToJoin>(),
+            std::make_unique<FilterLiftThroughJoin>(),
+            std::make_unique<ProjectionPushdownThroughJoin>(),
+            std::make_unique<OuterJoinToInner>(),
+            std::make_unique<AggregationPushdownThroughJoin>(),
+            std::make_unique<AggregationJoinTranspose>(),
         },
         .implementation_rules = {
             std::make_unique<ImplementTable>(),

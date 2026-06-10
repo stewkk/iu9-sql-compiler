@@ -120,6 +120,22 @@ struct PhysicalStreamAggregation {
   bool operator==(const PhysicalStreamAggregation&) const;
 };
 
+struct PhysicalPartialAggregation {
+  std::shared_ptr<PhysicalPlanNode> source;
+  std::vector<Expression> group_by;
+  std::vector<Expression> aggregates;
+
+  bool operator==(const PhysicalPartialAggregation&) const;
+};
+
+struct PhysicalFinalAggregation {
+  std::shared_ptr<PhysicalPlanNode> source;
+  std::vector<Expression> group_by;
+  std::vector<Expression> aggregates;
+
+  bool operator==(const PhysicalFinalAggregation&) const;
+};
+
 struct PlanNodeMetadata {
   std::int64_t cardinality = 0;
   std::int64_t local_cost = 0;
@@ -127,7 +143,7 @@ struct PlanNodeMetadata {
   bool operator==(const PlanNodeMetadata&) const = default;
 };
 
-using PhysicalPlanAlternative = std::variant<SeqScan, PhysicalProjection, PhysicalFilter, NestedLoopCrossJoin, NestedLoopJoin, HashJoin, MergeJoin, IndexSeek, PhysicalSort, PhysicalAggregation, PhysicalStreamAggregation>;
+using PhysicalPlanAlternative = std::variant<SeqScan, PhysicalProjection, PhysicalFilter, NestedLoopCrossJoin, NestedLoopJoin, HashJoin, MergeJoin, IndexSeek, PhysicalSort, PhysicalAggregation, PhysicalStreamAggregation, PhysicalPartialAggregation, PhysicalFinalAggregation>;
 
 struct PhysicalPlanNode {
   PhysicalPlanAlternative node;

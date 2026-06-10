@@ -8,7 +8,7 @@
 
 namespace stewkk::sql {
 
-bool JoinAssociativity::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
+bool JoinAssociativity::IsApplicable(utils::NotNull<LogicalExpr*> expr, RuleContext&) {
   if (!std::holds_alternative<logical::Join>(expr->root_operator)) return false;
   const auto& outer = std::get<logical::Join>(expr->root_operator);
   if (outer.type != JoinType::kInner) return false;
@@ -19,7 +19,7 @@ bool JoinAssociativity::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
   return false;
 }
 
-LogicalOperator JoinAssociativity::ApplyImpl(utils::NotNull<LogicalExpr*> expr, Memo& memo) {
+LogicalOperator JoinAssociativity::ApplyImpl(utils::NotNull<LogicalExpr*> expr, Memo& memo, RuleContext&) {
   const auto& outer = std::get<logical::Join>(expr->root_operator);
   for (auto inner_expr : outer.lhs->GetLogicalExprs()) {
     if (!std::holds_alternative<logical::Join>(inner_expr->root_operator)) continue;

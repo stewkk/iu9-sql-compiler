@@ -110,6 +110,8 @@ PropertySet RequiredInputProps(utils::NotNull<PhysicalExpr*> expr,
       [&](const physical::Sort&) { return PropertySet::Any(); },
       [&](const physical::Aggregation&) { return PropertySet::Any(); },
       [&](const physical::StreamAggregation& a) { return SortOnGroupBy(a.group_by); },
+      [&](const physical::PartialAggregation&) { return PropertySet::Any(); },
+      [&](const physical::FinalAggregation&) { return PropertySet::Any(); },
   }, expr->root_operator);
 }
 
@@ -134,6 +136,8 @@ PropertySet DeriveOutputProps(utils::NotNull<PhysicalExpr*> expr,
       [&](const physical::Sort& s) { return PropertySet{SortProperty{s.keys}}; },
       [&](const physical::Aggregation&) { return PropertySet::Any(); },
       [&](const physical::StreamAggregation& a) { return SortOnGroupBy(a.group_by); },
+      [&](const physical::PartialAggregation&) { return PropertySet::Any(); },
+      [&](const physical::FinalAggregation&) { return PropertySet::Any(); },
   }, expr->root_operator);
 }
 
@@ -170,6 +174,12 @@ int64_t LowerBoundLocalCost(utils::NotNull<LogicalExpr*> expr, CardinalityEstima
           return 22 * cardinality.GetCardinality(expr->group);
       },
       [&](const logical::Aggregation& a) -> int64_t {
+          return 510 * cardinality.GetCardinality(a.source);
+      },
+      [&](const logical::PartialAggregation& a) -> int64_t {
+          return 510 * cardinality.GetCardinality(a.source);
+      },
+      [&](const logical::FinalAggregation& a) -> int64_t {
           return 510 * cardinality.GetCardinality(a.source);
       },
       [&](const logical::CrossJoin& j) -> int64_t {
@@ -237,6 +247,12 @@ int64_t CalcCost(utils::NotNull<PhysicalExpr*> expr, CardinalityEstimates& cardi
       [&](const physical::StreamAggregation& a) -> int64_t {
           return 130 * cardinality.GetCardinality(a.source);
       },
+      [&](const physical::PartialAggregation& a) -> int64_t {
+          return 510 * cardinality.GetCardinality(a.source);
+      },
+      [&](const physical::FinalAggregation& a) -> int64_t {
+          return 510 * cardinality.GetCardinality(a.source);
+      },
   }, expr->root_operator);
 }
 
@@ -254,6 +270,12 @@ std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<LogicalExpr*> exp
           return {p.source};
       },
       [](const logical::Aggregation& a) -> std::vector<utils::NotNull<Group*>> {
+          return {a.source};
+      },
+      [](const logical::PartialAggregation& a) -> std::vector<utils::NotNull<Group*>> {
+          return {a.source};
+      },
+      [](const logical::FinalAggregation& a) -> std::vector<utils::NotNull<Group*>> {
           return {a.source};
       },
       [](const logical::CrossJoin& j) -> std::vector<utils::NotNull<Group*>> {
@@ -300,15 +322,23 @@ std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<PhysicalExpr*> ex
       [](const physical::StreamAggregation& a) -> std::vector<utils::NotNull<Group*>> {
           return {a.source};
       },
+      [](const physical::PartialAggregation& a) -> std::vector<utils::NotNull<Group*>> {
+          return {a.source};
+      },
+      [](const physical::FinalAggregation& a) -> std::vector<utils::NotNull<Group*>> {
+          return {a.source};
+      },
   }, expr->root_operator);
 }
 
 template<size_t NTransformation, size_t NImplementation>
 Optimizer<NTransformation, NImplementation>::Optimizer(
     const Operator& expr, Rules<NTransformation, NImplementation>&& rules,
-    CardinalityEstimates cardinality, SchemaCatalog schema, PropertySet required)
+    CardinalityEstimates cardinality, SchemaCatalog schema, PropertySet required,
+    ConstraintCatalog constraints)
     : memo_(), rules_applier_(std::move(rules)), root_(memo_.Populate(expr)),
       cardinality_(std::move(cardinality)), schema_(std::move(schema)),
+      constraints_(std::move(constraints)),
       global_required_(std::move(required)) {
 }
 
@@ -398,7 +428,8 @@ template<size_t NTransformation, size_t NImplementation>
 void Optimizer<NTransformation, NImplementation>::ApplyRule(
     TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr, Limit limit) {
   Log("Applying transformation rule {} to group {}", rule.value, expr->group->GetId());
-  auto new_expr = rules_applier_.Apply(rule, expr, memo_);
+  RuleContext ctx{schema_, constraints_};
+  auto new_expr = rules_applier_.Apply(rule, expr, memo_, ctx);
   tasks_.emplace([this, new_expr, limit]() { ExploreExpression(new_expr, limit); });
  
  
@@ -416,7 +447,8 @@ template<size_t NTransformation, size_t NImplementation>
 void Optimizer<NTransformation, NImplementation>::TryRules(
     utils::NotNull<LogicalExpr*> expr, Limit limit) {
   for (size_t rule = 0; rule < NTransformation; rule++) {
-    if (!rules_applier_.IsApplicable(TransformationRuleId{rule}, expr)) {
+    RuleContext ctx{schema_, constraints_};
+    if (!rules_applier_.IsApplicable(TransformationRuleId{rule}, expr, ctx)) {
       continue;
     }
     tasks_.emplace([this, expr, rule, limit]() {
@@ -616,6 +648,22 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
                 .aggregates = op.aggregates,
             };
           },
+          [this, best_expr_nn, required](const physical::PartialAggregation& op) -> PhysicalPlanNode {
+            return PhysicalPartialAggregation{
+                .source = std::make_shared<PhysicalPlanNode>(
+                    BuildOptimalPlan(op.source.get(), RequiredInputProps(best_expr_nn, required, 0, schema_))),
+                .group_by = op.group_by,
+                .aggregates = op.aggregates,
+            };
+          },
+          [this, best_expr_nn, required](const physical::FinalAggregation& op) -> PhysicalPlanNode {
+            return PhysicalFinalAggregation{
+                .source = std::make_shared<PhysicalPlanNode>(
+                    BuildOptimalPlan(op.source.get(), RequiredInputProps(best_expr_nn, required, 0, schema_))),
+                .group_by = op.group_by,
+                .aggregates = op.aggregates,
+            };
+          },
       },
       best_expr->root_operator);
   plan.metadata = PlanNodeMetadata{
@@ -675,7 +723,7 @@ utils::NotNull<Group*> Optimizer<NTransformation, NImplementation>::GetRootGroup
   return root_->group;
 }
 
-template class Optimizer<7, 9>;
+template class Optimizer<14, 9>;
 template class Optimizer<0, 6>;
 
 }  // namespace stewkk::sql

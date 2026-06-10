@@ -17,13 +17,13 @@ size_t ConjunctCount(const Expression& e) {
 
 }  // namespace
 
-bool FilterSplit::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
+bool FilterSplit::IsApplicable(utils::NotNull<LogicalExpr*> expr, RuleContext&) {
   if (!std::holds_alternative<logical::Filter>(expr->root_operator)) return false;
   const auto& f = std::get<logical::Filter>(expr->root_operator);
   return ConjunctCount(f.predicate) >= 2;
 }
 
-LogicalOperator FilterSplit::ApplyImpl(utils::NotNull<LogicalExpr*> expr, Memo& memo) {
+LogicalOperator FilterSplit::ApplyImpl(utils::NotNull<LogicalExpr*> expr, Memo& memo, RuleContext&) {
   const auto& f = std::get<logical::Filter>(expr->root_operator);
 
   std::vector<Expression> conjs;

@@ -22,8 +22,11 @@ class RulesApplier {
   public:
     explicit RulesApplier(Rules<NTransformation, NImplementation> rules);
 
-    bool IsApplicable(TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr);
-    utils::NotNull<LogicalExpr*> Apply(TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr, Memo& memo);
+    bool IsApplicable(TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr,
+                      RuleContext& ctx);
+    utils::NotNull<LogicalExpr*> Apply(TransformationRuleId rule,
+                                       utils::NotNull<LogicalExpr*> expr, Memo& memo,
+                                       RuleContext& ctx);
 
     bool IsApplicable(ImplementationRuleId rule, utils::NotNull<LogicalExpr*> expr);
     std::vector<utils::NotNull<PhysicalExpr*>> Apply(ImplementationRuleId rule, utils::NotNull<LogicalExpr*> expr, Memo& memo);

@@ -27,7 +27,8 @@ class Optimizer {
 public:
   Optimizer(const Operator& expr, Rules<NTransformation, NImplementation>&& rules,
             CardinalityEstimates cardinality, SchemaCatalog schema,
-            PropertySet required = PropertySet::Any());
+            PropertySet required = PropertySet::Any(),
+            ConstraintCatalog constraints = {});
 
   PhysicalPlanNode Optimize();
   PhysicalPlanNode OptimizeExhaustive();
@@ -69,6 +70,7 @@ private:
   utils::NotNull<LogicalExpr*> root_;
   CardinalityEstimates cardinality_;
   SchemaCatalog schema_;
+  ConstraintCatalog constraints_;
   PropertySet global_required_;
   std::unordered_map<PhysicalExpr*, int64_t> local_cost_;
   std::unordered_map<WinnerKey, WinnerEntry> winner_;

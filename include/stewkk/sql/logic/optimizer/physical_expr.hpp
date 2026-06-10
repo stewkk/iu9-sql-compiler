@@ -103,6 +103,22 @@ struct StreamAggregation {
   bool operator==(const StreamAggregation&) const = default;
 };
 
+struct PartialAggregation {
+  utils::NotNull<Group*> source;
+  std::vector<Expression> group_by;
+  std::vector<Expression> aggregates;
+
+  bool operator==(const PartialAggregation&) const = default;
+};
+
+struct FinalAggregation {
+  utils::NotNull<Group*> source;
+  std::vector<Expression> group_by;
+  std::vector<Expression> aggregates;
+
+  bool operator==(const FinalAggregation&) const = default;
+};
+
 } // namespace physical
 
 struct PhysicalExpr {
@@ -110,6 +126,7 @@ struct PhysicalExpr {
                  physical::NestedLoopJoin, physical::NestedLoopCrossJoin,
                  physical::HashJoin, physical::MergeJoin, physical::Sort,
                  physical::Aggregation, physical::StreamAggregation,
+                 physical::PartialAggregation, physical::FinalAggregation,
                  physical::IndexSeek> root_operator;
     utils::NotNull<Group*> group;
     bool is_enforcer = false;

@@ -36,6 +36,30 @@ std::string ToKey(const LogicalOperator& op) {
             return "Aggregation(" + group_by + ";" + aggregates + ";"
                    + std::to_string(a.source->GetId()) + ")";
         },
+        [](const logical::PartialAggregation& a) {
+            std::string group_by;
+            for (const auto& e : a.group_by) {
+                group_by += ToString(e) + ",";
+            }
+            std::string aggregates;
+            for (const auto& e : a.aggregates) {
+                aggregates += ToString(e) + ",";
+            }
+            return "PartialAggregation(" + group_by + ";" + aggregates + ";"
+                   + std::to_string(a.source->GetId()) + ")";
+        },
+        [](const logical::FinalAggregation& a) {
+            std::string group_by;
+            for (const auto& e : a.group_by) {
+                group_by += ToString(e) + ",";
+            }
+            std::string aggregates;
+            for (const auto& e : a.aggregates) {
+                aggregates += ToString(e) + ",";
+            }
+            return "FinalAggregation(" + group_by + ";" + aggregates + ";"
+                   + std::to_string(a.source->GetId()) + ")";
+        },
         [](const logical::CrossJoin& j) {
             return "CrossJoin(" + std::to_string(j.lhs->GetId()) + "," + std::to_string(j.rhs->GetId()) + ")";
         },

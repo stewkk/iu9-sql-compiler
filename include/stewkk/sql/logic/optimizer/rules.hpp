@@ -11,6 +11,13 @@
 #include <stewkk/sql/logic/transformation_rules/filter_pushdown_through_projection.hpp>
 #include <stewkk/sql/logic/transformation_rules/filter_pushdown_through_join.hpp>
 #include <stewkk/sql/logic/transformation_rules/in_to_or_chain.hpp>
+#include <stewkk/sql/logic/transformation_rules/filter_to_join_predicate.hpp>
+#include <stewkk/sql/logic/transformation_rules/cross_join_to_join.hpp>
+#include <stewkk/sql/logic/transformation_rules/filter_lift_through_join.hpp>
+#include <stewkk/sql/logic/transformation_rules/projection_pushdown_through_join.hpp>
+#include <stewkk/sql/logic/transformation_rules/outer_join_to_inner.hpp>
+#include <stewkk/sql/logic/transformation_rules/aggregation_pushdown_through_join.hpp>
+#include <stewkk/sql/logic/transformation_rules/aggregation_join_transpose.hpp>
 #include <stewkk/sql/logic/implementation_rules/implement_table.hpp>
 #include <stewkk/sql/logic/implementation_rules/implement_filter.hpp>
 #include <stewkk/sql/logic/implementation_rules/implement_projection.hpp>
@@ -29,7 +36,7 @@ struct Rules {
     std::array<std::unique_ptr<ImplementationRule>, NImplementation> implementation_rules;
 };
 
-Rules<7, 9> MakeMainRules(IndexCatalog indexes = {});
+Rules<14, 9> MakeMainRules(IndexCatalog indexes = {});
 Rules<0, 6> MakeNaiveRules();
 
 }  // namespace stewkk::sql

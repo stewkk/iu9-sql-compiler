@@ -260,7 +260,8 @@ int main(int argc, char** argv) {
         : PropertySet::Any();
     Optimizer optimizer(parsed.op, MakeMainRules(LoadIndexCatalogFromCsvDir(args.data_dir)),
                         CardinalityEstimates{LoadTableSizesFromCsvDir(args.data_dir)},
-                        LoadSchemaFromCsvDir(args.data_dir), std::move(required));
+                        LoadSchemaFromCsvDir(args.data_dir), std::move(required),
+                        LoadConstraintCatalogFromCsvDir(args.data_dir));
     plan = optimizer.Optimize();
     plan_cost = optimizer.GetBestCost();
 

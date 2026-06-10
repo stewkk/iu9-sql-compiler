@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -21,6 +22,18 @@ struct IndexInfo {
   std::string file;
 };
 
+struct UniqueKeyInfo {
+  std::string table;
+  std::string column;
+};
+
+struct ForeignKeyInfo {
+  std::string from_table;
+  std::string from_column;
+  std::string to_table;
+  std::string to_column;
+};
+
 class IndexCatalog {
 public:
   IndexCatalog(std::vector<IndexInfo> indexes = {});
@@ -31,12 +44,27 @@ private:
   std::vector<IndexInfo> indexes_;
 };
 
+class ConstraintCatalog {
+public:
+  ConstraintCatalog(std::vector<UniqueKeyInfo> unique_keys = {},
+                    std::vector<ForeignKeyInfo> foreign_keys = {});
+
+  bool IsUnique(const Attribute& attr) const;
+  bool HasForeignKey(const Attribute& from, const Attribute& to) const;
+
+private:
+  std::vector<UniqueKeyInfo> unique_keys_;
+  std::vector<ForeignKeyInfo> foreign_keys_;
+};
+
 class SchemaCatalog {
 public:
   SchemaCatalog(std::unordered_map<std::string, Schema> tables = {});
 
   Schema GetSchema(utils::NotNull<Group*> group);
   std::int64_t GetWidth(utils::NotNull<Group*> group);
+  std::optional<Attribute> ResolveBaseAttribute(const Attribute& attr,
+                                                utils::NotNull<Group*> group);
 
 private:
   Schema Derive(const LogicalOperator& op);
@@ -48,6 +76,8 @@ private:
 SchemaCatalog LoadSchemaFromCsvDir(const std::filesystem::path& dir);
 
 IndexCatalog LoadIndexCatalogFromCsvDir(const std::filesystem::path& dir);
+
+ConstraintCatalog LoadConstraintCatalogFromCsvDir(const std::filesystem::path& dir);
 
 std::unordered_map<std::string, std::int64_t> LoadTableSizesFromCsvDir(
     const std::filesystem::path& dir);

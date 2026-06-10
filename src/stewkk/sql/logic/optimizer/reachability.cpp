@@ -159,6 +159,28 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             if (!child.ok) child.reason = "StreamAggregation.source: " + child.reason;
             return child;
         },
+        [&](const physical::PartialAggregation& op) -> InternalMatch {
+            const auto* t = std::get_if<PhysicalPartialAggregation>(&target.node);
+            if (!t) return {false, depth, "type mismatch: expected PartialAggregate"};
+            if (op.group_by != t->group_by)
+                return {false, depth + 1, "PartialAggregation group_by mismatch"};
+            if (op.aggregates != t->aggregates)
+                return {false, depth + 1, "PartialAggregation aggregates mismatch"};
+            auto child = MatchGroup(op.source.get(), *t->source, depth + 1);
+            if (!child.ok) child.reason = "PartialAggregation.source: " + child.reason;
+            return child;
+        },
+        [&](const physical::FinalAggregation& op) -> InternalMatch {
+            const auto* t = std::get_if<PhysicalFinalAggregation>(&target.node);
+            if (!t) return {false, depth, "type mismatch: expected FinalAggregate"};
+            if (op.group_by != t->group_by)
+                return {false, depth + 1, "FinalAggregation group_by mismatch"};
+            if (op.aggregates != t->aggregates)
+                return {false, depth + 1, "FinalAggregation aggregates mismatch"};
+            auto child = MatchGroup(op.source.get(), *t->source, depth + 1);
+            if (!child.ok) child.reason = "FinalAggregation.source: " + child.reason;
+            return child;
+        },
     }, pe->root_operator);
 }
 

@@ -7,8 +7,8 @@ namespace stewkk::sql {
 
 class InToOrChain : public TransformationRule {
   public:
-    bool IsApplicable(utils::NotNull<LogicalExpr*> expr) override;
-    LogicalOperator ApplyImpl(utils::NotNull<LogicalExpr*> expr, Memo& memo) override;
+    bool IsApplicable(utils::NotNull<LogicalExpr*> expr, RuleContext& ctx) override;
+    LogicalOperator ApplyImpl(utils::NotNull<LogicalExpr*> expr, Memo& memo, RuleContext& ctx) override;
 };
 
 }  // namespace stewkk::sql

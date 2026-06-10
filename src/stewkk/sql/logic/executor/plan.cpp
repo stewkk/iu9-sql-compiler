@@ -51,4 +51,12 @@ bool PhysicalStreamAggregation::operator==(const PhysicalStreamAggregation& othe
   return *source == *other.source && group_by == other.group_by && aggregates == other.aggregates;
 }
 
+bool PhysicalPartialAggregation::operator==(const PhysicalPartialAggregation& other) const {
+  return *source == *other.source && group_by == other.group_by && aggregates == other.aggregates;
+}
+
+bool PhysicalFinalAggregation::operator==(const PhysicalFinalAggregation& other) const {
+  return *source == *other.source && group_by == other.group_by && aggregates == other.aggregates;
+}
+
 } // namespace stewkk::sql

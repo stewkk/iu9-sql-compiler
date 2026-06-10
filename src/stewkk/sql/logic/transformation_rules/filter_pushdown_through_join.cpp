@@ -79,14 +79,14 @@ const logical::Join* FindPushableJoin(utils::NotNull<Group*> source,
 
 }  // namespace
 
-bool FilterPushdownThroughJoin::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
+bool FilterPushdownThroughJoin::IsApplicable(utils::NotNull<LogicalExpr*> expr, RuleContext&) {
   if (!std::holds_alternative<logical::Filter>(expr->root_operator)) return false;
   const auto& f = std::get<logical::Filter>(expr->root_operator);
   return FindPushableJoin(f.source, f.predicate) != nullptr;
 }
 
 LogicalOperator FilterPushdownThroughJoin::ApplyImpl(utils::NotNull<LogicalExpr*> expr,
-                                                     Memo& memo) {
+                                                     Memo& memo, RuleContext&) {
   const auto& f = std::get<logical::Filter>(expr->root_operator);
   const auto* join = FindPushableJoin(f.source, f.predicate);
   if (join == nullptr) {

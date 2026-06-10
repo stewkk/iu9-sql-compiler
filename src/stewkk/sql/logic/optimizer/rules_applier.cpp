@@ -7,15 +7,17 @@ RulesApplier<NTransformation, NImplementation>::RulesApplier(Rules<NTransformati
     : rules_(std::move(rules)) {}
 
 template<size_t NTransformation, size_t NImplementation>
-bool RulesApplier<NTransformation, NImplementation>::IsApplicable(TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr) {
+bool RulesApplier<NTransformation, NImplementation>::IsApplicable(
+    TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr, RuleContext& ctx) {
     return !applied_transformation_rules_[expr.get()][rule.value] &&
-           rules_.transformation_rules[rule.value]->IsApplicable(expr);
+           rules_.transformation_rules[rule.value]->IsApplicable(expr, ctx);
 }
 
 template<size_t NTransformation, size_t NImplementation>
-utils::NotNull<LogicalExpr*> RulesApplier<NTransformation, NImplementation>::Apply(TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr, Memo& memo) {
+utils::NotNull<LogicalExpr*> RulesApplier<NTransformation, NImplementation>::Apply(
+    TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr, Memo& memo, RuleContext& ctx) {
     applied_transformation_rules_[expr.get()][rule.value] = 1;
-    return rules_.transformation_rules[rule.value]->Apply(expr, memo);
+    return rules_.transformation_rules[rule.value]->Apply(expr, memo, ctx);
 }
 
 template<size_t NTransformation, size_t NImplementation>
@@ -30,7 +32,7 @@ std::vector<utils::NotNull<PhysicalExpr*>> RulesApplier<NTransformation, NImplem
     return rules_.implementation_rules[rule.value]->Apply(expr, memo);
 }
 
-template class RulesApplier<7, 9>;
+template class RulesApplier<14, 9>;
 template class RulesApplier<0, 6>;
 
 }  // namespace stewkk::sql

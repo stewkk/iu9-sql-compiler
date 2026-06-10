@@ -237,6 +237,34 @@ std::string SerializeNode(const PhysicalPlanNode& node) {
             return std::format("(StreamAggregate (group_by {}) (aggs {}) {})",
                                group_by_str, aggs_str, SerializeNode(*n.source));
         }
+        std::string operator()(const PhysicalPartialAggregation& n) const {
+            std::string group_by_str;
+            for (const auto& e : n.group_by) {
+                if (!group_by_str.empty()) group_by_str += ' ';
+                group_by_str += SerializeExpr(e);
+            }
+            std::string aggs_str;
+            for (const auto& e : n.aggregates) {
+                if (!aggs_str.empty()) aggs_str += ' ';
+                aggs_str += SerializeExpr(e);
+            }
+            return std::format("(PartialAggregate (group_by {}) (aggs {}) {})",
+                               group_by_str, aggs_str, SerializeNode(*n.source));
+        }
+        std::string operator()(const PhysicalFinalAggregation& n) const {
+            std::string group_by_str;
+            for (const auto& e : n.group_by) {
+                if (!group_by_str.empty()) group_by_str += ' ';
+                group_by_str += SerializeExpr(e);
+            }
+            std::string aggs_str;
+            for (const auto& e : n.aggregates) {
+                if (!aggs_str.empty()) aggs_str += ' ';
+                aggs_str += SerializeExpr(e);
+            }
+            return std::format("(FinalAggregate (group_by {}) (aggs {}) {})",
+                               group_by_str, aggs_str, SerializeNode(*n.source));
+        }
     };
     return std::visit(Visitor{}, node.node);
 }
@@ -753,6 +781,44 @@ struct DotBuilder {
             group_by += ToString(e);
         }
         int id = Emit(std::format("StreamAgg\\nGROUP BY {}\\n{}", group_by, aggs),
+                      metadata);
+        EmitEdge(src, id);
+        return id;
+    }
+
+    int EmitAlternative(const PhysicalPartialAggregation& n,
+                        const std::optional<PlanNodeMetadata>& metadata) {
+        int src = EmitNode(*n.source);
+        std::string aggs;
+        for (const auto& e : n.aggregates) {
+            if (!aggs.empty()) aggs += ", ";
+            aggs += ToString(e);
+        }
+        std::string group_by;
+        for (const auto& e : n.group_by) {
+            if (!group_by.empty()) group_by += ", ";
+            group_by += ToString(e);
+        }
+        int id = Emit(std::format("PartialAgg\\nGROUP BY {}\\n{}", group_by, aggs),
+                      metadata);
+        EmitEdge(src, id);
+        return id;
+    }
+
+    int EmitAlternative(const PhysicalFinalAggregation& n,
+                        const std::optional<PlanNodeMetadata>& metadata) {
+        int src = EmitNode(*n.source);
+        std::string aggs;
+        for (const auto& e : n.aggregates) {
+            if (!aggs.empty()) aggs += ", ";
+            aggs += ToString(e);
+        }
+        std::string group_by;
+        for (const auto& e : n.group_by) {
+            if (!group_by.empty()) group_by += ", ";
+            group_by += ToString(e);
+        }
+        int id = Emit(std::format("FinalAgg\\nGROUP BY {}\\n{}", group_by, aggs),
                       metadata);
         EmitEdge(src, id);
         return id;

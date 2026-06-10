@@ -34,6 +34,22 @@ struct Aggregation {
   bool operator==(const Aggregation&) const = default;
 };
 
+struct PartialAggregation {
+  utils::NotNull<Group*> source;
+  std::vector<Expression> group_by;
+  std::vector<Expression> aggregates;
+
+  bool operator==(const PartialAggregation&) const = default;
+};
+
+struct FinalAggregation {
+  utils::NotNull<Group*> source;
+  std::vector<Expression> group_by;
+  std::vector<Expression> aggregates;
+
+  bool operator==(const FinalAggregation&) const = default;
+};
+
 struct CrossJoin {
   utils::NotNull<Group*> lhs;
   utils::NotNull<Group*> rhs;
@@ -55,6 +71,7 @@ struct Join {
 
 struct LogicalExpr {
     std::variant<logical::Table, logical::Filter, logical::Projection, logical::Aggregation,
+                 logical::PartialAggregation, logical::FinalAggregation,
                  logical::Join, logical::CrossJoin> root_operator;
     utils::NotNull<Group*> group;
 };

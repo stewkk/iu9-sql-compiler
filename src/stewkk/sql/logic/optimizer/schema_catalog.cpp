@@ -22,6 +22,23 @@ bool IndexCatalog::HasSortedIndex(const std::string& table, const std::string& c
   });
 }
 
+ConstraintCatalog::ConstraintCatalog(std::vector<UniqueKeyInfo> unique_keys,
+                                     std::vector<ForeignKeyInfo> foreign_keys)
+    : unique_keys_(std::move(unique_keys)), foreign_keys_(std::move(foreign_keys)) {}
+
+bool ConstraintCatalog::IsUnique(const Attribute& attr) const {
+  return std::ranges::any_of(unique_keys_, [&](const UniqueKeyInfo& key) {
+    return key.table == attr.table && key.column == attr.name;
+  });
+}
+
+bool ConstraintCatalog::HasForeignKey(const Attribute& from, const Attribute& to) const {
+  return std::ranges::any_of(foreign_keys_, [&](const ForeignKeyInfo& fk) {
+    return fk.from_table == from.table && fk.from_column == from.name
+        && fk.to_table == to.table && fk.to_column == to.name;
+  });
+}
+
 SchemaCatalog::SchemaCatalog(std::unordered_map<std::string, Schema> tables)
     : tables_(std::move(tables)) {}
 
@@ -36,6 +53,19 @@ Schema SchemaCatalog::GetSchema(utils::NotNull<Group*> group) {
 
 std::int64_t SchemaCatalog::GetWidth(utils::NotNull<Group*> group) {
   return std::max<std::int64_t>(1, GetSchema(group).size());
+}
+
+std::optional<Attribute> SchemaCatalog::ResolveBaseAttribute(const Attribute& attr,
+                                                             utils::NotNull<Group*> group) {
+  auto schema = GetSchema(group);
+  auto it = std::ranges::find_if(schema, [&](const Attribute& schema_attr) {
+    return schema_attr.name == attr.name
+        && (attr.table.empty() || attr.table == schema_attr.table);
+  });
+  if (it == schema.end()) {
+    return std::nullopt;
+  }
+  return *it;
 }
 
 // TODO: refactor to remove duplicate logic: both executor and optimizer derive
@@ -68,6 +98,32 @@ Schema SchemaCatalog::Derive(const LogicalOperator& op) {
           return out;
       },
       [this](const logical::Aggregation& a) -> Schema {
+          GetSchema(a.source);
+          Schema out;
+          for (const auto& expr : a.group_by) {
+              if (const auto* attr = std::get_if<Attribute>(&expr)) {
+                  out.push_back(*attr);
+              }
+          }
+          for (size_t i = 0; i < a.aggregates.size(); ++i) {
+              out.push_back(Attribute{"", std::format("__agg{}", i)});
+          }
+          return out;
+      },
+      [this](const logical::PartialAggregation& a) -> Schema {
+          GetSchema(a.source);
+          Schema out;
+          for (const auto& expr : a.group_by) {
+              if (const auto* attr = std::get_if<Attribute>(&expr)) {
+                  out.push_back(*attr);
+              }
+          }
+          for (size_t i = 0; i < a.aggregates.size(); ++i) {
+              out.push_back(Attribute{"", std::format("__agg{}", i)});
+          }
+          return out;
+      },
+      [this](const logical::FinalAggregation& a) -> Schema {
           GetSchema(a.source);
           Schema out;
           for (const auto& expr : a.group_by) {
@@ -144,6 +200,39 @@ IndexCatalog LoadIndexCatalogFromCsvDir(const std::filesystem::path& dir) {
     }
   }
   return IndexCatalog{std::move(indexes)};
+}
+
+ConstraintCatalog LoadConstraintCatalogFromCsvDir(const std::filesystem::path& dir) {
+  std::vector<UniqueKeyInfo> unique_keys;
+  std::vector<ForeignKeyInfo> foreign_keys;
+  std::ifstream input{dir / "constraints.meta"};
+  if (!input) {
+    return ConstraintCatalog{};
+  }
+
+  std::string line;
+  while (std::getline(input, line)) {
+    auto first = line.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos || line[first] == '#') {
+      continue;
+    }
+
+    std::istringstream fields{line};
+    std::string kind;
+    fields >> kind;
+    if (kind == "unique") {
+      UniqueKeyInfo key;
+      if (fields >> key.table >> key.column) {
+        unique_keys.push_back(std::move(key));
+      }
+    } else if (kind == "foreign_key") {
+      ForeignKeyInfo fk;
+      if (fields >> fk.from_table >> fk.from_column >> fk.to_table >> fk.to_column) {
+        foreign_keys.push_back(std::move(fk));
+      }
+    }
+  }
+  return ConstraintCatalog{std::move(unique_keys), std::move(foreign_keys)};
 }
 
 std::unordered_map<std::string, std::int64_t> LoadTableSizesFromCsvDir(

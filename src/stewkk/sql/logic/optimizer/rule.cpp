@@ -4,8 +4,9 @@
 
 namespace stewkk::sql {
 
-utils::NotNull<LogicalExpr*> TransformationRule::Apply(utils::NotNull<LogicalExpr*> expr, Memo& memo) {
-    return memo.AddLogicalExprToGroup(expr->group, ApplyImpl(expr, memo));
+utils::NotNull<LogicalExpr*> TransformationRule::Apply(utils::NotNull<LogicalExpr*> expr,
+                                                       Memo& memo, RuleContext& ctx) {
+    return memo.AddLogicalExprToGroup(expr->group, ApplyImpl(expr, memo, ctx));
 }
 
 }  // namespace stewkk::sql

@@ -2,11 +2,11 @@
 
 namespace stewkk::sql {
 
-bool JoinCommutativity::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
+bool JoinCommutativity::IsApplicable(utils::NotNull<LogicalExpr*> expr, RuleContext&) {
   return std::holds_alternative<logical::Join>(expr->root_operator);
 }
 
-LogicalOperator JoinCommutativity::ApplyImpl(utils::NotNull<LogicalExpr*> expr, Memo&) {
+LogicalOperator JoinCommutativity::ApplyImpl(utils::NotNull<LogicalExpr*> expr, Memo&, RuleContext&) {
   auto join = std::get<logical::Join>(expr->root_operator);
   std::swap(join.lhs, join.rhs);
   if (join.type == JoinType::kLeft) {

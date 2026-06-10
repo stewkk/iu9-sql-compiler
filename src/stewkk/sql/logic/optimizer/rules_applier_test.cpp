@@ -13,10 +13,13 @@ TEST(RulesApplierTest, ChecksThatRuleAlreadyApplied) {
 
   RulesApplier applier(MakeMainRules());
   constexpr TransformationRuleId kJoinCommutativity{0};
+  SchemaCatalog schema;
+  ConstraintCatalog constraints;
+  RuleContext ctx{schema, constraints};
 
-  EXPECT_TRUE(applier.IsApplicable(kJoinCommutativity, expr));
-  applier.Apply(kJoinCommutativity, expr, memo);
-  EXPECT_FALSE(applier.IsApplicable(kJoinCommutativity, expr));
+  EXPECT_TRUE(applier.IsApplicable(kJoinCommutativity, expr, ctx));
+  applier.Apply(kJoinCommutativity, expr, memo, ctx);
+  EXPECT_FALSE(applier.IsApplicable(kJoinCommutativity, expr, ctx));
 }
 
 TEST(RulesApplierTest, ApplyImplementationRule) {

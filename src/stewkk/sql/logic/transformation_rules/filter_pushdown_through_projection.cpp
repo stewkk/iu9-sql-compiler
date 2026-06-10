@@ -11,31 +11,6 @@ namespace stewkk::sql {
 
 namespace {
 
-void CollectAttributes(const Expression& e, std::vector<Attribute>& out) {
-  std::visit(utils::Overloaded{
-      [&](const Attribute& a) { out.push_back(a); },
-      [&](const BinaryExpression& b) {
-        CollectAttributes(*b.lhs, out);
-        CollectAttributes(*b.rhs, out);
-      },
-      [&](const UnaryExpression& u) { CollectAttributes(*u.child, out); },
-      [&](const InExpression& i) {
-        CollectAttributes(*i.lhs, out);
-        for (const auto& value : i.values) {
-          CollectAttributes(value, out);
-        }
-      },
-      [&](const AggregateExpression& a) {
-        if (!a.is_star && a.argument) {
-          CollectAttributes(*a.argument, out);
-        }
-      },
-      [&](const IntConst&) {},
-      [&](const StringConst&) {},
-      [&](const Literal&) {},
-  }, e);
-}
-
 bool ProjectionPassesThrough(const std::vector<Expression>& proj_exprs,
                              const std::vector<Attribute>& needed) {
   return std::all_of(needed.begin(), needed.end(), [&](const Attribute& a) {
@@ -62,14 +37,14 @@ const logical::Projection* FindPushableProjection(utils::NotNull<Group*> source,
 
 }  // namespace
 
-bool FilterPushdownThroughProjection::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
+bool FilterPushdownThroughProjection::IsApplicable(utils::NotNull<LogicalExpr*> expr, RuleContext&) {
   if (!std::holds_alternative<logical::Filter>(expr->root_operator)) return false;
   const auto& f = std::get<logical::Filter>(expr->root_operator);
   return FindPushableProjection(f.source, f.predicate) != nullptr;
 }
 
 LogicalOperator FilterPushdownThroughProjection::ApplyImpl(utils::NotNull<LogicalExpr*> expr,
-                                                           Memo& memo) {
+                                                           Memo& memo, RuleContext&) {
   const auto& f = std::get<logical::Filter>(expr->root_operator);
   const auto* proj = FindPushableProjection(f.source, f.predicate);
   if (proj == nullptr) {

@@ -661,6 +661,16 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::Execute(const Physica
     boost::asio::awaitable<void> operator()(const PhysicalStreamAggregation& agg) const {
       return executor.ExecuteStreamAggregate(agg, attr_chan, tuples_chan);
     }
+    boost::asio::awaitable<void> operator()(const PhysicalPartialAggregation& agg) const {
+      return executor.ExecuteHashAggregate(
+          PhysicalAggregation{agg.source, agg.group_by, agg.aggregates},
+          attr_chan, tuples_chan);
+    }
+    boost::asio::awaitable<void> operator()(const PhysicalFinalAggregation& agg) const {
+      return executor.ExecuteHashAggregate(
+          PhysicalAggregation{agg.source, agg.group_by, agg.aggregates},
+          attr_chan, tuples_chan);
+    }
     boost::asio::awaitable<void> operator()(const MergeJoin& join) const {
       return executor.ExecuteMergeJoin(join, attr_chan, tuples_chan);
     }

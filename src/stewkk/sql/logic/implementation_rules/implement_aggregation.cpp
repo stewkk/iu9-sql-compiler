@@ -5,10 +5,21 @@
 namespace stewkk::sql {
 
 bool ImplementAggregation::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
-    return std::holds_alternative<logical::Aggregation>(expr->root_operator);
+    return std::holds_alternative<logical::Aggregation>(expr->root_operator)
+        || std::holds_alternative<logical::PartialAggregation>(expr->root_operator)
+        || std::holds_alternative<logical::FinalAggregation>(expr->root_operator);
 }
 
 std::vector<utils::NotNull<PhysicalExpr*>> ImplementAggregation::Apply(utils::NotNull<LogicalExpr*> expr, Memo&) {
+    if (auto* partial = std::get_if<logical::PartialAggregation>(&expr->root_operator)) {
+        return {expr->group->AddPhysicalExpr(
+            physical::PartialAggregation{partial->source, partial->group_by, partial->aggregates})};
+    }
+    if (auto* final = std::get_if<logical::FinalAggregation>(&expr->root_operator)) {
+        return {expr->group->AddPhysicalExpr(
+            physical::FinalAggregation{final->source, final->group_by, final->aggregates})};
+    }
+
     auto& agg = std::get<logical::Aggregation>(expr->root_operator);
     std::vector<utils::NotNull<PhysicalExpr*>> result{
         expr->group->AddPhysicalExpr(

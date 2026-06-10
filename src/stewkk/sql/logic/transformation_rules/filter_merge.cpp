@@ -20,13 +20,13 @@ const logical::Filter* FindInnerFilter(utils::NotNull<Group*> source) {
 
 }  // namespace
 
-bool FilterMerge::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
+bool FilterMerge::IsApplicable(utils::NotNull<LogicalExpr*> expr, RuleContext&) {
   if (!std::holds_alternative<logical::Filter>(expr->root_operator)) return false;
   const auto& outer = std::get<logical::Filter>(expr->root_operator);
   return FindInnerFilter(outer.source) != nullptr;
 }
 
-LogicalOperator FilterMerge::ApplyImpl(utils::NotNull<LogicalExpr*> expr, Memo&) {
+LogicalOperator FilterMerge::ApplyImpl(utils::NotNull<LogicalExpr*> expr, Memo&, RuleContext&) {
   const auto& outer = std::get<logical::Filter>(expr->root_operator);
   const auto* inner = FindInnerFilter(outer.source);
   if (inner == nullptr) {

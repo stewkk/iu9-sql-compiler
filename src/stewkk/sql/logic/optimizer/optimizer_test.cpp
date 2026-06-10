@@ -1,5 +1,7 @@
 #include <gmock/gmock.h>
 
+#include <filesystem>
+#include <fstream>
 #include <string_view>
 #include <stdexcept>
 #include <unordered_map>
@@ -81,6 +83,23 @@ TEST(SchemaCatalogTest, MissingTableSchemaThrows) {
   SchemaCatalog schema;
 
   ASSERT_THROW(schema.GetWidth(root->group), std::runtime_error);
+}
+
+TEST(ConstraintCatalogTest, LoadsUniqueAndForeignKeyMetadata) {
+  auto dir = std::filesystem::temp_directory_path() / "iu9_sql_constraints_test";
+  std::filesystem::create_directories(dir);
+  {
+    std::ofstream out{dir / "constraints.meta"};
+    out << "unique departments id\n";
+    out << "foreign_key users department_id departments id\n";
+  }
+
+  auto catalog = LoadConstraintCatalogFromCsvDir(dir);
+
+  EXPECT_TRUE(catalog.IsUnique(Attribute{"departments", "id"}));
+  EXPECT_TRUE(catalog.HasForeignKey(Attribute{"users", "department_id"},
+                                    Attribute{"departments", "id"}));
+  std::filesystem::remove_all(dir);
 }
 
 TEST(OptimizerTest, Simple) {
