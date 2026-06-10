@@ -2,20 +2,28 @@
 
 namespace stewkk::sql {
 
+std::string_view VisibleName(const Table& table) {
+  return table.alias ? std::string_view{*table.alias} : std::string_view{table.name};
+}
+
 bool Projection::operator==(const Projection& other) const {
-  return expressions == other.expressions && *source == *other.source;
+  auto normalize = [](const std::vector<std::optional<std::string>>& aliases) {
+    auto result = aliases;
+    while (!result.empty() && !result.back()) {
+      result.pop_back();
+    }
+    return result;
+  };
+  return expressions == other.expressions && *source == *other.source
+         && normalize(aliases) == normalize(other.aliases);
 }
 
 bool Filter::operator==(const Filter& other) const {
   return expr == other.expr && *source == *other.source;
 }
 
-bool BinaryExpression::operator==(const BinaryExpression& other) const {
-  return *lhs == *other.lhs && binop == other.binop && *rhs == *other.rhs;
-}
-
-bool UnaryExpression::operator==(const UnaryExpression& other) const {
-  return op == other.op && *child == *other.child;
+bool Aggregation::operator==(const Aggregation& other) const {
+  return group_by == other.group_by && aggregates == other.aggregates && *source == *other.source;
 }
 
 bool CrossJoin::operator==(const CrossJoin& other) const {
@@ -24,99 +32,6 @@ bool CrossJoin::operator==(const CrossJoin& other) const {
 
 bool Join::operator==(const Join& other) const {
   return type == other.type && qual == other.qual && *lhs == *other.lhs && *rhs == *other.rhs;
-}
-
-std::string ToString(BinaryOp binop) {
-    switch (binop) {
-      case BinaryOp::kGt:
-        return ">";
-      case BinaryOp::kOr:
-        return "or";
-      case BinaryOp::kAnd:
-        return "and";
-      case BinaryOp::kEq:
-        return "=";
-      case BinaryOp::kPlus:
-        return "+";
-      case BinaryOp::kMinus:
-        return "-";
-      case BinaryOp::kMul:
-        return "*";
-      case BinaryOp::kDiv:
-        return "/";
-      case BinaryOp::kMod:
-        return "%";
-      case BinaryOp::kPow:
-        return "^";
-      case BinaryOp::kLt:
-        return "<";
-      case BinaryOp::kLe:
-        return "<=";
-      case BinaryOp::kGe:
-        return ">=";
-      case BinaryOp::kNotEq:
-        return "!=";
-    }
-}
-
-std::string ToString(const Attribute& attr) {
-  return std::format("{}.{}", attr.table, attr.name);
-}
-
-std::string ToString(UnaryOp op) {
-    switch (op) {
-      case UnaryOp::kNot:
-        return "not";
-      case UnaryOp::kMinus:
-        return "-";
-    }
-}
-
-std::string ToString(Literal literal) {
-  switch (literal) {
-    case Literal::kNull:
-      return "NULL";
-    case Literal::kTrue:
-      return "TRUE";
-    case Literal::kFalse:
-      return "FALSE";
-    case Literal::kUnknown:
-      return "UNKNOWN";
-  }
-}
-
-std::string ToString(const Expression& expr) {
-    struct Formatter {
-        std::string operator()(const BinaryExpression& expr) {
-          return std::format("{} {} {}", ToString(*expr.lhs), ToString(expr.binop), ToString(*expr.rhs));
-        }
-        std::string operator()(const Attribute& expr) {
-          return ToString(expr);
-        }
-        std::string operator()(const IntConst& expr) {
-          return std::to_string(expr);
-        }
-        std::string operator()(const UnaryExpression& expr) {
-          return std::format("{} {}", ToString(expr.op), ToString(*expr.child));
-        }
-        std::string operator()(const Literal& expr) {
-          return ToString(expr);
-        }
-    };
-    return std::visit(Formatter{}, expr);
-}
-
-std::string ToString(JoinType type) {
-  switch (type) {
-    case JoinType::kInner:
-      return "⋈";
-    case JoinType::kFull:
-      return "⟗";
-    case JoinType::kLeft:
-      return "⟕";
-    case JoinType::kRight:
-      return "⟖";
-  }
 }
 
 } // namespace stewkk::sql

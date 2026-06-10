@@ -8,6 +8,7 @@ namespace stewkk::sql {
 enum class Type {
     kInt,
     kBool,
+    kString,
 };
 
 std::string ToString(Type type);
@@ -24,6 +25,7 @@ struct AttributeInfo {
 union NonNullValue {
     int64_t int_value;
     bool bool_value;
+    int64_t string_id;
 };
 
 std::string ToString(bool v);
@@ -37,6 +39,8 @@ struct Value {
 };
 
 std::string ToString(Value v, const AttributeInfo& attr);
+int64_t InternString(std::string value);
+const std::string& GetInternedString(int64_t id);
 
 using Tuple = std::vector<Value>;
 using Tuples = std::vector<Tuple>;

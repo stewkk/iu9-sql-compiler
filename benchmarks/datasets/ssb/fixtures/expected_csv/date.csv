@@ -1,0 +1,3 @@
+d_datekey:int,d_date:string,d_dayofweek:string,d_month:string,d_year:int,d_yearmonthnum:int,d_yearmonth:string,d_daynuminweek:int,d_daynuminmonth:int,d_daynuminyear:int,d_monthnuminyear:int,d_weeknuminyear:int,d_sellingseason:string,d_lastdayinweekfl:int,d_lastdayinmonthfl:int,d_holidayfl:int,d_weekdayfl:int
+19940101,"January 1, 1994",Saturday,January,1994,199401,Jan1994,6,1,1,1,1,Winter,0,0,1,0
+19940102,"January 2, 1994",Sunday,January,1994,199401,Jan1994,7,2,2,1,1,Winter,1,0,0,0

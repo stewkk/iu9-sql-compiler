@@ -1,0 +1,27 @@
+digraph optimizer {
+    node [shape=box]
+
+    Entry [shape=none, label=""]
+    OptGrp  [label="Оптимизация группы\n(OptGrp)"]
+    OptExpr [label="Оптимизация выражения\n(OptExpr)"]
+    OptInputs [label="Оптимизация входных групп\n(OptInputs)"]
+    ApplyRule [label="Применение правила\n(ApplyRule)"]
+    ExplGrp  [label="Исследование группы\n(ExplGrp)"]
+    ExplExpr [label="Исследование выражения\n(ExplExpr)"]
+
+    Entry     -> OptGrp [label="Выражение"]
+
+    OptGrp    -> OptExpr
+    OptExpr   -> OptExpr
+    OptExpr   -> OptGrp
+    OptExpr   -> OptInputs
+    OptExpr   -> ApplyRule
+    OptExpr   -> ExplGrp
+    OptInputs -> OptInputs
+    OptInputs -> OptGrp
+    ApplyRule -> OptInputs
+    ExplGrp   -> ApplyRule
+    ExplGrp   -> ExplExpr
+    ExplExpr  -> ExplGrp
+    ExplExpr  -> OptGrp
+}

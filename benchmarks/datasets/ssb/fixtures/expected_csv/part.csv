@@ -1,0 +1,3 @@
+p_partkey:int,p_name:string,p_mfgr:string,p_category:string,p_brand:string,p_color:string,p_type:string,p_size:int,p_container:string
+100,almond antique,MFGR#1,MFGR#11,MFGR#111,almond,STANDARD ANODIZED TIN,3,SM CASE
+200,green burnished,MFGR#2,MFGR#22,MFGR#222,green,PROMO POLISHED STEEL,7,LG BOX

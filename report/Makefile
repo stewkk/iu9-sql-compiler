@@ -3,7 +3,7 @@
 all: build
 
 build:
-	@latexmk -f -pdf -output-directory=build -shell-escape ./report.tex
+	@latexmk -f -pdf -output-directory=build-vkr -shell-escape ./vkr.tex
 
 bib:
 	@cp ./biblio.bib ./build
