@@ -1,0 +1,260 @@
+\documentclass{beamer}
+\usetheme{metropolis}           % Use metropolis theme
+
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english, main=russian]{babel}
+
+\usepackage{listingsutf8}
+\usepackage[ruled]{algorithm}
+\usepackage{algorithmicx}
+\usepackage[noend]{algpseudocode}
+\usepackage{amsmath}
+\usepackage{caption}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{float}
+
+\usepackage{listings}
+
+\lstdefinestyle{mystyle}{
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2
+}
+
+\lstset{style=mystyle}
+
+\usepackage{tikz}
+\usetikzlibrary{shapes.misc}
+\usetikzlibrary{trees}
+
+\floatname{algorithm}{Листинг}
+\renewcommand{\algorithmname}{Листинг}
+
+\title{Оптимизирующий компилятор запросов подмножества SQL на основе LLVM}
+\date{\today} \author{Старовойтов Александр} \author[me]{Выполнил: Старовойтов Александр
+  ИУ9-71Б\\[1mm]Руководитель: Непейвода А.Н.}
+% \thanks
+% \institute{МГТУ им. Н.Э. Баумана}
+\begin{document}
+\maketitle
+
+\begin{frame}{Мотивация}
+  \begin{alertblock}{}
+    \begin{itemize}
+      \item Исполнение запроса --- много одинаковых операций над кортежами.
+      \item Часто приходится вычислять выражения.
+      \item JIT-компиляция позволяет сгенерировать эффективный код для
+            выражений.
+    \end{itemize}
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Мотивация}
+    SELECT \textbf{users.age > 18}, \textbf{groups.id}\\ FROM users\\ LEFT JOIN groups ON \textbf{users.group\_id =
+    groups.id}\\ WHERE \textbf{users.age > 18};
+\end{frame}
+
+\begin{frame}{Цели и задачи}
+  \metroset{block=fill}
+  \begin{alertblock}{Цель}
+    Реализация модельной реляционной СУБД с поддержкой опциональной
+    JIT-компиляции выражений в SELECT запросах на основе LLVM-JIT
+  \end{alertblock}
+  \begin{alertblock}{Задачи}
+    \begin{itemize}
+      \item Изучить подходы к реализации СУБД и JIT-компиляции;
+      \item Разработать архитектуру модельной СУБД;
+      \item Реализовать модельную СУБД;
+      \item Протестировать реализацию СУБД модульными тестами и измерить производительность.
+    \end{itemize}
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Архитектура модельной СУБД}
+  \begin{figure}[H]
+    \centering
+    \begin{minipage}[t]{\textwidth}
+      \centering
+      \makebox[\textwidth][c]{%
+        \includegraphics[width=1.15\textwidth,height=0.75\textheight,keepaspectratio]{dbms_scheme_impl}%
+      }
+    \end{minipage}
+    \caption{Схема верхнеуровнего устройства модельной СУБД.}\label{fig:dbms-scheme}
+  \end{figure}
+\end{frame}
+
+\begin{frame}{Лексический и синтаксический анализ SQL}
+  \begin{alertblock}{}
+    \begin{itemize}
+      \item ANTLR4
+      \item Грамматика PostgreSQL из официального репозитория
+    \end{itemize}
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}[fragile]{Лексический и синтаксический анализ SQL}
+\begin{lstlisting}
+(root
+  (stmtblock
+    (stmtmulti
+      (stmt
+        (selectstmt
+          (select_no_parens
+            (select_clause
+              (simple_select_intersect
+                (simple_select_pramary SELECT
+                  (target_list_ (target_list (target_el *)))
+                  (from_clause FROM (from_list
+                      (table_ref
+                        (relation_expr
+                          (qualified_name
+                            (colid
+                              (identifier users))))))))))))) ;)) <EOF>)
+\end{lstlisting}
+\end{frame}
+
+\begin{frame}{Преобразование в реляционную алгебру}
+  \begin{center}
+    SELECT users.id, groups.id FROM users LEFT JOIN groups ON users.group\_id =
+    groups.id WHERE users.age > 18;
+  \end{center}
+    \begin{figure}[H]
+      \centering
+      \begin{minipage}[t]{\textwidth}
+        \centering
+        \includegraphics[width=0.5\textwidth]{query}
+      \end{minipage}
+      \caption{План запроса}\label{fig:query-plan}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{Преобразование в реляционную алгебру}
+  \begin{alertblock}{}
+    \begin{itemize}
+      \item Кодогенерация Visitor
+      \item Неподдерживаемый синтаксис = ошибка
+      \item std::any
+    \end{itemize}
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Исполнение запроса}
+  \begin{alertblock}{}
+    \begin{itemize}
+      \item Векторизованная модель
+      \item Коммуникация через каналы
+      \item Данные текут снизу-вверх по плану исполнения
+    \end{itemize}
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Реализация модельной СУБД}
+  \begin{alertblock}{}
+    \begin{itemize}
+      \item C++
+      \item Boost.Asio и C++20 корутины
+      \item boost::asio::experimental::concurrent\_channel
+      \item LLVM ORCv2 API
+    \end{itemize}
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{JIT-компиляция}
+  Реализована компиляция выражений
+  \begin{alertblock}{Оптимизационные проходы}
+    \begin{itemize}
+      \item EarlyCSEPass --- раннее устранение общих подвыражений;
+      \item SROAPass --- скалярная замена агрегатов;
+      \item InstCombinePass --- комбинирование инструкций, включая сворачивание констант;
+      \item SimplifyCFGPass --- упрощение графа потока управления;
+      \item ReassociatePass --- переассоциация выражений;
+      \item GVNPass --- глобальная нумерация значений;
+    \end{itemize}
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{JIT-компиляция}
+  Реализована компиляция выражений с кэшированием результатов
+  \begin{alertblock}{Оптимизационные проходы}
+    \begin{itemize}
+      \item MemCpyOptPass --- оптимизация копирований памяти;
+      \item SimplifyCFGPass --- повторное упрощение графа потока управления;
+      \item InstCombinePass --- повторное комбинирование инструкций;
+      \item ADCEPass --- агрессивное удаление мёртвого кода.
+    \end{itemize}
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Тестирование}
+  \begin{alertblock}{Для проверки корректности:}
+  \begin{itemize}
+    \item покрытие кода юнит-тестами
+  \end{itemize}
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Бенчмарки}
+  \begin{alertblock}{}
+    \begin{itemize}
+      \item google benchmarks
+      \item сравнение jit-компиляции выражений и прямой интерпретации
+    \end{itemize}
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Бенчмарки}
+  \begin{figure}[H]
+    \centering
+    \begin{minipage}[t]{\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{perf}
+    \end{minipage}
+    \caption{Результаты бенчмарков.}\label{fig:perf}
+  \end{figure}
+\end{frame}
+
+\begin{frame}{Бенчмарки}
+  \begin{figure}[H]
+    \centering
+    \begin{minipage}[t]{\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{speedup}
+    \end{minipage}
+  \caption{Относительный прирост производительности.}\label{fig:speedup}
+  \end{figure}
+\end{frame}
+
+\begin{frame}{Заключение}
+  \begin{alertblock}{Возможные улучшения}
+  \begin{itemize}
+    \item Более полная поддержка синтаксиса SQL
+    \item Реализация продвинутых алгоритмов исполнения операторов
+    \item Бенчмарки без учета IO
+  \end{itemize}
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Заключение}
+  Цель курсовой работы была достигнута. Получена система, демонстрирующая
+  возможности JIT-компиляции для оптимизации SELECT запросов.
+\end{frame}
+
+\begin{frame}{Заключение}
+  В ходе разработки были получены следующие навыки:
+    \begin{itemize}
+      \item разработка многопоточных, конкурентных программ на C++;
+      \item системное программирование на C++ в среде Linux;
+      \item реализация парсера и исполнителя SQL запросов;
+      \item реализация JIT-компиляции при помощи LLVM.
+    \end{itemize}
+\end{frame}
+
+\end{document}

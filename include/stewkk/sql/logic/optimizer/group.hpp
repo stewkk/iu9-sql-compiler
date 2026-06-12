@@ -1,0 +1,47 @@
+#pragma once
+
+#include <deque>
+#include <ranges>
+
+#include <stewkk/sql/logic/optimizer/logical_expr.hpp>
+#include <stewkk/sql/logic/optimizer/physical_expr.hpp>
+
+namespace stewkk::sql {
+
+using LogicalOperator = decltype(LogicalExpr::root_operator);
+using PhysicalOperator = decltype(PhysicalExpr::root_operator);
+
+class Group {
+  private:
+    struct ToNotNull {
+        utils::NotNull<LogicalExpr*> operator()(LogicalExpr& e) const { return &e; }
+    };
+    struct ToNotNullPhysical {
+        utils::NotNull<PhysicalExpr*> operator()(PhysicalExpr& e) const { return &e; }
+    };
+
+  public:
+    using LogicalExprs = std::ranges::transform_view<
+        std::ranges::ref_view<std::deque<LogicalExpr>>,
+        ToNotNull>;
+    using PhysicalExprs = std::ranges::transform_view<
+        std::ranges::ref_view<std::deque<PhysicalExpr>>,
+        ToNotNullPhysical>;
+
+    utils::NotNull<LogicalExpr*> AddLogicalExpr(LogicalOperator root_operator);
+    utils::NotNull<PhysicalExpr*> AddPhysicalExpr(PhysicalOperator root_operator, bool is_enforcer = false);
+    LogicalExprs GetLogicalExprs();
+    PhysicalExprs GetPhysicalExprs();
+
+    size_t GetId() const;
+
+  private:
+    friend class Memo;
+    explicit Group(size_t id) : id_(id) {}
+
+    size_t id_;
+    std::deque<LogicalExpr>  logical_exprs_;
+    std::deque<PhysicalExpr> physical_exprs_;
+};
+
+}  // namespace stewkk::sql
