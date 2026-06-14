@@ -46,6 +46,7 @@ private:
   void OptimizeInputs(utils::NotNull<PhysicalExpr*> expr, PropertySet required, std::vector<PropertySet> child_delivered, int64_t accum, Limit limit, size_t child_index = 0);
 
   std::int64_t LowerBoundCost(utils::NotNull<Group*> group);
+  bool MarkOptimizeGroupRequested(const WinnerKey& key, Limit limit);
 
   void ApplyRule(TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr, Limit limit);
 
@@ -75,6 +76,7 @@ private:
   std::unordered_map<PhysicalExpr*, int64_t> local_cost_;
   std::unordered_map<WinnerKey, WinnerEntry> winner_;
   std::unordered_set<WinnerKey> enforcers_added_;
+  std::unordered_map<WinnerKey, Limit> optimize_group_limits_;
   std::unordered_map<Group*, std::vector<LogicalExpr*>> group_parents_;
   std::unordered_map<Group*, std::int64_t> lower_bounds_;
 };

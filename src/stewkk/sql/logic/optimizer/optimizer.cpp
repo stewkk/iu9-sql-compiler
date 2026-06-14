@@ -391,6 +391,27 @@ void Optimizer<NTransformation, NImplementation>::SetExplored(utils::NotNull<Gro
 }
 
 template<size_t NTransformation, size_t NImplementation>
+bool Optimizer<NTransformation, NImplementation>::MarkOptimizeGroupRequested(
+    const WinnerKey& key, Limit limit) {
+  auto it = optimize_group_limits_.find(key);
+  if (it == optimize_group_limits_.end()) {
+    optimize_group_limits_.emplace(key, limit);
+    return true;
+  }
+
+  const auto& seen_limit = it->second;
+  if (!seen_limit) return false;
+  if (!limit) {
+    it->second = std::nullopt;
+    return true;
+  }
+  if (*seen_limit >= *limit) return false;
+
+  it->second = limit;
+  return true;
+}
+
+template<size_t NTransformation, size_t NImplementation>
 void Optimizer<NTransformation, NImplementation>::OptimizeInputs(
     utils::NotNull<PhysicalExpr*> expr, PropertySet required,
     std::vector<PropertySet> child_delivered, int64_t accum, Limit limit, size_t child_index) {
@@ -530,6 +551,11 @@ void Optimizer<NTransformation, NImplementation>::OptimizeGroup(
       OptimizeGroup(group, required, limit);
     });
     tasks_.emplace([this, group, limit]() { ExploreGroup(group, limit); });
+    return;
+  }
+
+  if (!MarkOptimizeGroupRequested(key, limit)) {
+    Log("Skipping duplicate optimization request for group {}", group->GetId());
     return;
   }
 
@@ -691,11 +717,21 @@ template<size_t NTransformation, size_t NImplementation>
 void Optimizer<NTransformation, NImplementation>::RunSearch(Limit limit) {
   Log("Starting optimization");
   tasks_.emplace([this, limit]() { OptimizeGroup(root_->group, global_required_, limit); });
+  std::size_t executed_tasks = 0;
   while (!tasks_.empty()) {
     auto next_task = std::move(tasks_.top());
     tasks_.pop();
     next_task();
+    ++executed_tasks;
+    if (executed_tasks % 100000 == 0) {
+      Log("Optimizer progress: tasks={} pending={} groups={} explored_groups={} explored_exprs={} winners={}",
+          executed_tasks, tasks_.size(), memo_.GroupCount(), explored_groups_.size(),
+          explored_exprs_.size(), winner_.size());
+    }
   }
+  Log("Optimizer search complete: tasks={} groups={} explored_groups={} explored_exprs={} winners={}",
+      executed_tasks, memo_.GroupCount(), explored_groups_.size(), explored_exprs_.size(),
+      winner_.size());
 }
 
 template<size_t NTransformation, size_t NImplementation>
