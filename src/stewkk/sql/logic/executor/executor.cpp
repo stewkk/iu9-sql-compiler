@@ -4,6 +4,7 @@
 #include <format>
 #include <ranges>
 #include <cmath>
+#include <optional>
 #include <unordered_map>
 
 #include <boost/asio/co_spawn.hpp>
@@ -14,6 +15,7 @@
 #include <boost/scope/scope_fail.hpp>
 
 #include <stewkk/sql/logic/executor/buffer_size.hpp>
+#include <stewkk/sql/logic/transformation_rules/predicate_utils.hpp>
 #include <stewkk/sql/utils/log.hpp>
 
 namespace stewkk::sql {
@@ -1183,6 +1185,21 @@ int CompareNonNullValues(const Value& lhs, const Value& rhs, Type type) {
   std::unreachable();
 }
 
+std::optional<BinaryExpression> FindHashJoinKey(const Expression& qual) {
+  std::vector<Expression> conjuncts;
+  CollectConjuncts(qual, conjuncts);
+  for (const auto& conjunct : conjuncts) {
+    const auto* bin = std::get_if<BinaryExpression>(&conjunct);
+    if (!bin || bin->binop != BinaryOp::kEq) continue;
+    if (!std::holds_alternative<Attribute>(*bin->lhs)
+        || !std::holds_alternative<Attribute>(*bin->rhs)) {
+      continue;
+    }
+    return *bin;
+  }
+  return std::nullopt;
+}
+
 } // namespace
 
 
@@ -1199,15 +1216,12 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashJoin(
   if (join.type != JoinType::kInner) {
     throw std::logic_error{"HashJoin executor supports only Inner joins"};
   }
-  const auto* bin = std::get_if<BinaryExpression>(&join.qual);
-  if (!bin || bin->binop != BinaryOp::kEq) {
-    throw std::logic_error{"HashJoin qual must be an equality"};
+  const auto bin = FindHashJoinKey(join.qual);
+  if (!bin) {
+    throw std::logic_error{"HashJoin qual must contain an equality between attributes"};
   }
   const auto* a = std::get_if<Attribute>(bin->lhs.get());
   const auto* b = std::get_if<Attribute>(bin->rhs.get());
-  if (!a || !b) {
-    throw std::logic_error{"HashJoin qual must be `attr = attr`"};
-  }
 
   auto exec = co_await boost::asio::this_coro::executor;
   auto [lhs_attrs_chan, lhs_tuples_chan] = co_await GetChannels();
@@ -1237,6 +1251,11 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashJoin(
 
   AttributesInfo out_attrs = lhs_attrs;
   std::ranges::copy(rhs_attrs, std::back_inserter(out_attrs));
+  if (GetExpressionType(join.qual, out_attrs) != Type::kBool) {
+    throw std::logic_error{"hash join qual should return bool"};
+  }
+  auto qual_executor = co_await expression_executor_.GetExpressionExecutor(join.qual, out_attrs);
+
   co_await attr_chan.async_send(boost::system::error_code{}, out_attrs,
                                 boost::asio::use_awaitable);
   attr_chan.close();
@@ -1268,7 +1287,11 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashJoin(
       if (k.is_null) continue;
       auto range = build.equal_range(k.value.int_value);
       for (auto it = range.first; it != range.second; ++it) {
-        out_buf.push_back(ConcatTuples(it->second, rt));
+        auto joined_tuple = ConcatTuples(it->second, rt);
+        if (!ApplyFilter(joined_tuple, out_attrs, qual_executor)) {
+          continue;
+        }
+        out_buf.push_back(std::move(joined_tuple));
         if (out_buf.size() == kBufSize) {
           co_await tuples_chan.async_send(boost::system::error_code{}, std::move(out_buf),
                                           boost::asio::use_awaitable);

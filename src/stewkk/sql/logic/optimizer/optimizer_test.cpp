@@ -282,6 +282,29 @@ TEST(OptimizerTest, PushesSelectiveFilterIntoHashBuildSide) {
          " (SeqScan lineorder lo))"));
 }
 
+TEST(OptimizerTest, UsesHashJoinForConjunctiveEquiJoinPredicate) {
+  std::stringstream s{
+      "SELECT * FROM lineorder AS lo "
+      "JOIN supplier AS s ON lo.suppkey = s.id AND s.region = 'AMERICA';"};
+  Operator op = GetAST(s).value().op;
+  SchemaCatalog schema({
+      {"lineorder", {Attribute{"lineorder", "suppkey"}, Attribute{"lineorder", "value"}}},
+      {"supplier", {Attribute{"supplier", "id"}, Attribute{"supplier", "region"}}},
+  });
+  Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({
+      {"lineorder", 6000},
+      {"supplier", 100},
+  }), std::move(schema));
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(
+      Serialize(got),
+      Eq("(HashJoin Inner (and (= (attr lo suppkey) (attr s id))"
+         " (= (attr s region) (str \"AMERICA\")))"
+         " (SeqScan supplier s) (SeqScan lineorder lo))"));
+}
+
 TEST(OptimizerTest, UsesIndexSeekForIndexedIntegerPredicate) {
   std::stringstream s{"SELECT * FROM users WHERE users.id = 8;"};
   Operator op = GetAST(s).value().op;

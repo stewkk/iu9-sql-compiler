@@ -1,5 +1,10 @@
 #include <stewkk/sql/logic/implementation_rules/implement_hash_join.hpp>
 
+#include <algorithm>
+#include <vector>
+
+#include <stewkk/sql/logic/transformation_rules/predicate_utils.hpp>
+
 namespace stewkk::sql {
 
 namespace {
@@ -11,13 +16,19 @@ bool IsSimpleEquiJoin(const Expression& qual) {
         && std::holds_alternative<Attribute>(*bin->rhs);
 }
 
+bool HasEquiJoinConjunct(const Expression& qual) {
+    std::vector<Expression> conjuncts;
+    CollectConjuncts(qual, conjuncts);
+    return std::ranges::any_of(conjuncts, IsSimpleEquiJoin);
+}
+
 } // namespace
 
 bool ImplementHashJoin::IsApplicable(utils::NotNull<LogicalExpr*> expr) {
     if (!std::holds_alternative<logical::Join>(expr->root_operator)) return false;
     const auto& join = std::get<logical::Join>(expr->root_operator);
     if (join.type != JoinType::kInner) return false;
-    return IsSimpleEquiJoin(join.qual);
+    return HasEquiJoinConjunct(join.qual);
 }
 
 std::vector<utils::NotNull<PhysicalExpr*>> ImplementHashJoin::Apply(utils::NotNull<LogicalExpr*> expr, Memo&) {

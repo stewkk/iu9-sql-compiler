@@ -16,6 +16,7 @@
 #include <stewkk/sql/logic/implementation_rules/implement_index_seek.hpp>
 #include <stewkk/sql/logic/optimizer/properties/sort_property.hpp>
 #include <stewkk/sql/logic/optimizer/sort_enforcer.hpp>
+#include <stewkk/sql/logic/transformation_rules/predicate_utils.hpp>
 
 namespace stewkk::sql {
 
@@ -43,10 +44,10 @@ bool AttrInSchema(const Attribute& attr, const Schema& schema) {
   });
 }
 
-std::optional<JoinKeys> ResolveJoinKeys(const Expression& qual,
-                                        utils::NotNull<Group*> lhs,
-                                        utils::NotNull<Group*> rhs,
-                                        SchemaCatalog& schema) {
+std::optional<JoinKeys> ResolveSimpleJoinKeys(const Expression& qual,
+                                              utils::NotNull<Group*> lhs,
+                                              utils::NotNull<Group*> rhs,
+                                              SchemaCatalog& schema) {
   const auto* bin = std::get_if<BinaryExpression>(&qual);
   if (!bin || bin->binop != BinaryOp::kEq) return std::nullopt;
   const auto* a = std::get_if<Attribute>(bin->lhs.get());
@@ -66,6 +67,19 @@ std::optional<JoinKeys> ResolveJoinKeys(const Expression& qual,
   }
   if (b_lhs && !b_rhs && a_rhs && !a_lhs) {
     return JoinKeys{*b, *a};
+  }
+  return std::nullopt;
+}
+
+std::optional<JoinKeys> ResolveJoinKeys(const Expression& qual,
+                                        utils::NotNull<Group*> lhs,
+                                        utils::NotNull<Group*> rhs,
+                                        SchemaCatalog& schema) {
+  std::vector<Expression> conjuncts;
+  CollectConjuncts(qual, conjuncts);
+  for (const auto& conjunct : conjuncts) {
+    auto keys = ResolveSimpleJoinKeys(conjunct, lhs, rhs, schema);
+    if (keys) return keys;
   }
   return std::nullopt;
 }
