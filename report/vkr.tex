@@ -1497,7 +1497,51 @@ Cascades организует оптимизацию как выполнение
 постепенное улучшение качества итоговых планов путем уточнения и расширения
 пространства поиска.
 
+На рисунке~\ref{fig:project-pipeline} представлена диаграмма с процессом
+обработки SQL-запроса запроса модельной СУБД.
 
+\begin{figure}[H]
+\centering
+\begin{adjustbox}{max width=\textwidth}
+\begin{tikzpicture}[
+    scale=0.95, transform shape,
+    node/.style={rectangle, draw, rounded corners=2pt,
+                 text width=3.0cm, minimum height=0.8cm,
+                 align=center, font=\scriptsize},
+    main/.style={node, fill=gray!8},
+    io/.style={node, fill=gray!20},
+    aux/.style={node, dashed},
+    arrow/.style={-{Stealth[length=2.5mm]}, thick},
+    auxarrow/.style={-{Stealth[length=2.5mm]}, thick, dashed}
+]
+    \node[io]   (sql)    at (0, 0) {Генератор\\случайных\\запросов};
+    \node[main] (parse)  at (0, -2) {Разбор};
+    \node[main] (optim)  at (0, -4.5) {Оптимизация\\ и\\проверка\\ достижимости};
+    \node[main] (exec)   at (0, -6.65) {Исполнение};
+    \node[io]   (result) at (0, -8.2) {Результат};
+
+    \node[aux] (mssqlplan) at (5.0, -1.55) {MSSQL};
+    \node[aux] (diff)      at (5.0, -4.65) {Проверка\\корректности};
+    \node[aux] (mssqlres)  at (-5.0, -1.55) {MSSQL};
+    \node[aux] (reach)     at (-5.0, -4.5) {Конвертация\\в план\\модельной СУБД};
+
+    \draw[arrow] (sql) -- node[right, font=\scriptsize] {запрос} (parse);
+    \draw[arrow] (parse) -- node[right, font=\scriptsize] {реляционная алгебра} (optim);
+    \draw[arrow] (optim) -- node[right, font=\scriptsize] {план} (exec);
+    \draw[arrow] (exec) -- (result);
+
+    \draw[auxarrow] (sql) -- node[above, font=\scriptsize] {запрос} (mssqlplan);
+    \draw[auxarrow] (mssqlplan) -- node[right, font=\scriptsize] {результат} (diff);
+    \draw[auxarrow] (result.east) -- ++(1.2,0) |- (diff.west);
+
+    \draw[auxarrow] (sql) -- node[above, font=\scriptsize] {запрос} (mssqlres);
+    \draw[auxarrow] (mssqlres) -- node[left, font=\scriptsize] {план} (reach);
+    \draw[auxarrow] (reach.east) -- node[above, font=\scriptsize] {планы} (optim.west);
+\end{tikzpicture}
+\end{adjustbox}
+\caption{Процесс обработки запроса в модельной СУБД.}%
+\label{fig:project-pipeline}
+\end{figure}
 
 \subsection{Модули синтаксического анализа и построения логического представления}
 
