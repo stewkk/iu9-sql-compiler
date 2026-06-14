@@ -262,6 +262,7 @@
 }
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \usepackage{ragged2e} % выравнивание по горизонтали
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash}p{#1}}
 \usepackage[explicit]{titlesec} % явное указание заголовка
 \usepackage{placeins} % не даеёт объектам «утекать» за барьеры
 \usepackage{xparse} % позволяет создавать более крутые команды, чем с \newcommand
@@ -1093,8 +1094,8 @@ SQL-запроса и построение синтаксического дер
     op/.style={rectangle, draw, fill=gray!12, minimum width=4.25cm,
                minimum height=1.2cm, align=center, font=\small}
 ]
-    \node[op] (p1j2) at (-4.4, 2.9) {Hash Join\\\scriptsize \(10^6\) чтений};
-    \node[op] (p1j1) at (-6.5, 1.2) {Hash Join\\\scriptsize \(1{,}26 \cdot 10^5\) чтений};
+    \node[op] (p1j2) at (-4.4, 2.9) {Hash Join\\\footnotesize \(10^6\) чтений};
+    \node[op] (p1j1) at (-6.5, 1.2) {Hash Join\\\footnotesize \(1{,}26 \cdot 10^5\) чтений};
     \node[rel] (p1l) at (-2.3, 1.2) {\texttt{lineitem}};
     \node[rel] (p1c) at (-7.8, -0.3) {\texttt{customer}};
     \node[rel] (p1o) at (-4.4, -0.3) {\texttt{orders}};
@@ -1105,8 +1106,8 @@ SQL-запроса и построение синтаксического дер
     \draw[->] (p1o) -- (p1j1);
     \node[font=\small\bfseries] at (-4.4, 4.0) {План \(P_1\)};
 
-    \node[op] (p2j2) at (4.4, 2.9) {Nested Loop Join\\\scriptsize \(1{,}25 \cdot 10^{14}\) чтений};
-    \node[op] (p2j1) at (2.3, 1.2) {Nested Loop Join\\\scriptsize \(1{,}25 \cdot 10^8\) чтений};
+    \node[op] (p2j2) at (4.4, 2.9) {Nested Loop Join\\\footnotesize \(1{,}25 \cdot 10^{14}\) чтений};
+    \node[op] (p2j1) at (2.3, 1.2) {Nested Loop Join\\\footnotesize \(1{,}25 \cdot 10^8\) чтений};
     \node[rel] (p2l) at (6.5, 1.2) {\texttt{lineitem}};
     \node[rel] (p2c) at (1.0, -0.3) {\texttt{customer}};
     \node[rel] (p2o) at (4.4, -0.3) {\texttt{orders}};
@@ -1169,7 +1170,7 @@ SQL-запроса и построение синтаксического дер
     \node[op] (p1proj)  at (-3.5, 7.7) {\(\ProjectionOp{\texttt{ename}}\)};
     \node[op] (p1sig2)  at (-3.5, 6.2) {\(\SelOp{\texttt{dname}=\texttt{'Toy'}}\)};
     \node[op] (p1sig1)  at (-3.5, 4.7) {\(\SelOp{\texttt{Emp.did}=\texttt{Dept.did}}\)};
-    \node[op] (p1cp)    at (-3.5, 3.2) {\(\CProd{\texttt{Emp}}{\texttt{Dept}}\)\\\scriptsize \(50{,}050\) чтений};
+    \node[op] (p1cp)    at (-3.5, 3.2) {\(\CProd{\texttt{Emp}}{\texttt{Dept}}\)\\\footnotesize \(50{,}050\) чтений};
     \node[rel] (p1emp)  at (-5.2, 1.7) {\texttt{Emp}};
     \node[rel] (p1dept) at (-1.8, 1.7) {\texttt{Dept}};
 
@@ -1181,9 +1182,9 @@ SQL-запроса и построение синтаксического дер
 
     \node[font=\small\bfseries] at (3.5, 8.8) {План \(P_2\)};
     \node[op] (p2proj) at (3.5, 7.7) {\(\ProjectionOp{\texttt{ename}}\)};
-    \node[op] (p2join) at (3.5, 5.5) {Index NL Join\\\(\texttt{Emp.did}=\texttt{Dept.did}\)\\\scriptsize \(23\) чтения};
+    \node[op] (p2join) at (3.5, 5.5) {Index NL Join\\\(\texttt{Emp.did}=\texttt{Dept.did}\)\\\footnotesize \(23\) чтения};
     \node[rel] (p2emp) at (1.6, 3.5) {\texttt{Emp}};
-    \node[op] (p2sig)  at (5.4, 3.5) {\(\SelOp{\texttt{dname}=\texttt{'Toy'}}\)\\\scriptsize \(3\) чтения};
+    \node[op] (p2sig)  at (5.4, 3.5) {\(\SelOp{\texttt{dname}=\texttt{'Toy'}}\)\\\footnotesize \(3\) чтения};
     \node[rel] (p2dept) at (5.4, 1.8) {\texttt{Dept}};
 
     \draw[->] (p2emp)  -- (p2join);
@@ -2754,6 +2755,7 @@ Microsoft SQL Server.
 \begin{algorithm}[H]
     \caption{Алгоритм поиска (часть 1).}%
     \label{alg:cascades-search}
+    \footnotesize
     \begin{algorithmic}[1]
     \Procedure{Optimize}{$root, required$}
         \State Push task $\Call{OptimizeGroup}{root.group, required, +\infty}$
@@ -2798,6 +2800,7 @@ Microsoft SQL Server.
 \begin{algorithm}[H]
     \caption{Алгоритм поиска (часть 2).}%
     \label{alg:cascades-search-2}
+    \footnotesize
     \begin{algorithmic}[1]
     \Procedure{OptimizeGroup}{$group, required, limit$}
         \If{$winner[group, required]$ exists \textbf{or} $group$ is explored \textbf{and} $\Call{LowerBound}{group} \geq limit$}
@@ -2838,8 +2841,8 @@ Microsoft SQL Server.
     \end{algorithmic}
 \end{algorithm}
 
-\begin{scriptsize}
-\begin{longtable}{|c|p{2.6cm}|c|p{4.2cm}|}
+\begin{footnotesize}
+\begin{longtable}{|c|L{3.1cm}|c|L{3.7cm}|}
   \caption{Правила трансформации.}\label{tbl:transformation_rules}\\
   \hline
   № & Название & Правило & Комментарий \\
@@ -2856,7 +2859,7 @@ Microsoft SQL Server.
   \endlastfoot
 
   1 & Коммутативность соединения &
-    \(\TransRule{\InnerJoin{R}{\theta}{S}}{\text{\scriptsize внутреннее или полное внешнее соединение}}{\InnerJoin{S}{\theta}{R}}\) &
+    \(\TransRule{\InnerJoin{R}{\theta}{S}}{\text{внутреннее или полное внешнее соединение}}{\InnerJoin{S}{\theta}{R}}\) &
     Перестановка входов соединения. Позволяет рассмотреть оба порядка вычисления. \\
   \hline
 
@@ -2949,7 +2952,7 @@ Microsoft SQL Server.
   \end{tabular}
 \end{table}
 
-\begin{longtable}{|c|p{2.8cm}|c|p{4.5cm}|}
+\begin{longtable}{|c|L{3.4cm}|c|L{3.9cm}|}
   \caption{Правила реализации.}\label{tbl:implementation_rules}\\
   \hline
   № & Название & Правило & Комментарий \\
@@ -2971,7 +2974,7 @@ Microsoft SQL Server.
   \hline
 
   2 & Сканирование по индексу &
-    \(\TransRule{\LogicalGet}{\text{\scriptsize есть совместимый индекс}}{\IndexScan}\) &
+    \(\TransRule{\LogicalGet}{\text{есть совместимый индекс}}{\IndexScan}\) &
     Индекс должен быть совместим с предикатом или требуемым порядком. \\
   \hline
 
@@ -2981,12 +2984,12 @@ Microsoft SQL Server.
   \hline
 
   4 & Хеш-соединение &
-    \(\TransRule{\InnerJoin{R}{\theta}{S}}{\theta\ \text{\scriptsize содержит равенство по ключам}}{\HashJoin}\) &
+    \(\TransRule{\InnerJoin{R}{\theta}{S}}{\theta\ \text{содержит равенство по ключам}}{\HashJoin}\) &
     Хеш-таблица строится по ключам равенства. \\
   \hline
 
   5 & Соединение слиянием &
-    \(\TransRule{\InnerJoin{R}{\theta}{S}}{\text{\scriptsize входы упорядочены по ключам соединения}}{\MergeJoin}\) &
+    \(\TransRule{\InnerJoin{R}{\theta}{S}}{\text{входы упорядочены по ключам соединения}}{\MergeJoin}\) &
     Требуемый порядок может быть обеспечен явным оператором \Sort{}. \\
   \hline
 
@@ -3000,7 +3003,7 @@ Microsoft SQL Server.
     Эффективна при уже отсортированном входе. Может быть выгодна, если требуемый порядок нужен и родительскому оператору. \\
   \hline
 \end{longtable}
-\end{scriptsize}
+\end{footnotesize}
 
 \begin{listing}[H]
   \caption{Вычисление локальной стоимости физических операторов.}
