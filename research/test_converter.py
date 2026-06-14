@@ -190,6 +190,47 @@ def test_index_seek_prefix_eq_from_xml():
     assert result == "(IndexSeek (= (attr t0 region_id) 7) customers t0)"
 
 
+def test_nested_loops_outer_reference_index_seek_is_skipped_from_xml():
+    plan = showplan("""
+      <RelOp PhysicalOp="Nested Loops" LogicalOp="Inner Join">
+        <NestedLoops>
+          <OuterReferences>
+            <ColumnReference Table="[books]" Column="id"/>
+          </OuterReferences>
+          <RelOp PhysicalOp="Table Scan" LogicalOp="Table Scan">
+            <TableScan><Object Table="[books]"/></TableScan>
+          </RelOp>
+          <RelOp PhysicalOp="Index Seek" LogicalOp="Index Seek">
+            <IndexScan>
+              <Object Table="[employees]" Index="[ix_employees_id]"/>
+              <SeekPredicates>
+                <SeekPredicateNew>
+                  <SeekKeys>
+                    <Prefix ScanType="EQ">
+                      <RangeColumns>
+                        <ColumnReference Table="[employees]" Column="id"/>
+                      </RangeColumns>
+                      <RangeExpressions>
+                        <ScalarOperator>
+                          <Identifier>
+                            <ColumnReference Table="[books]" Column="id"/>
+                          </Identifier>
+                        </ScalarOperator>
+                      </RangeExpressions>
+                    </Prefix>
+                  </SeekKeys>
+                </SeekPredicateNew>
+              </SeekPredicates>
+            </IndexScan>
+          </RelOp>
+        </NestedLoops>
+      </RelOp>
+    """)
+
+    with pytest.raises(NotImplementedError, match="outer-reference index seek"):
+        convert(plan)
+
+
 def test_filter_lt(extractor):
     plan = extract_plan(extractor, "SELECT * FROM Titles WHERE Titles.titleId < 5000")
     result = convert(plan)

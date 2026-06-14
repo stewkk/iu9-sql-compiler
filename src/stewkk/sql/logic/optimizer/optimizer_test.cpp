@@ -561,6 +561,32 @@ TEST(ReachabilityTest, InExpandsToOrChain) {
   ASSERT_THAT(result.reachable, IsTrue());
 }
 
+TEST(ReachabilityTest, NotInExpandedAndChainIgnoresComparisonOrder) {
+  std::stringstream s{"SELECT * FROM users WHERE users.id NOT IN (1, 2, 3);"};
+  Expression ne3 = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kNotEq,
+      std::make_shared<Expression>(IntConst{3})};
+  Expression ne2 = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kNotEq,
+      std::make_shared<Expression>(IntConst{2})};
+  Expression ne1 = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kNotEq,
+      std::make_shared<Expression>(IntConst{1})};
+  Expression and_chain = BinaryExpression{
+      std::make_shared<Expression>(BinaryExpression{
+          std::make_shared<Expression>(std::move(ne3)),
+          BinaryOp::kAnd,
+          std::make_shared<Expression>(std::move(ne2))}),
+      BinaryOp::kAnd,
+      std::make_shared<Expression>(std::move(ne1))};
+  auto result = IsPlanReachable(s, PhysicalFilter{
+      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}), and_chain}, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
 
 
 TEST(ReachabilityTest, OrderByReachableViaSortEnforcer) {

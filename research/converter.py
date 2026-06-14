@@ -265,6 +265,11 @@ def _convert_nested_loops(relop: ET.Element, logical_op: str) -> str:
     if nl is None:
         raise ValueError("NestedLoops element missing")
     lhs, rhs = _expect_two_relops(nl, "NestedLoops")
+    if _has_outer_references(nl) and _contains_index_seek(rhs):
+        raise NotImplementedError(
+            "nested loops with outer-reference index seek require unsupported "
+            "parameterized index lookup operator"
+        )
 
     pred_elem = nl.find(f"{NS}Predicate/{NS}ScalarOperator")
     if pred_elem is None:
@@ -316,6 +321,16 @@ def _expect_two_relops(parent: ET.Element, label: str) -> tuple[ET.Element, ET.E
     if len(children) != 2:
         raise ValueError(f"{label} has {len(children)} RelOp children, expected 2")
     return children[0], children[1]
+
+
+def _has_outer_references(nested_loops: ET.Element) -> bool:
+    return nested_loops.find(f"{NS}OuterReferences/{NS}ColumnReference") is not None
+
+
+def _contains_index_seek(relop: ET.Element) -> bool:
+    if "Seek" in relop.get("PhysicalOp", ""):
+        return True
+    return any(_contains_index_seek(child) for child in relop.findall(f".//{NS}RelOp"))
 
 
 def _col_ref_to_attr(cr: ET.Element) -> str:

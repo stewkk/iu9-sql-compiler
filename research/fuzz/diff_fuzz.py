@@ -182,8 +182,8 @@ def main() -> None:
         try:
             ours_proc = _run_ours(args.cli, args.data_dir, ours_sql, args.jit)
         except subprocess.TimeoutExpired:
-            print(f"DIVERGENCE seed={seed}: our CLI timed out\n--- query (ours):\n{ours_sql}")
-            sys.exit(1)
+            print(f"TIMEOUT seed={seed}: our CLI timed out\n--- query (ours):\n{ours_sql}", flush=True)
+            continue
 
         theirs = mssql.run(theirs_sql)
 

@@ -16,6 +16,10 @@ void CollectConjuncts(const Expression& e, std::vector<Expression>& out);
 
 Expression AndConjuncts(const std::vector<Expression>& conjs);
 
+Expression CanonicalizePredicate(const Expression& e);
+
+bool EquivalentPredicate(const Expression& lhs, const Expression& rhs);
+
 void CollectAttrTables(const Expression& e, std::unordered_set<std::string>& out);
 
 void CollectAttributes(const Expression& e, std::vector<Attribute>& out);

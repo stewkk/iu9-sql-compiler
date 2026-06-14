@@ -277,7 +277,9 @@ def main() -> None:
             converted = convert_plan(plan_xml)
         except NotImplementedError as e:
             skipped_convert += 1
-            if seed % 25 == 0:
+            if "outer-reference index seek" in str(e):
+                print(f"seed={seed} converter skip: {e}", flush=True)
+            elif seed % 25 == 0:
                 print(f"seed={seed} converter skip: {e}", flush=True)
             continue
         except Exception as e:

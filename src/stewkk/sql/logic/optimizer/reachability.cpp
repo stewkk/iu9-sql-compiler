@@ -9,6 +9,7 @@
 #include <stewkk/sql/logic/optimizer/properties/property_set.hpp>
 #include <stewkk/sql/logic/optimizer/properties/sort_property.hpp>
 #include <stewkk/sql/logic/optimizer/rules.hpp>
+#include <stewkk/sql/logic/transformation_rules/predicate_utils.hpp>
 #include <stewkk/sql/utils/output_dot_plans.hpp>
 
 namespace stewkk::sql {
@@ -48,7 +49,7 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
                 return {false, depth + 1,
                         std::format("IndexSeek alias '{}' != '{}'",
                                     op.alias.value_or(""), t->alias.value_or(""))};
-            if (op.predicate != t->predicate)
+            if (!EquivalentPredicate(op.predicate, t->predicate))
                 return {false, depth + 1,
                         std::format("IndexSeek predicate '{}' != '{}'",
                                     ToString(op.predicate), ToString(t->predicate))};
@@ -57,7 +58,7 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
         [&](const physical::Filter& op) -> InternalMatch {
             const auto* t = std::get_if<PhysicalFilter>(&target.node);
             if (!t) return {false, depth, "type mismatch: expected Filter"};
-            if (op.predicate != t->predicate)
+            if (!EquivalentPredicate(op.predicate, t->predicate))
                 return {false, depth + 1,
                         std::format("Filter predicate '{}' != '{}'",
                                     ToString(op.predicate), ToString(t->predicate))};
@@ -79,7 +80,7 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             if (!t) return {false, depth, "type mismatch: expected NestedLoopJoin"};
             if (op.type != t->type)
                 return {false, depth + 1, "NestedLoopJoin join type mismatch"};
-            if (op.qual != t->qual)
+            if (!EquivalentPredicate(op.qual, t->qual))
                 return {false, depth + 1,
                         std::format("NestedLoopJoin qual '{}' != '{}'",
                                     ToString(op.qual), ToString(t->qual))};
@@ -103,7 +104,7 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             if (!t) return {false, depth, "type mismatch: expected HashJoin"};
             if (op.type != t->type)
                 return {false, depth + 1, "HashJoin join type mismatch"};
-            if (op.qual != t->qual)
+            if (!EquivalentPredicate(op.qual, t->qual))
                 return {false, depth + 1,
                         std::format("HashJoin qual '{}' != '{}'",
                                     ToString(op.qual), ToString(t->qual))};
@@ -118,7 +119,7 @@ InternalMatch TryMatchExpr(utils::NotNull<PhysicalExpr*> pe,
             if (!t) return {false, depth, "type mismatch: expected MergeJoin"};
             if (op.type != t->type)
                 return {false, depth + 1, "MergeJoin join type mismatch"};
-            if (op.qual != t->qual)
+            if (!EquivalentPredicate(op.qual, t->qual))
                 return {false, depth + 1,
                         std::format("MergeJoin qual '{}' != '{}'",
                                     ToString(op.qual), ToString(t->qual))};
