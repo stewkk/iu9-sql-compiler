@@ -1,5 +1,8 @@
 #pragma once
 
+#include <optional>
+#include <string_view>
+
 #include <stewkk/sql/utils/not_null.hpp>
 #include <stewkk/sql/models/parser/relational_algebra_ast.hpp>
 
@@ -74,6 +77,13 @@ struct LogicalExpr {
                  logical::PartialAggregation, logical::FinalAggregation,
                  logical::Join, logical::CrossJoin> root_operator;
     utils::NotNull<Group*> group;
+
+    struct Provenance {
+        size_t rule_id;
+        std::string_view rule_name;
+        LogicalExpr* source;
+    };
+    std::optional<Provenance> provenance;
 };
 
 }  // namespace stewkk::sql

@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <stack>
 #include <unordered_map>
 #include <unordered_set>
@@ -22,6 +24,19 @@ namespace stewkk::sql {
 std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<LogicalExpr*> expr);
 std::vector<utils::NotNull<Group*>> GetChildren(utils::NotNull<PhysicalExpr*> expr);
 
+enum class RuleLineageKind {
+  kTransformation,
+  kImplementation,
+  kEnforcer,
+};
+
+struct RuleLineageStat {
+  RuleLineageKind kind;
+  size_t rule_id;
+  std::string_view rule_name;
+  size_t count;
+};
+
 template<size_t NTransformation, size_t NImplementation>
 class Optimizer {
 public:
@@ -35,6 +50,7 @@ public:
 
   std::int64_t GetBestCost() const;
   utils::NotNull<Group*> GetRootGroup() const;
+  std::vector<RuleLineageStat> GetSelectedPlanRuleLineage();
 
 private:
   using Limit = std::optional<std::int64_t>;
@@ -56,6 +72,15 @@ private:
   void OptimizeGroup(utils::NotNull<Group*> group, PropertySet required = PropertySet::Any(), Limit limit = std::nullopt);
 
   PhysicalPlanNode BuildOptimalPlan(Group* group, PropertySet required = PropertySet::Any());
+  void CollectSelectedPlanRuleLineage(
+      Group* group, PropertySet required,
+      std::unordered_map<std::string, RuleLineageStat>& stats,
+      std::unordered_set<PhysicalExpr*>& visited_physical,
+      std::unordered_set<LogicalExpr*>& visited_logical);
+  void CollectLogicalRuleLineage(
+      LogicalExpr* expr,
+      std::unordered_map<std::string, RuleLineageStat>& stats,
+      std::unordered_set<LogicalExpr*>& visited_logical);
 
   struct WinnerEntry {
     int64_t cost;

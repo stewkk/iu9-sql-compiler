@@ -175,6 +175,31 @@ void PrintRelation(const Relation& rel, bool preserve_order) {
   for (const auto& r : rows) std::cout << r << '\n';
 }
 
+std::string_view RuleLineageKindName(RuleLineageKind kind) {
+  switch (kind) {
+    case RuleLineageKind::kTransformation:
+      return "transformation";
+    case RuleLineageKind::kImplementation:
+      return "implementation";
+    case RuleLineageKind::kEnforcer:
+      return "enforcer";
+  }
+  return "unknown";
+}
+
+void PrintRuleLineageStats(const std::vector<RuleLineageStat>& stats) {
+  std::cerr << "Selected plan rule lineage:\n";
+  if (stats.empty()) {
+    std::cerr << "  <none>\n";
+    return;
+  }
+  for (const auto& stat : stats) {
+    std::cerr << "  " << RuleLineageKindName(stat.kind) << ' '
+              << stat.rule_id << ' ' << stat.rule_name
+              << ": " << stat.count << '\n';
+  }
+}
+
 boost::asio::awaitable<Result<Relation>> RunQuery(const std::string& data_dir,
                                                   const PhysicalPlanNode& plan) {
   CsvDirSequentialScanner seq_scan{data_dir};
@@ -264,6 +289,9 @@ int main(int argc, char** argv) {
                         LoadConstraintCatalogFromCsvDir(args.data_dir));
     plan = optimizer.Optimize();
     plan_cost = optimizer.GetBestCost();
+    if (args.stats) {
+      PrintRuleLineageStats(optimizer.GetSelectedPlanRuleLineage());
+    }
 
     PropertySet naive_required = parsed.required_order
                                      ? PropertySet{SortProperty{*parsed.required_order}}

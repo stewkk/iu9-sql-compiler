@@ -50,6 +50,16 @@ SchemaCatalog MakeTestSchema() {
   });
 }
 
+size_t RuleLineageCount(const std::vector<RuleLineageStat>& stats,
+                        RuleLineageKind kind, std::string_view rule_name) {
+  for (const auto& stat : stats) {
+    if (stat.kind == kind && stat.rule_name == rule_name) {
+      return stat.count;
+    }
+  }
+  return 0;
+}
+
 TEST(CardinalityEstimatesTest, AppliesFilterHeuristics) {
   ASSERT_THAT(EstimateCardinality("SELECT * FROM users WHERE users.id = 1;", {{"users", 1000}}),
               Eq(100));
@@ -111,7 +121,7 @@ TEST(OptimizerTest, Simple) {
 
   ASSERT_THAT(SerializeDot(got),
               Eq("digraph G { rankdir=BT;\n"
-                 "  n0 [label=\"SeqScan\\\\nusers\\ncard=10\\ncost=1000\"]\n"
+                 "  n0 [label=\"SeqScan\\nusers\\ncard=10\\ncost=1000\"]\n"
                  "}\n"));
   ASSERT_THAT(optimizer.GetBestCost(), Eq(1000));
 }
@@ -280,6 +290,53 @@ TEST(OptimizerTest, PushesSelectiveFilterIntoHashBuildSide) {
       Eq("(HashJoin Inner (= (attr lo suppkey) (attr s id))"
          " (PhysicalFilter (= (attr s region) (str \"AMERICA\")) (SeqScan supplier s))"
          " (SeqScan lineorder lo))"));
+}
+
+TEST(OptimizerTest, TracksSelectedPlanRuleLineage) {
+  std::stringstream s{
+      "SELECT * FROM lineorder AS lo "
+      "JOIN supplier AS s ON lo.suppkey = s.id "
+      "WHERE s.region = 'AMERICA';"};
+  Operator op = GetAST(s).value().op;
+  SchemaCatalog schema({
+      {"lineorder", {Attribute{"lineorder", "suppkey"}, Attribute{"lineorder", "value"}}},
+      {"supplier", {Attribute{"supplier", "id"}, Attribute{"supplier", "region"}}},
+  });
+  Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({
+      {"lineorder", 6000},
+      {"supplier", 100},
+  }), std::move(schema));
+
+  auto got = optimizer.Optimize();
+  auto stats = optimizer.GetSelectedPlanRuleLineage();
+
+  ASSERT_THAT(Serialize(got),
+              HasSubstr("(PhysicalFilter (= (attr s region) (str \"AMERICA\")) "
+                         "(SeqScan supplier s))"));
+  EXPECT_THAT(RuleLineageCount(stats, RuleLineageKind::kTransformation,
+                               "FilterPushdownThroughJoin"), Gt(0));
+  EXPECT_THAT(RuleLineageCount(stats, RuleLineageKind::kImplementation,
+                               "ImplementTable"), Eq(2));
+  EXPECT_THAT(RuleLineageCount(stats, RuleLineageKind::kImplementation,
+                               "ImplementFilter"), Eq(1));
+  EXPECT_THAT(RuleLineageCount(stats, RuleLineageKind::kImplementation,
+                               "ImplementHashJoin"), Eq(1));
+}
+
+TEST(OptimizerTest, TracksSelectedPlanEnforcerLineage) {
+  std::stringstream s{"SELECT * FROM users ORDER BY users.id;"};
+  auto parsed = GetAST(s).value();
+  SchemaCatalog schema({{"users", {Attribute{"users", "id"}, Attribute{"users", "age"}}}});
+  PropertySet required{SortProperty{*parsed.required_order}};
+  Optimizer optimizer(parsed.op, MakeMainRules(), {}, std::move(schema), std::move(required));
+
+  auto got = optimizer.Optimize();
+  auto stats = optimizer.GetSelectedPlanRuleLineage();
+
+  ASSERT_THAT(Serialize(got), Eq("(Sort (keys users.id Asc) (SeqScan users))"));
+  EXPECT_THAT(RuleLineageCount(stats, RuleLineageKind::kEnforcer, "SortEnforcer"), Eq(1));
+  EXPECT_THAT(RuleLineageCount(stats, RuleLineageKind::kImplementation,
+                               "ImplementTable"), Eq(1));
 }
 
 TEST(OptimizerTest, UsesHashJoinForConjunctiveEquiJoinPredicate) {

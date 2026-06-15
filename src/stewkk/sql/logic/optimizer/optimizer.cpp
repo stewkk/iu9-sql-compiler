@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <limits>
 #include <optional>
+#include <string>
 
 #include <bit>
 
@@ -268,6 +269,52 @@ int64_t CalcCost(utils::NotNull<PhysicalExpr*> expr, CardinalityEstimates& cardi
           return 510 * cardinality.GetCardinality(a.source);
       },
   }, expr->root_operator);
+}
+
+char RuleLineageKindCode(RuleLineageKind kind) {
+  switch (kind) {
+    case RuleLineageKind::kTransformation:
+      return 't';
+    case RuleLineageKind::kImplementation:
+      return 'i';
+    case RuleLineageKind::kEnforcer:
+      return 'e';
+  }
+  return '?';
+}
+
+int RuleLineageKindOrder(RuleLineageKind kind) {
+  switch (kind) {
+    case RuleLineageKind::kTransformation:
+      return 0;
+    case RuleLineageKind::kImplementation:
+      return 1;
+    case RuleLineageKind::kEnforcer:
+      return 2;
+  }
+  return 3;
+}
+
+void AddRuleLineageStat(std::unordered_map<std::string, RuleLineageStat>& stats,
+                        RuleLineageKind kind, size_t rule_id,
+                        std::string_view rule_name) {
+  std::string key;
+  key.reserve(rule_name.size() + 32);
+  key.push_back(RuleLineageKindCode(kind));
+  key.push_back(':');
+  key += std::to_string(rule_id);
+  key.push_back(':');
+  key += rule_name;
+
+  auto [it, _] = stats.emplace(
+      std::move(key),
+      RuleLineageStat{
+          .kind = kind,
+          .rule_id = rule_id,
+          .rule_name = rule_name,
+          .count = 0,
+      });
+  ++it->second.count;
 }
 
 } // namespace
@@ -577,6 +624,12 @@ void Optimizer<NTransformation, NImplementation>::OptimizeGroup(
       auto op = enforcer->TryBuild(group, required, schema_);
       if (!op) continue;
       auto enf_expr = group->AddPhysicalExpr(*op, true);
+      enf_expr->provenance = PhysicalExpr::Provenance{
+          .kind = PhysicalExpr::ProvenanceKind::kEnforcer,
+          .rule_id = 0,
+          .rule_name = "SortEnforcer",
+          .source = nullptr,
+      };
       auto lc = CalcCost(enf_expr, cardinality_, schema_);
       Log("Enforcer local cost for group {}: {}", group->GetId(), lc);
       local_cost_[enf_expr.get()] = lc;
@@ -711,6 +764,72 @@ PhysicalPlanNode Optimizer<NTransformation, NImplementation>::BuildOptimalPlan(G
       .local_cost = local_cost_.at(best_expr),
   };
   return plan;
+}
+
+template<size_t NTransformation, size_t NImplementation>
+void Optimizer<NTransformation, NImplementation>::CollectLogicalRuleLineage(
+    LogicalExpr* expr, std::unordered_map<std::string, RuleLineageStat>& stats,
+    std::unordered_set<LogicalExpr*>& visited_logical) {
+  if (!expr || !visited_logical.insert(expr).second) return;
+
+  if (!expr->provenance) return;
+  AddRuleLineageStat(stats, RuleLineageKind::kTransformation,
+                     expr->provenance->rule_id, expr->provenance->rule_name);
+  CollectLogicalRuleLineage(expr->provenance->source, stats, visited_logical);
+}
+
+template<size_t NTransformation, size_t NImplementation>
+void Optimizer<NTransformation, NImplementation>::CollectSelectedPlanRuleLineage(
+    Group* group, PropertySet required,
+    std::unordered_map<std::string, RuleLineageStat>& stats,
+    std::unordered_set<PhysicalExpr*>& visited_physical,
+    std::unordered_set<LogicalExpr*>& visited_logical) {
+  WinnerKey key{group, required};
+  auto it = winner_.find(key);
+  if (it == winner_.end() || !it->second.plan) {
+    throw std::runtime_error{"no optimal plan for group"};
+  }
+
+  auto* best_expr = it->second.plan;
+  const bool first_visit = visited_physical.insert(best_expr).second;
+  if (first_visit && best_expr->provenance) {
+    const auto& provenance = *best_expr->provenance;
+    auto kind = provenance.kind == PhysicalExpr::ProvenanceKind::kEnforcer
+        ? RuleLineageKind::kEnforcer
+        : RuleLineageKind::kImplementation;
+    AddRuleLineageStat(stats, kind, provenance.rule_id, provenance.rule_name);
+    CollectLogicalRuleLineage(provenance.source, stats, visited_logical);
+  }
+
+  utils::NotNull<PhysicalExpr*> best_expr_nn{best_expr};
+  auto children = GetChildren(best_expr_nn);
+  for (size_t i = 0; i < children.size(); ++i) {
+    CollectSelectedPlanRuleLineage(
+        children[i].get(), RequiredInputProps(best_expr_nn, required, i, schema_),
+        stats, visited_physical, visited_logical);
+  }
+}
+
+template<size_t NTransformation, size_t NImplementation>
+std::vector<RuleLineageStat> Optimizer<NTransformation, NImplementation>::GetSelectedPlanRuleLineage() {
+  std::unordered_map<std::string, RuleLineageStat> stats;
+  std::unordered_set<PhysicalExpr*> visited_physical;
+  std::unordered_set<LogicalExpr*> visited_logical;
+  CollectSelectedPlanRuleLineage(
+      root_->group.get(), global_required_, stats, visited_physical, visited_logical);
+
+  std::vector<RuleLineageStat> result;
+  result.reserve(stats.size());
+  for (const auto& [_, stat] : stats) {
+    result.push_back(stat);
+  }
+  std::ranges::sort(result, [](const RuleLineageStat& lhs, const RuleLineageStat& rhs) {
+    if (RuleLineageKindOrder(lhs.kind) != RuleLineageKindOrder(rhs.kind)) {
+      return RuleLineageKindOrder(lhs.kind) < RuleLineageKindOrder(rhs.kind);
+    }
+    return lhs.rule_id < rhs.rule_id;
+  });
+  return result;
 }
 
 template<size_t NTransformation, size_t NImplementation>

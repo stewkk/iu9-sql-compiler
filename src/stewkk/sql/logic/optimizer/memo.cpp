@@ -76,6 +76,16 @@ size_t Memo::GroupCount() const {
     return groups_.size();
 }
 
+Memo::ScopedLogicalProvenance::ScopedLogicalProvenance(
+    Memo& memo, LogicalProvenance provenance)
+    : memo_(memo), previous_(memo.current_provenance_) {
+    memo_.current_provenance_ = provenance;
+}
+
+Memo::ScopedLogicalProvenance::~ScopedLogicalProvenance() {
+    memo_.current_provenance_ = previous_;
+}
+
 LogicalExpr* Memo::GetGroup(LogicalOperator root_operator) const {
     auto key = ToKey(root_operator);
     return GetGroup(key);
@@ -96,6 +106,7 @@ utils::NotNull<LogicalExpr*> Memo::AddGroup(LogicalOperator root_operator) {
     }
     auto& group = groups_.emplace_back(Group(groups_.size()));
     auto expr = group.AddLogicalExpr(std::move(root_operator));
+    SetProvenanceIfNew(expr);
     expr_index_[key] = expr;
     return expr;
 }
@@ -107,8 +118,18 @@ utils::NotNull<LogicalExpr*> Memo::AddLogicalExprToGroup(utils::NotNull<Group*> 
         return g;
     }
     auto expr = group->AddLogicalExpr(std::move(root_operator));
+    SetProvenanceIfNew(expr);
     expr_index_[key] = expr;
     return expr;
+}
+
+void Memo::SetProvenanceIfNew(utils::NotNull<LogicalExpr*> expr) {
+    if (!current_provenance_) return;
+    expr->provenance = LogicalExpr::Provenance{
+        .rule_id = current_provenance_->rule_id,
+        .rule_name = current_provenance_->rule_name,
+        .source = current_provenance_->source,
+    };
 }
 
 utils::NotNull<LogicalExpr*> Memo::Populate(const Operator& op) {

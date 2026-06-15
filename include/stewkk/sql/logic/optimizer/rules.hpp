@@ -2,6 +2,7 @@
 
 #include <array>
 #include <memory>
+#include <string_view>
 
 #include <stewkk/sql/logic/optimizer/rule.hpp>
 #include <stewkk/sql/logic/transformation_rules/join_commutativity.hpp>
@@ -34,6 +35,8 @@ template<size_t NTransformation, size_t NImplementation>
 struct Rules {
     std::array<std::unique_ptr<TransformationRule>, NTransformation> transformation_rules;
     std::array<std::unique_ptr<ImplementationRule>, NImplementation> implementation_rules;
+    std::array<std::string_view, NTransformation> transformation_rule_names;
+    std::array<std::string_view, NImplementation> implementation_rule_names;
 };
 
 Rules<14, 9> MakeMainRules(IndexCatalog indexes = {});

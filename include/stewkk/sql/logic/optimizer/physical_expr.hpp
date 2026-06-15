@@ -3,6 +3,7 @@
 #include <variant>
 #include <vector>
 #include <optional>
+#include <string_view>
 
 #include <stewkk/sql/utils/not_null.hpp>
 #include <stewkk/sql/models/parser/relational_algebra_ast.hpp>
@@ -12,6 +13,7 @@
 namespace stewkk::sql {
 
 struct Group;
+struct LogicalExpr;
 
 namespace physical {
 
@@ -122,6 +124,18 @@ struct FinalAggregation {
 } // namespace physical
 
 struct PhysicalExpr {
+    enum class ProvenanceKind {
+        kImplementation,
+        kEnforcer,
+    };
+
+    struct Provenance {
+        ProvenanceKind kind;
+        size_t rule_id;
+        std::string_view rule_name;
+        LogicalExpr* source;
+    };
+
     std::variant<physical::SeqScan, physical::Projection, physical::Filter,
                  physical::NestedLoopJoin, physical::NestedLoopCrossJoin,
                  physical::HashJoin, physical::MergeJoin, physical::Sort,
@@ -130,6 +144,7 @@ struct PhysicalExpr {
                  physical::IndexSeek> root_operator;
     utils::NotNull<Group*> group;
     bool is_enforcer = false;
+    std::optional<Provenance> provenance;
 };
 
 }  // namespace stewkk::sql

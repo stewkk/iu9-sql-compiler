@@ -661,9 +661,9 @@ struct DotBuilder {
 
     int EmitAlternative(const SeqScan& n, const std::optional<PlanNodeMetadata>& metadata) {
         if (n.alias) {
-            return Emit(std::format("SeqScan\\n{} AS {}", n.table, *n.alias), metadata);
+            return Emit(std::format("SeqScan\n{} AS {}", n.table, *n.alias), metadata);
         }
-        return Emit(std::format("SeqScan\\n{}", n.table), metadata);
+        return Emit(std::format("SeqScan\n{}", n.table), metadata);
     }
 
     int EmitAlternative(const PhysicalFilter& n,
@@ -700,7 +700,7 @@ struct DotBuilder {
                         const std::optional<PlanNodeMetadata>& metadata) {
         int lhs = EmitNode(*n.lhs);
         int rhs = EmitNode(*n.rhs);
-        int id = Emit(std::format("NL {}\\nON {}", ToString(n.type), ToString(n.qual)),
+        int id = Emit(std::format("NL {}\nON {}", ToString(n.type), ToString(n.qual)),
                       metadata);
         EmitEdge(lhs, id);
         EmitEdge(rhs, id);
@@ -708,14 +708,14 @@ struct DotBuilder {
     }
 
     int EmitAlternative(const IndexSeek& n, const std::optional<PlanNodeMetadata>& metadata) {
-        return Emit(std::format("IndexSeek\\n{}\\n{}", n.table, ToString(n.predicate)),
+        return Emit(std::format("IndexSeek\n{}\n{}", n.table, ToString(n.predicate)),
                     metadata);
     }
 
     int EmitAlternative(const HashJoin& n, const std::optional<PlanNodeMetadata>& metadata) {
         int lhs = EmitNode(*n.lhs);
         int rhs = EmitNode(*n.rhs);
-        int id = Emit(std::format("Hash {}\\nON {}", ToString(n.type), ToString(n.qual)),
+        int id = Emit(std::format("Hash {}\nON {}", ToString(n.type), ToString(n.qual)),
                       metadata);
         EmitEdge(lhs, id);
         EmitEdge(rhs, id);
@@ -725,7 +725,7 @@ struct DotBuilder {
     int EmitAlternative(const MergeJoin& n, const std::optional<PlanNodeMetadata>& metadata) {
         int lhs = EmitNode(*n.lhs);
         int rhs = EmitNode(*n.rhs);
-        int id = Emit(std::format("Merge {}\\nON {}", ToString(n.type), ToString(n.qual)),
+        int id = Emit(std::format("Merge {}\nON {}", ToString(n.type), ToString(n.qual)),
                       metadata);
         EmitEdge(lhs, id);
         EmitEdge(rhs, id);
@@ -743,7 +743,7 @@ struct DotBuilder {
             keys += k.column;
             keys += k.dir == Direction::kAsc ? " asc" : " desc";
         }
-        int id = Emit(std::format("Sort\\n{}", keys), metadata);
+        int id = Emit(std::format("Sort\n{}", keys), metadata);
         EmitEdge(src, id);
         return id;
     }
@@ -761,7 +761,7 @@ struct DotBuilder {
             if (!group_by.empty()) group_by += ", ";
             group_by += ToString(e);
         }
-        int id = Emit(std::format("HashAgg\\nGROUP BY {}\\n{}", group_by, aggs),
+        int id = Emit(std::format("HashAgg\nGROUP BY {}\n{}", group_by, aggs),
                       metadata);
         EmitEdge(src, id);
         return id;
@@ -780,7 +780,7 @@ struct DotBuilder {
             if (!group_by.empty()) group_by += ", ";
             group_by += ToString(e);
         }
-        int id = Emit(std::format("StreamAgg\\nGROUP BY {}\\n{}", group_by, aggs),
+        int id = Emit(std::format("StreamAgg\nGROUP BY {}\n{}", group_by, aggs),
                       metadata);
         EmitEdge(src, id);
         return id;
@@ -799,7 +799,7 @@ struct DotBuilder {
             if (!group_by.empty()) group_by += ", ";
             group_by += ToString(e);
         }
-        int id = Emit(std::format("PartialAgg\\nGROUP BY {}\\n{}", group_by, aggs),
+        int id = Emit(std::format("PartialAgg\nGROUP BY {}\n{}", group_by, aggs),
                       metadata);
         EmitEdge(src, id);
         return id;
@@ -818,7 +818,7 @@ struct DotBuilder {
             if (!group_by.empty()) group_by += ", ";
             group_by += ToString(e);
         }
-        int id = Emit(std::format("FinalAgg\\nGROUP BY {}\\n{}", group_by, aggs),
+        int id = Emit(std::format("FinalAgg\nGROUP BY {}\n{}", group_by, aggs),
                       metadata);
         EmitEdge(src, id);
         return id;

@@ -33,6 +33,33 @@ Rules<14, 9> MakeMainRules(IndexCatalog indexes) {
             std::make_unique<ImplementMergeJoin>(),
             std::make_unique<ImplementAggregation>(),
         },
+        .transformation_rule_names = {
+            "JoinCommutativity",
+            "JoinAssociativity",
+            "FilterSplit",
+            "FilterMerge",
+            "FilterPushdownThroughProjection",
+            "FilterPushdownThroughJoin",
+            "InToOrChain",
+            "FilterToJoinPredicate",
+            "CrossJoinToJoin",
+            "FilterLiftThroughJoin",
+            "ProjectionPushdownThroughJoin",
+            "OuterJoinToInner",
+            "AggregationPushdownThroughJoin",
+            "AggregationJoinTranspose",
+        },
+        .implementation_rule_names = {
+            "ImplementTable",
+            "ImplementFilter",
+            "ImplementIndexSeek",
+            "ImplementProjection",
+            "ImplementJoin",
+            "ImplementCrossJoin",
+            "ImplementHashJoin",
+            "ImplementMergeJoin",
+            "ImplementAggregation",
+        },
     };
 }
 
@@ -46,6 +73,15 @@ Rules<0, 6> MakeNaiveRules() {
             std::make_unique<ImplementJoin>(),
             std::make_unique<ImplementCrossJoin>(),
             std::make_unique<ImplementAggregation>(),
+        },
+        .transformation_rule_names = {},
+        .implementation_rule_names = {
+            "ImplementTable",
+            "ImplementFilter",
+            "ImplementProjection",
+            "ImplementJoin",
+            "ImplementCrossJoin",
+            "ImplementAggregation",
         },
     };
 }

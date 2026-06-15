@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <string_view>
 #include <unordered_map>
 
 #include <stewkk/sql/logic/optimizer/rules.hpp>
@@ -30,6 +31,9 @@ class RulesApplier {
 
     bool IsApplicable(ImplementationRuleId rule, utils::NotNull<LogicalExpr*> expr);
     std::vector<utils::NotNull<PhysicalExpr*>> Apply(ImplementationRuleId rule, utils::NotNull<LogicalExpr*> expr, Memo& memo);
+
+    std::string_view GetTransformationRuleName(TransformationRuleId rule) const;
+    std::string_view GetImplementationRuleName(ImplementationRuleId rule) const;
 
   private:
     Rules<NTransformation, NImplementation> rules_;
