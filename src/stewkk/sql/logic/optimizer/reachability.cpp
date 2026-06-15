@@ -1,6 +1,10 @@
 #include <stewkk/sql/logic/optimizer/reachability.hpp>
 
+#include <algorithm>
 #include <format>
+#include <limits>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 #include <stewkk/sql/utils/overloaded.hpp>
@@ -15,6 +19,8 @@
 namespace stewkk::sql {
 
 namespace {
+
+constexpr int kInfiniteDistance = std::numeric_limits<int>::max() / 4;
 
 struct InternalMatch {
     bool ok;
@@ -196,12 +202,215 @@ InternalMatch MatchGroup(Group* group, const PhysicalPlanNode& target, int depth
     return best;
 }
 
+std::vector<Group*> Children(const PhysicalExpr& expr) {
+    return std::visit(utils::Overloaded{
+        [](const physical::SeqScan&) { return std::vector<Group*>{}; },
+        [](const physical::IndexSeek&) { return std::vector<Group*>{}; },
+        [](const physical::Filter& op) { return std::vector<Group*>{op.source.get()}; },
+        [](const physical::Projection& op) { return std::vector<Group*>{op.source.get()}; },
+        [](const physical::NestedLoopJoin& op) {
+            return std::vector<Group*>{op.lhs.get(), op.rhs.get()};
+        },
+        [](const physical::NestedLoopCrossJoin& op) {
+            return std::vector<Group*>{op.lhs.get(), op.rhs.get()};
+        },
+        [](const physical::HashJoin& op) {
+            return std::vector<Group*>{op.lhs.get(), op.rhs.get()};
+        },
+        [](const physical::MergeJoin& op) {
+            return std::vector<Group*>{op.lhs.get(), op.rhs.get()};
+        },
+        [](const physical::Sort& op) { return std::vector<Group*>{op.input.get()}; },
+        [](const physical::Aggregation& op) { return std::vector<Group*>{op.source.get()}; },
+        [](const physical::StreamAggregation& op) { return std::vector<Group*>{op.source.get()}; },
+        [](const physical::PartialAggregation& op) { return std::vector<Group*>{op.source.get()}; },
+        [](const physical::FinalAggregation& op) { return std::vector<Group*>{op.source.get()}; },
+    }, expr.root_operator);
+}
+
+std::vector<const PhysicalPlanNode*> Children(const PhysicalPlanNode& node) {
+    return std::visit(utils::Overloaded{
+        [](const SeqScan&) { return std::vector<const PhysicalPlanNode*>{}; },
+        [](const IndexSeek&) { return std::vector<const PhysicalPlanNode*>{}; },
+        [](const PhysicalFilter& op) { return std::vector<const PhysicalPlanNode*>{op.source.get()}; },
+        [](const PhysicalProjection& op) { return std::vector<const PhysicalPlanNode*>{op.source.get()}; },
+        [](const NestedLoopJoin& op) {
+            return std::vector<const PhysicalPlanNode*>{op.lhs.get(), op.rhs.get()};
+        },
+        [](const NestedLoopCrossJoin& op) {
+            return std::vector<const PhysicalPlanNode*>{op.lhs.get(), op.rhs.get()};
+        },
+        [](const HashJoin& op) {
+            return std::vector<const PhysicalPlanNode*>{op.lhs.get(), op.rhs.get()};
+        },
+        [](const MergeJoin& op) {
+            return std::vector<const PhysicalPlanNode*>{op.lhs.get(), op.rhs.get()};
+        },
+        [](const PhysicalSort& op) { return std::vector<const PhysicalPlanNode*>{op.source.get()}; },
+        [](const PhysicalAggregation& op) { return std::vector<const PhysicalPlanNode*>{op.source.get()}; },
+        [](const PhysicalStreamAggregation& op) { return std::vector<const PhysicalPlanNode*>{op.source.get()}; },
+        [](const PhysicalPartialAggregation& op) { return std::vector<const PhysicalPlanNode*>{op.source.get()}; },
+        [](const PhysicalFinalAggregation& op) { return std::vector<const PhysicalPlanNode*>{op.source.get()}; },
+    }, node.node);
+}
+
+int TargetTreeSize(const PhysicalPlanNode& node) {
+    int size = 1;
+    for (const auto* child : Children(node)) {
+        size += TargetTreeSize(*child);
+    }
+    return size;
+}
+
+struct PairHash {
+    size_t operator()(const std::pair<Group*, const PhysicalPlanNode*>& p) const noexcept {
+        size_t h = std::hash<Group*>{}(p.first);
+        h ^= std::hash<const PhysicalPlanNode*>{}(p.second) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        return h;
+    }
+};
+
+class TreeDistance {
+  public:
+    int Distance(Group* group, const PhysicalPlanNode& target) {
+        auto key = std::pair{group, &target};
+        if (auto it = distance_memo_.find(key); it != distance_memo_.end()) {
+            return it->second;
+        }
+        if (!distance_visiting_.insert(key).second) {
+            return kInfiniteDistance;
+        }
+
+        int best = kInfiniteDistance;
+        for (auto pe : group->GetPhysicalExprs()) {
+            best = std::min(best, Distance(*pe, target));
+        }
+        distance_visiting_.erase(key);
+        distance_memo_.emplace(key, best);
+        return best;
+    }
+
+  private:
+    int MinTreeSize(Group* group) {
+        if (auto it = size_memo_.find(group); it != size_memo_.end()) {
+            return it->second;
+        }
+        if (!size_visiting_.insert(group).second) {
+            return kInfiniteDistance;
+        }
+
+        int best = kInfiniteDistance;
+        for (auto pe : group->GetPhysicalExprs()) {
+            int size = 1;
+            for (auto* child : Children(*pe)) {
+                int child_size = MinTreeSize(child);
+                if (child_size >= kInfiniteDistance) {
+                    size = kInfiniteDistance;
+                    break;
+                }
+                size += child_size;
+            }
+            best = std::min(best, size);
+        }
+
+        size_visiting_.erase(group);
+        size_memo_.emplace(group, best);
+        return best;
+    }
+
+    int Distance(const PhysicalExpr& expr, const PhysicalPlanNode& target) {
+        const auto source_children = Children(expr);
+        const auto target_children = Children(target);
+        return LabelCost(expr, target) + ChildrenDistance(source_children, target_children);
+    }
+
+    int ChildrenDistance(const std::vector<Group*>& source_children,
+                         const std::vector<const PhysicalPlanNode*>& target_children) {
+        std::vector<std::vector<int>> dp(
+            source_children.size() + 1, std::vector<int>(target_children.size() + 1, 0));
+
+        for (size_t i = 1; i <= source_children.size(); ++i) {
+            dp[i][0] = dp[i - 1][0] + MinTreeSize(source_children[i - 1]);
+        }
+        for (size_t j = 1; j <= target_children.size(); ++j) {
+            dp[0][j] = dp[0][j - 1] + TargetTreeSize(*target_children[j - 1]);
+        }
+
+        for (size_t i = 1; i <= source_children.size(); ++i) {
+            for (size_t j = 1; j <= target_children.size(); ++j) {
+                const int del = dp[i - 1][j] + MinTreeSize(source_children[i - 1]);
+                const int ins = dp[i][j - 1] + TargetTreeSize(*target_children[j - 1]);
+                const int sub = dp[i - 1][j - 1]
+                                + Distance(source_children[i - 1], *target_children[j - 1]);
+                dp[i][j] = std::min({del, ins, sub});
+            }
+        }
+        return dp[source_children.size()][target_children.size()];
+    }
+
+    static int LabelCost(const PhysicalExpr& expr, const PhysicalPlanNode& target) {
+        return std::visit(utils::Overloaded{
+            [](const physical::SeqScan& op, const SeqScan& t) {
+                return op.table == t.table && op.alias == t.alias ? 0 : 1;
+            },
+            [](const physical::IndexSeek& op, const IndexSeek& t) {
+                return op.table == t.table && op.alias == t.alias
+                       && EquivalentPredicate(op.predicate, t.predicate)
+                    ? 0
+                    : 1;
+            },
+            [](const physical::Filter& op, const PhysicalFilter& t) {
+                return EquivalentPredicate(op.predicate, t.predicate) ? 0 : 1;
+            },
+            [](const physical::Projection& op, const PhysicalProjection& t) {
+                return op.expressions == t.expressions ? 0 : 1;
+            },
+            [](const physical::NestedLoopJoin& op, const NestedLoopJoin& t) {
+                return op.type == t.type && EquivalentPredicate(op.qual, t.qual) ? 0 : 1;
+            },
+            [](const physical::NestedLoopCrossJoin&, const NestedLoopCrossJoin&) {
+                return 0;
+            },
+            [](const physical::HashJoin& op, const HashJoin& t) {
+                return op.type == t.type && EquivalentPredicate(op.qual, t.qual) ? 0 : 1;
+            },
+            [](const physical::MergeJoin& op, const MergeJoin& t) {
+                return op.type == t.type && EquivalentPredicate(op.qual, t.qual) ? 0 : 1;
+            },
+            [](const physical::Sort& op, const PhysicalSort& t) {
+                return op.keys == t.keys ? 0 : 1;
+            },
+            [](const physical::Aggregation& op, const PhysicalAggregation& t) {
+                return op.group_by == t.group_by && op.aggregates == t.aggregates ? 0 : 1;
+            },
+            [](const physical::StreamAggregation& op, const PhysicalStreamAggregation& t) {
+                return op.group_by == t.group_by && op.aggregates == t.aggregates ? 0 : 1;
+            },
+            [](const physical::PartialAggregation& op, const PhysicalPartialAggregation& t) {
+                return op.group_by == t.group_by && op.aggregates == t.aggregates ? 0 : 1;
+            },
+            [](const physical::FinalAggregation& op, const PhysicalFinalAggregation& t) {
+                return op.group_by == t.group_by && op.aggregates == t.aggregates ? 0 : 1;
+            },
+            [](const auto&, const auto&) {
+                return 1;
+            },
+        }, expr.root_operator, target.node);
+    }
+
+    std::unordered_map<std::pair<Group*, const PhysicalPlanNode*>, int, PairHash> distance_memo_;
+    std::unordered_set<std::pair<Group*, const PhysicalPlanNode*>, PairHash> distance_visiting_;
+    std::unordered_map<Group*, int> size_memo_;
+    std::unordered_set<Group*> size_visiting_;
+};
+
 
 }  // namespace
 
 MatchResult IsReachable(utils::NotNull<Group*> root, const PhysicalPlanNode& target) {
     auto r = MatchGroup(root.get(), target, 0);
-    return {r.ok, r.reason};
+    TreeDistance distance;
+    return {r.ok, r.reason, distance.Distance(root.get(), target)};
 }
 
 MatchResult IsPlanReachable(std::istream& sql, const PhysicalPlanNode& target,

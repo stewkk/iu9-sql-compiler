@@ -15,6 +15,7 @@ namespace stewkk::sql {
 struct MatchResult {
     bool reachable;
     std::string mismatch;
+    int closest_distance = 0;
 };
 
 MatchResult IsReachable(utils::NotNull<Group*> root, const PhysicalPlanNode& target);

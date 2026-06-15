@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <format>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include <stewkk/sql/utils/overloaded.hpp>
@@ -43,6 +44,8 @@ std::shared_ptr<Expression> Share(Expression e) {
 }
 
 std::string CanonicalKey(const Expression& e);
+Expression NormalizePredicate(const Expression& e);
+Expression NormalizeNegated(const Expression& e);
 
 std::string CanonicalKey(const BinaryExpression& e) {
   return std::format("({} {} {})", static_cast<int>(e.binop),
@@ -89,7 +92,7 @@ void CollectByOp(const Expression& e, BinaryOp op, std::vector<Expression>& out)
     CollectByOp(*b->rhs, op, out);
     return;
   }
-  out.push_back(CanonicalizePredicate(e));
+  out.push_back(NormalizePredicate(e));
 }
 
 Expression ChainByOp(std::vector<Expression> exprs, BinaryOp op) {
@@ -103,9 +106,93 @@ Expression ChainByOp(std::vector<Expression> exprs, BinaryOp op) {
   return acc;
 }
 
-}  // namespace
+std::optional<BinaryOp> InvertComparison(BinaryOp op) {
+  switch (op) {
+    case BinaryOp::kGt: return BinaryOp::kLe;
+    case BinaryOp::kLt: return BinaryOp::kGe;
+    case BinaryOp::kLe: return BinaryOp::kGt;
+    case BinaryOp::kGe: return BinaryOp::kLt;
+    case BinaryOp::kNotEq: return BinaryOp::kEq;
+    case BinaryOp::kEq: return BinaryOp::kNotEq;
+    case BinaryOp::kOr:
+    case BinaryOp::kAnd:
+    case BinaryOp::kPlus:
+    case BinaryOp::kMinus:
+    case BinaryOp::kMul:
+    case BinaryOp::kDiv:
+    case BinaryOp::kMod:
+    case BinaryOp::kPow:
+      return std::nullopt;
+  }
+}
 
-Expression CanonicalizePredicate(const Expression& e) {
+std::optional<BinaryOp> ReverseComparison(BinaryOp op) {
+  switch (op) {
+    case BinaryOp::kGt: return BinaryOp::kLt;
+    case BinaryOp::kLt: return BinaryOp::kGt;
+    case BinaryOp::kLe: return BinaryOp::kGe;
+    case BinaryOp::kGe: return BinaryOp::kLe;
+    case BinaryOp::kNotEq: return BinaryOp::kNotEq;
+    case BinaryOp::kEq: return BinaryOp::kEq;
+    case BinaryOp::kOr:
+    case BinaryOp::kAnd:
+    case BinaryOp::kPlus:
+    case BinaryOp::kMinus:
+    case BinaryOp::kMul:
+    case BinaryOp::kDiv:
+    case BinaryOp::kMod:
+    case BinaryOp::kPow:
+      return std::nullopt;
+  }
+}
+
+std::optional<Literal> InvertLiteral(Literal literal) {
+  switch (literal) {
+    case Literal::kTrue: return Literal::kFalse;
+    case Literal::kFalse: return Literal::kTrue;
+    case Literal::kNull:
+    case Literal::kUnknown:
+      return std::nullopt;
+  }
+}
+
+Expression ExpandIn(const InExpression& in) {
+  Expression lhs = NormalizePredicate(*in.lhs);
+  std::vector<Expression> values;
+  values.reserve(in.values.size());
+  for (const auto& value : in.values) {
+    values.push_back(NormalizePredicate(value));
+  }
+  std::ranges::sort(values, [](const Expression& lhs, const Expression& rhs) {
+    return CanonicalKey(lhs) < CanonicalKey(rhs);
+  });
+
+  if (values.empty()) {
+    return InExpression{Share(std::move(lhs)), {}, in.negated};
+  }
+
+  const BinaryOp leaf_op = in.negated ? BinaryOp::kNotEq : BinaryOp::kEq;
+  const BinaryOp join_op = in.negated ? BinaryOp::kAnd : BinaryOp::kOr;
+
+  std::vector<Expression> terms;
+  terms.reserve(values.size());
+  for (auto& value : values) {
+    terms.push_back(BinaryExpression{Share(lhs), leaf_op, Share(std::move(value))});
+  }
+  return ChainByOp(std::move(terms), join_op);
+}
+
+Expression NormalizeBinary(const BinaryExpression& b) {
+  Expression lhs = NormalizePredicate(*b.lhs);
+  Expression rhs = NormalizePredicate(*b.rhs);
+  if (auto reversed = ReverseComparison(b.binop);
+      reversed && CanonicalKey(rhs) < CanonicalKey(lhs)) {
+    return BinaryExpression{Share(std::move(rhs)), *reversed, Share(std::move(lhs))};
+  }
+  return BinaryExpression{Share(std::move(lhs)), b.binop, Share(std::move(rhs))};
+}
+
+Expression NormalizePredicate(const Expression& e) {
   return std::visit(utils::Overloaded{
       [](const BinaryExpression& b) -> Expression {
         if (b.binop == BinaryOp::kAnd || b.binop == BinaryOp::kOr) {
@@ -114,32 +201,75 @@ Expression CanonicalizePredicate(const Expression& e) {
           CollectByOp(*b.rhs, b.binop, terms);
           return ChainByOp(std::move(terms), b.binop);
         }
-        return BinaryExpression{
-            Share(CanonicalizePredicate(*b.lhs)),
-            b.binop,
-            Share(CanonicalizePredicate(*b.rhs)),
-        };
+        return NormalizeBinary(b);
       },
       [](const UnaryExpression& u) -> Expression {
-        return UnaryExpression{u.op, Share(CanonicalizePredicate(*u.child))};
+        if (u.op == UnaryOp::kNot) {
+          return NormalizeNegated(*u.child);
+        }
+        return UnaryExpression{u.op, Share(NormalizePredicate(*u.child))};
+      },
+      [](const InExpression& i) -> Expression {
+        return ExpandIn(i);
+      },
+      [](const AggregateExpression& a) -> Expression {
+        if (a.is_star || !a.argument) return a;
+        return AggregateExpression{a.function, Share(NormalizePredicate(*a.argument)), a.is_star};
+      },
+      [](const auto& leaf) -> Expression { return leaf; },
+  }, e);
+}
+
+Expression NormalizeNegated(const Expression& e) {
+  return std::visit(utils::Overloaded{
+      [](const BinaryExpression& b) -> Expression {
+        if (b.binop == BinaryOp::kAnd || b.binop == BinaryOp::kOr) {
+          const BinaryOp op = b.binop == BinaryOp::kAnd ? BinaryOp::kOr : BinaryOp::kAnd;
+          std::vector<Expression> terms;
+          CollectByOp(NormalizeNegated(*b.lhs), op, terms);
+          CollectByOp(NormalizeNegated(*b.rhs), op, terms);
+          return ChainByOp(std::move(terms), op);
+        }
+        if (auto inverted = InvertComparison(b.binop)) {
+          return BinaryExpression{
+              Share(NormalizePredicate(*b.lhs)),
+              *inverted,
+              Share(NormalizePredicate(*b.rhs)),
+          };
+        }
+        return UnaryExpression{UnaryOp::kNot, Share(NormalizePredicate(Expression{b}))};
+      },
+      [](const UnaryExpression& u) -> Expression {
+        if (u.op == UnaryOp::kNot) {
+          return NormalizePredicate(*u.child);
+        }
+        return UnaryExpression{UnaryOp::kNot, Share(NormalizePredicate(Expression{u}))};
       },
       [](const InExpression& i) -> Expression {
         std::vector<Expression> values;
         values.reserve(i.values.size());
         for (const auto& value : i.values) {
-          values.push_back(CanonicalizePredicate(value));
+          values.push_back(value);
         }
-        std::ranges::sort(values, [](const Expression& lhs, const Expression& rhs) {
-          return CanonicalKey(lhs) < CanonicalKey(rhs);
-        });
-        return InExpression{Share(CanonicalizePredicate(*i.lhs)), std::move(values), i.negated};
+        return ExpandIn(InExpression{Share(*i.lhs), std::move(values), !i.negated});
       },
       [](const AggregateExpression& a) -> Expression {
-        if (a.is_star || !a.argument) return a;
-        return AggregateExpression{a.function, Share(CanonicalizePredicate(*a.argument)), a.is_star};
+        return UnaryExpression{UnaryOp::kNot, Share(NormalizePredicate(Expression{a}))};
       },
-      [](const auto& leaf) -> Expression { return leaf; },
+      [](Literal l) -> Expression {
+        if (auto inverted = InvertLiteral(l)) return *inverted;
+        return UnaryExpression{UnaryOp::kNot, Share(Expression{l})};
+      },
+      [](const auto& leaf) -> Expression {
+        return UnaryExpression{UnaryOp::kNot, Share(Expression{leaf})};
+      },
   }, e);
+}
+
+}  // namespace
+
+Expression CanonicalizePredicate(const Expression& e) {
+  return NormalizePredicate(e);
 }
 
 bool EquivalentPredicate(const Expression& lhs, const Expression& rhs) {

@@ -190,6 +190,86 @@ def test_index_seek_prefix_eq_from_xml():
     assert result == "(IndexSeek (= (attr t0 region_id) 7) customers t0)"
 
 
+def test_index_seek_bounded_range_from_xml():
+    plan = showplan("""
+      <RelOp PhysicalOp="Index Seek" LogicalOp="Index Seek">
+        <IndexScan>
+          <Object Database="[fuzz]" Schema="[dbo]" Table="[customers]" Index="[ix_customers_region_id]"/>
+          <SeekPredicates>
+            <SeekPredicateNew>
+              <SeekKeys>
+                <StartRange ScanType="GT">
+                  <RangeColumns>
+                    <ColumnReference Database="[fuzz]" Schema="[dbo]" Table="[customers]" Column="region_id"/>
+                  </RangeColumns>
+                  <RangeExpressions>
+                    <ScalarOperator><Const ConstValue="(3)"/></ScalarOperator>
+                  </RangeExpressions>
+                </StartRange>
+                <EndRange ScanType="LT">
+                  <RangeColumns>
+                    <ColumnReference Database="[fuzz]" Schema="[dbo]" Table="[customers]" Column="region_id"/>
+                  </RangeColumns>
+                  <RangeExpressions>
+                    <ScalarOperator><Const ConstValue="(8)"/></ScalarOperator>
+                  </RangeExpressions>
+                </EndRange>
+              </SeekKeys>
+            </SeekPredicateNew>
+          </SeekPredicates>
+        </IndexScan>
+      </RelOp>
+    """)
+
+    result = convert(plan)
+
+    assert result == (
+        "(IndexSeek (and (> (attr customers region_id) 3)"
+        " (< (attr customers region_id) 8)) customers)"
+    )
+
+
+def test_index_seek_split_ranges_from_xml():
+    plan = showplan("""
+      <RelOp PhysicalOp="Index Seek" LogicalOp="Index Seek">
+        <IndexScan>
+          <Object Database="[fuzz]" Schema="[dbo]" Table="[customers]" Index="[ix_customers_region_id]"/>
+          <SeekPredicates>
+            <SeekPredicateNew>
+              <SeekKeys>
+                <EndRange ScanType="LT">
+                  <RangeColumns>
+                    <ColumnReference Database="[fuzz]" Schema="[dbo]" Table="[customers]" Column="region_id"/>
+                  </RangeColumns>
+                  <RangeExpressions>
+                    <ScalarOperator><Const ConstValue="(8)"/></ScalarOperator>
+                  </RangeExpressions>
+                </EndRange>
+              </SeekKeys>
+              <SeekKeys>
+                <StartRange ScanType="GT">
+                  <RangeColumns>
+                    <ColumnReference Database="[fuzz]" Schema="[dbo]" Table="[customers]" Column="region_id"/>
+                  </RangeColumns>
+                  <RangeExpressions>
+                    <ScalarOperator><Const ConstValue="(8)"/></ScalarOperator>
+                  </RangeExpressions>
+                </StartRange>
+              </SeekKeys>
+            </SeekPredicateNew>
+          </SeekPredicates>
+        </IndexScan>
+      </RelOp>
+    """)
+
+    result = convert(plan)
+
+    assert result == (
+        "(IndexSeek (or (< (attr customers region_id) 8)"
+        " (> (attr customers region_id) 8)) customers)"
+    )
+
+
 def test_nested_loops_outer_reference_index_seek_is_skipped_from_xml():
     plan = showplan("""
       <RelOp PhysicalOp="Nested Loops" LogicalOp="Inner Join">

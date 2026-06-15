@@ -405,6 +405,7 @@ TEST(ReachabilityTest, SeqScanReachable) {
   std::stringstream s{"SELECT * FROM users;"};
   auto result = IsPlanReachable(s, SeqScan{"users"}, {}, MakeTestSchema());
   ASSERT_THAT(result.reachable, IsTrue());
+  ASSERT_THAT(result.closest_distance, Eq(0));
 }
 
 TEST(ReachabilityTest, SeqScanWrongTable) {
@@ -412,6 +413,7 @@ TEST(ReachabilityTest, SeqScanWrongTable) {
   auto result = IsPlanReachable(s, SeqScan{"orders"}, {}, MakeTestSchema());
   ASSERT_THAT(result.reachable, IsFalse());
   ASSERT_THAT(result.mismatch, HasSubstr("users"));
+  ASSERT_THAT(result.closest_distance, Eq(1));
 }
 
 TEST(ReachabilityTest, IndexSeekReachableWithIndexCatalog) {
@@ -587,6 +589,91 @@ TEST(ReachabilityTest, NotInExpandedAndChainIgnoresComparisonOrder) {
   ASSERT_THAT(result.reachable, IsTrue());
 }
 
+TEST(ReachabilityTest, NotBetweenMatchesExpandedRangeDisjunction) {
+  std::stringstream s{"SELECT * FROM users WHERE users.id NOT BETWEEN 1 AND 3;"};
+  Expression lt = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kLt,
+      std::make_shared<Expression>(IntConst{1})};
+  Expression gt = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kGt,
+      std::make_shared<Expression>(IntConst{3})};
+  Expression range = BinaryExpression{
+      std::make_shared<Expression>(std::move(lt)),
+      BinaryOp::kOr,
+      std::make_shared<Expression>(std::move(gt))};
+
+  auto result = IsPlanReachable(s, PhysicalFilter{
+      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}), range}, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
+TEST(ReachabilityTest, NegatedConjunctionMatchesDeMorganForm) {
+  std::stringstream s{"SELECT * FROM users WHERE NOT (users.id = 1 AND users.age >= 30);"};
+  Expression id_ne = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kNotEq,
+      std::make_shared<Expression>(IntConst{1})};
+  Expression age_lt = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "age"}),
+      BinaryOp::kLt,
+      std::make_shared<Expression>(IntConst{30})};
+  Expression demorgan = BinaryExpression{
+      std::make_shared<Expression>(std::move(age_lt)),
+      BinaryOp::kOr,
+      std::make_shared<Expression>(std::move(id_ne))};
+
+  auto result = IsPlanReachable(s, PhysicalFilter{
+      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}), demorgan}, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
+TEST(ReachabilityTest, ReversedComparisonOperandsMatch) {
+  std::stringstream s{"SELECT * FROM users WHERE 1 < users.id;"};
+  Expression gt = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kGt,
+      std::make_shared<Expression>(IntConst{1})};
+
+  auto result = IsPlanReachable(s, PhysicalFilter{
+      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}), gt}, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
+TEST(ReachabilityTest, JoinQualNormalizesInAndNotBetween) {
+  std::stringstream s{
+      "SELECT * FROM users CROSS JOIN orders "
+      "WHERE users.id IN (22) AND orders.id NOT BETWEEN 1 AND 3;"};
+  Expression users_eq = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(IntConst{22})};
+  Expression orders_lt = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"orders", "id"}),
+      BinaryOp::kLt,
+      std::make_shared<Expression>(IntConst{1})};
+  Expression orders_gt = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"orders", "id"}),
+      BinaryOp::kGt,
+      std::make_shared<Expression>(IntConst{3})};
+  Expression orders_range = BinaryExpression{
+      std::make_shared<Expression>(std::move(orders_lt)),
+      BinaryOp::kOr,
+      std::make_shared<Expression>(std::move(orders_gt))};
+  Expression qual = BinaryExpression{
+      std::make_shared<Expression>(std::move(users_eq)),
+      BinaryOp::kAnd,
+      std::make_shared<Expression>(std::move(orders_range))};
+
+  auto result = IsPlanReachable(s, NestedLoopJoin{
+      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
+      std::make_shared<PhysicalPlanNode>(SeqScan{"orders"}),
+      JoinType::kInner,
+      qual}, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
 
 
 TEST(ReachabilityTest, OrderByReachableViaSortEnforcer) {
@@ -613,6 +700,7 @@ TEST(ReachabilityTest, OrderByWrongDirectionNotReachable) {
       SortOrder{{SortKey{"users", "id", Direction::kDesc}}}};
   auto result = IsPlanReachable(s, target, {}, MakeTestSchema());
   ASSERT_THAT(result.reachable, IsFalse());
+  ASSERT_THAT(result.closest_distance, Eq(1));
 }
 
 

@@ -238,25 +238,35 @@ def _convert_seek_predicates(relop: ET.Element, table: str) -> str | None:
     if seek_preds is None:
         return None
 
-    conditions = []
-    for range_elem in (seek_preds.findall(f".//{NS}Prefix") +
-                       seek_preds.findall(f".//{NS}StartRange") +
-                       seek_preds.findall(f".//{NS}EndRange")):
-        op = _SEEK_SCAN_TYPES.get(range_elem.get("ScanType", ""))
-        if not op:
-            continue
-        col_refs = range_elem.findall(f"{NS}RangeColumns/{NS}ColumnReference")
-        expr_elems = range_elem.findall(f"{NS}RangeExpressions/{NS}ScalarOperator")
-        for col_ref, expr_elem in zip(col_refs, expr_elems):
-            col = col_ref.get("Column", "").strip("[]")
-            col_table = _strip_sql_name(col_ref.get("Alias") or col_ref.get("Table") or table)
-            conditions.append(f"({op} (attr {col_table} {col}) {_convert_scalar(expr_elem)})")
+    alternatives = []
+    for seek_keys in seek_preds.findall(f".//{NS}SeekKeys"):
+        conditions = []
+        for range_elem in (seek_keys.findall(f"{NS}Prefix") +
+                           seek_keys.findall(f"{NS}StartRange") +
+                           seek_keys.findall(f"{NS}EndRange")):
+            op = _SEEK_SCAN_TYPES.get(range_elem.get("ScanType", ""))
+            if not op:
+                continue
+            col_refs = range_elem.findall(f"{NS}RangeColumns/{NS}ColumnReference")
+            expr_elems = range_elem.findall(f"{NS}RangeExpressions/{NS}ScalarOperator")
+            for col_ref, expr_elem in zip(col_refs, expr_elems):
+                col = col_ref.get("Column", "").strip("[]")
+                col_table = _strip_sql_name(col_ref.get("Alias") or col_ref.get("Table") or table)
+                conditions.append(f"({op} (attr {col_table} {col}) {_convert_scalar(expr_elem)})")
 
-    if not conditions:
+        if conditions:
+            alternatives.append(_fold_binary("and", conditions))
+
+    if not alternatives:
         return None
-    result = conditions[0]
-    for c in conditions[1:]:
-        result = f"(and {result} {c})"
+    return _fold_binary("or", alternatives)
+
+def _fold_binary(op: str, exprs: list[str]) -> str:
+    if not exprs:
+        raise ValueError("_fold_binary requires at least one expression")
+    result = exprs[0]
+    for expr in exprs[1:]:
+        result = f"({op} {result} {expr})"
     return result
 
 

@@ -3,7 +3,7 @@ Reachability fuzzer: generate a random SQL query, ask MS SQL Server for its
 execution plan, convert that plan to the project's serialized format, then
 invoke our CLI in ``--check-reachable`` mode to confirm that our exhaustive
 search would have considered it. Stops at the first plan our optimizer cannot
-reach.
+reach, unless ``--collect-stats`` is used.
 
 The fuzzer only flags a divergence when the MS SQL plan converts cleanly but
 our optimizer cannot reach it. Coverage gaps in the XML→s-expr converter
@@ -20,6 +20,7 @@ Usage:
     python -m research.fuzz.reach_fuzz \\
         --cli build/bin/sql \\
         --data-dir test/static/executor/test_data \\
+        [--collect-stats N] \\
         [--start-seed 0]
 """
 from __future__ import annotations
@@ -27,6 +28,7 @@ from __future__ import annotations
 import argparse
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -44,6 +46,8 @@ from research.query_generator import (
     load_schema,
     render_query,
 )
+
+DISTANCE_RE = re.compile(r"\bdistance=(\d+)\b")
 
 
 def _make_reachability_data_dir(source_dir: Path, schema: "Schema", tmp_dir: Path) -> Path:
@@ -221,17 +225,35 @@ def _run_reach_check(
         Path(plan_path).unlink(missing_ok=True)
 
 
+def _parse_distance(proc: subprocess.CompletedProcess) -> int | None:
+    match = DISTANCE_RE.search(proc.stdout)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--cli", required=True, help="Path to our sql binary")
     ap.add_argument("--data-dir", required=True, help="CSV table directory (shared with MS SQL)")
     ap.add_argument("--start-seed", type=int, default=0)
+    ap.add_argument(
+        "--collect-stats",
+        type=int,
+        metavar="N",
+        help=(
+            "Check exactly N seeds, keep going after reachability divergences, "
+            "and print skipped/ok/divergent totals plus average closest-plan distance"
+        ),
+    )
     ap.add_argument("--mssql-host", default="localhost")
     ap.add_argument("--mssql-port", type=int, default=1433)
     ap.add_argument("--mssql-user", default="sa")
     ap.add_argument("--mssql-password", default="Password123!")
     ap.add_argument("--mssql-database", default="fuzz")
     args = ap.parse_args()
+    if args.collect_stats is not None and args.collect_stats < 0:
+        ap.error("--collect-stats must be non-negative")
 
     source_data_dir = Path(args.data_dir)
     schema = load_schema(source_data_dir)
@@ -255,66 +277,122 @@ def main() -> None:
     ms = DIALECTS["mssql"]
 
     skipped_convert = 0
+    skipped_converter_errors = 0
     skipped_mssql = 0
+    ok = 0
+    divergent = 0
+    checked = 0
+    distance_sum = 0
+    distance_count = 0
+    distance_missing = 0
 
-    for seed in count(args.start_seed):
-        rng = random.Random(seed)
-        query = QueryGenerator(schema, rng).generate()
-        ours_sql = render_query(query, pg) + ";"
-        # OPTION (RECOMPILE) embeds literal values in the plan so the converter
-        # sees Const nodes instead of @P parameter references.
-        theirs_sql = render_query(query, ms) + " OPTION (RECOMPILE);"
+    seeds = (
+        range(args.start_seed, args.start_seed + args.collect_stats)
+        if args.collect_stats is not None
+        else count(args.start_seed)
+    )
+    collect_stats = args.collect_stats is not None
 
-        try:
-            plan_xml = mssql.get_plan(theirs_sql)
-        except Exception as e:
-            skipped_mssql += 1
-            if seed % 25 == 0:
-                print(f"seed={seed} mssql refused: {e}", flush=True)
-            continue
+    try:
+        for seed in seeds:
+            checked += 1
+            rng = random.Random(seed)
+            query = QueryGenerator(schema, rng).generate()
+            ours_sql = render_query(query, pg) + ";"
+            # OPTION (RECOMPILE) embeds literal values in the plan so the converter
+            # sees Const nodes instead of @P parameter references.
+            theirs_sql = render_query(query, ms) + " OPTION (RECOMPILE);"
 
-        try:
-            converted = convert_plan(plan_xml)
-        except NotImplementedError as e:
-            skipped_convert += 1
-            if "outer-reference index seek" in str(e):
-                print(f"seed={seed} converter skip: {e}", flush=True)
-            elif seed % 25 == 0:
-                print(f"seed={seed} converter skip: {e}", flush=True)
-            continue
-        except Exception as e:
-            print(f"seed={seed} converter error: {e}\n--- query:\n{theirs_sql}")
-            sys.exit(2)
+            try:
+                plan_xml = mssql.get_plan(theirs_sql)
+            except Exception as e:
+                skipped_mssql += 1
+                if seed % 25 == 0:
+                    print(f"seed={seed} mssql refused: {e}", flush=True)
+                continue
 
-        target_plan = _wrap_projection(converted, query)
+            try:
+                converted = convert_plan(plan_xml)
+            except NotImplementedError as e:
+                skipped_convert += 1
+                if "outer-reference index seek" in str(e):
+                    print(f"seed={seed} converter skip: {e}", flush=True)
+                elif seed % 25 == 0:
+                    print(f"seed={seed} converter skip: {e}", flush=True)
+                continue
+            except Exception as e:
+                print(f"seed={seed} converter error: {e}\n--- query:\n{theirs_sql}")
+                if collect_stats:
+                    skipped_converter_errors += 1
+                    continue
+                sys.exit(2)
 
-        try:
-            proc = _run_reach_check(args.cli, str(reach_data_dir), ours_sql, target_plan)
-        except subprocess.TimeoutExpired:
-            print(f"DIVERGENCE seed={seed}: reachability check timed out")
+            target_plan = _wrap_projection(converted, query)
+
+            try:
+                proc = _run_reach_check(args.cli, str(reach_data_dir), ours_sql, target_plan)
+            except subprocess.TimeoutExpired:
+                divergent += 1
+                distance_missing += 1
+                print(f"DIVERGENCE seed={seed}: reachability check timed out")
+                print(f"\n--- query (ours):\n{ours_sql}")
+                print(f"\n--- target plan:\n{target_plan}")
+                if collect_stats:
+                    continue
+                sys.exit(1)
+
+            distance = _parse_distance(proc)
+            if distance is None:
+                distance_missing += 1
+            else:
+                distance_sum += distance
+                distance_count += 1
+
+            if proc.returncode == 0:
+                ok += 1
+                if seed % 25 == 0:
+                    print(
+                        f"seed={seed} ok"
+                        f" (skipped: {skipped_convert} convert, {skipped_mssql} mssql)",
+                        flush=True,
+                    )
+                continue
+
+            # Non-zero: either parse/optimizer error, or NOT REACHABLE.
+            divergent += 1
+            print(f"DIVERGENCE seed={seed}: exit={proc.returncode}")
             print(f"\n--- query (ours):\n{ours_sql}")
-            print(f"\n--- target plan:\n{target_plan}")
+            print(f"\n--- query (mssql):\n{theirs_sql}")
+            print(f"\n--- mssql plan (converted):\n{target_plan}")
+            if proc.stdout:
+                print(f"\n--- stdout:\n{proc.stdout}", end="")
+            if proc.stderr:
+                print(f"\n--- stderr:\n{proc.stderr}", end="")
+            if collect_stats:
+                continue
             sys.exit(1)
-
-        if proc.returncode == 0:
-            if seed % 25 == 0:
-                print(
-                    f"seed={seed} ok"
-                    f" (skipped: {skipped_convert} convert, {skipped_mssql} mssql)",
-                    flush=True,
+    finally:
+        if collect_stats:
+            skipped = skipped_convert + skipped_converter_errors + skipped_mssql
+            average_distance = distance_sum / distance_count if distance_count else None
+            print(
+                "\nReachability fuzz stats:"
+                f"\n  seeds: {checked}/{args.collect_stats}"
+                f"\n  ok: {ok}"
+                f"\n  skipped: {skipped}"
+                f"\n    converter: {skipped_convert}"
+                f"\n    converter_errors: {skipped_converter_errors}"
+                f"\n    mssql: {skipped_mssql}"
+                f"\n  divergent: {divergent}"
+                + (
+                    f"\n  average_distance: {average_distance:.3f}"
+                    if average_distance is not None
+                    else "\n  average_distance: n/a"
                 )
-            continue
-
-        # Non-zero: either parse/optimizer error, or NOT REACHABLE.
-        print(f"DIVERGENCE seed={seed}: exit={proc.returncode}")
-        print(f"\n--- query (ours):\n{ours_sql}")
-        print(f"\n--- query (mssql):\n{theirs_sql}")
-        print(f"\n--- mssql plan (converted):\n{target_plan}")
-        if proc.stdout:
-            print(f"\n--- stdout:\n{proc.stdout}", end="")
-        if proc.stderr:
-            print(f"\n--- stderr:\n{proc.stderr}", end="")
-        sys.exit(1)
+                + f"\n  distance_samples: {distance_count}"
+                + f"\n  distance_missing: {distance_missing}",
+                flush=True,
+            )
 
 
 if __name__ == "__main__":

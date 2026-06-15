@@ -232,10 +232,10 @@ int main(int argc, char** argv) {
       return kOptimizerError;
     }
     if (mr.reachable) {
-      std::cout << "REACHABLE\n";
+      std::cout << "REACHABLE distance=" << mr.closest_distance << "\n";
       return kOk;
     }
-    std::cout << "NOT REACHABLE: " << mr.mismatch << "\n";
+    std::cout << "NOT REACHABLE distance=" << mr.closest_distance << ": " << mr.mismatch << "\n";
     return kNotReachable;
   }
 
