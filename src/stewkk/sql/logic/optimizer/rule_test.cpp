@@ -246,6 +246,36 @@ TEST(TransformationRulesTest, PushesPartialAggregationBelowJoin) {
       new_join.lhs->GetLogicalExprs()[0]->root_operator));
 }
 
+TEST(TransformationRulesTest, PartialAggregationBelowJoinKeepsOnlyLeftGroupBy) {
+  Memo memo;
+  auto a = memo.AddGroup(logical::Table{"a"})->group;
+  auto b = memo.AddGroup(logical::Table{"b"})->group;
+  auto join = memo.AddGroup(logical::Join{
+      a, b, JoinType::kInner, Eq(Attribute{"a", "id"}, Attribute{"b", "aid"})})->group;
+  auto agg = memo.AddGroup(logical::Aggregation{
+      join,
+      {Attribute{"a", "region"}, Attribute{"b", "brand"}},
+      {Sum(Attribute{"a", "x"})}});
+  SchemaCatalog schema;
+  ConstraintCatalog constraints;
+  RuleContext ctx{schema, constraints};
+  AggregationPushdownThroughJoin rule;
+
+  auto result = rule.Apply(agg, memo, ctx);
+
+  const auto& final = std::get<logical::FinalAggregation>(result->root_operator);
+  const auto& new_join = std::get<logical::Join>(
+      final.source->GetLogicalExprs()[0]->root_operator);
+  const auto& partial = std::get<logical::PartialAggregation>(
+      new_join.lhs->GetLogicalExprs()[0]->root_operator);
+  EXPECT_THAT(partial.group_by, ::testing::ElementsAre(
+      Expression{Attribute{"a", "region"}},
+      Expression{Attribute{"a", "id"}}));
+  EXPECT_THAT(final.group_by, ::testing::ElementsAre(
+      Expression{Attribute{"a", "region"}},
+      Expression{Attribute{"b", "brand"}}));
+}
+
 TEST(TransformationRulesTest, TransposesAggregationAndJoinWithConstraints) {
   Memo memo;
   auto a = memo.AddGroup(logical::Table{"a"})->group;

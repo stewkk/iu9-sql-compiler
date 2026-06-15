@@ -58,8 +58,31 @@ bool AggregatesUseOnlyLeft(const logical::Aggregation& agg,
   });
 }
 
+bool GroupByCanBeReconstructedAfterJoin(const logical::Aggregation& agg,
+                                        const std::unordered_set<std::string>& lhs_tables,
+                                        const std::unordered_set<std::string>& rhs_tables) {
+  return std::ranges::all_of(agg.group_by, [&](const Expression& expr) {
+    return ExprUsesOnlyTables(expr, lhs_tables) || ExprUsesOnlyTables(expr, rhs_tables);
+  });
+}
+
 bool ContainsExpr(const std::vector<Expression>& exprs, const Expression& needle) {
   return std::ranges::any_of(exprs, [&](const Expression& e) { return e == needle; });
+}
+
+std::vector<Expression> PartialGroupBy(const logical::Aggregation& agg,
+                                       const std::unordered_set<std::string>& lhs_tables,
+                                       const Attribute& join_key) {
+  std::vector<Expression> out;
+  for (const auto& expr : agg.group_by) {
+    if (ExprUsesOnlyTables(expr, lhs_tables)) {
+      out.push_back(expr);
+    }
+  }
+  if (!ContainsExpr(out, Expression{join_key})) {
+    out.push_back(join_key);
+  }
+  return out;
 }
 
 std::vector<Expression> FinalAggregates(const std::vector<Expression>& aggregates) {
@@ -78,7 +101,9 @@ bool CanApply(const logical::Aggregation& agg) {
   const auto* join = FindInnerJoin(agg.source);
   if (join == nullptr || !EquiJoinKeys(*join)) return false;
   auto lhs_tables = GroupTables(join->lhs);
-  return AggregatesUseOnlyLeft(agg, lhs_tables);
+  auto rhs_tables = GroupTables(join->rhs);
+  return AggregatesUseOnlyLeft(agg, lhs_tables)
+      && GroupByCanBeReconstructedAfterJoin(agg, lhs_tables, rhs_tables);
 }
 
 }  // namespace
@@ -98,10 +123,8 @@ LogicalOperator AggregationPushdownThroughJoin::ApplyImpl(utils::NotNull<Logical
     throw std::runtime_error{"AggregationPushdownThroughJoin requires an inner equijoin"};
   }
 
-  auto partial_group_by = agg.group_by;
-  if (!ContainsExpr(partial_group_by, Expression{keys->lhs})) {
-    partial_group_by.push_back(keys->lhs);
-  }
+  auto lhs_tables = GroupTables(join->lhs);
+  auto partial_group_by = PartialGroupBy(agg, lhs_tables, keys->lhs);
 
   auto partial = memo.AddGroup(
       logical::PartialAggregation{join->lhs, partial_group_by, agg.aggregates})->group;

@@ -1097,16 +1097,6 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteJoin(const Nes
 
 namespace {
 
-size_t FindAttrIndex(const AttributesInfo& attrs, const Attribute& a) {
-  auto it = std::find_if(attrs.begin(), attrs.end(), [&](const AttributeInfo& ai) {
-    return ai.table == a.table && ai.name == a.name;
-  });
-  if (it == attrs.end()) {
-    throw std::runtime_error{"hash join key attribute not found: " + a.table + "." + a.name};
-  }
-  return static_cast<size_t>(it - attrs.begin());
-}
-
 bool AttrMatches(const AttributeInfo& ai, const Attribute& a) {
   return ai.name == a.name && (a.table.empty() || ai.table == a.table);
 }
@@ -1185,21 +1175,6 @@ int CompareNonNullValues(const Value& lhs, const Value& rhs, Type type) {
   std::unreachable();
 }
 
-std::optional<BinaryExpression> FindHashJoinKey(const Expression& qual) {
-  std::vector<Expression> conjuncts;
-  CollectConjuncts(qual, conjuncts);
-  for (const auto& conjunct : conjuncts) {
-    const auto* bin = std::get_if<BinaryExpression>(&conjunct);
-    if (!bin || bin->binop != BinaryOp::kEq) continue;
-    if (!std::holds_alternative<Attribute>(*bin->lhs)
-        || !std::holds_alternative<Attribute>(*bin->rhs)) {
-      continue;
-    }
-    return *bin;
-  }
-  return std::nullopt;
-}
-
 } // namespace
 
 
@@ -1216,13 +1191,6 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashJoin(
   if (join.type != JoinType::kInner) {
     throw std::logic_error{"HashJoin executor supports only Inner joins"};
   }
-  const auto bin = FindHashJoinKey(join.qual);
-  if (!bin) {
-    throw std::logic_error{"HashJoin qual must contain an equality between attributes"};
-  }
-  const auto* a = std::get_if<Attribute>(bin->lhs.get());
-  const auto* b = std::get_if<Attribute>(bin->rhs.get());
-
   auto exec = co_await boost::asio::this_coro::executor;
   auto [lhs_attrs_chan, lhs_tuples_chan] = co_await GetChannels();
   auto lhs_task = SpawnExecutor(exec, *join.lhs, lhs_attrs_chan, lhs_tuples_chan);
@@ -1231,23 +1199,9 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashJoin(
 
   auto lhs_attrs = co_await lhs_attrs_chan.async_receive(boost::asio::use_awaitable);
   auto rhs_attrs = co_await rhs_attrs_chan.async_receive(boost::asio::use_awaitable);
-
- 
-  auto lhs_has = [&](const Attribute& attr) {
-    return std::any_of(lhs_attrs.begin(), lhs_attrs.end(), [&](const AttributeInfo& ai) {
-      return ai.table == attr.table && ai.name == attr.name;
-    });
-  };
-  const Attribute* lhs_attr = nullptr;
-  const Attribute* rhs_attr = nullptr;
-  if (lhs_has(*a)) { lhs_attr = a; rhs_attr = b; }
-  else if (lhs_has(*b)) { lhs_attr = b; rhs_attr = a; }
-  else {
-    throw std::runtime_error{"HashJoin qual: neither side of equality found in lhs attrs"};
-  }
-
-  size_t lhs_key_idx = FindAttrIndex(lhs_attrs, *lhs_attr);
-  size_t rhs_key_idx = FindAttrIndex(rhs_attrs, *rhs_attr);
+  auto keys = ResolveExecutorJoinKeys(join.qual, lhs_attrs, rhs_attrs);
+  size_t lhs_key_idx = FindAttrIndexFlexible(lhs_attrs, keys.lhs);
+  size_t rhs_key_idx = FindAttrIndexFlexible(rhs_attrs, keys.rhs);
 
   AttributesInfo out_attrs = lhs_attrs;
   std::ranges::copy(rhs_attrs, std::back_inserter(out_attrs));
@@ -1473,7 +1427,7 @@ boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteMergeJoin(
 
 template <typename ExpressionExecutor>
 boost::asio::awaitable<void> Executor<ExpressionExecutor>::ExecuteHashAggregate(
-    const PhysicalAggregation& agg, AttributesInfoChannel& out_attr_chan,
+    PhysicalAggregation agg, AttributesInfoChannel& out_attr_chan,
     TuplesChannel& out_tuples_chan) {
   Log("Executing hash aggregate");
   auto close_on_fail = boost::scope::make_scope_fail(
