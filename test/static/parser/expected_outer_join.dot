@@ -1,0 +1,5 @@
+digraph G { rankdir=BT; "join_users_books"[label="⟕\nON users.book = books.id"]
+"users" -> "join_users_books"
+"books" -> "join_users_books"
+"users"
+"books" }

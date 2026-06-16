@@ -1,0 +1,777 @@
+#include <gmock/gmock.h>
+
+#include <filesystem>
+#include <fstream>
+#include <string_view>
+#include <stdexcept>
+#include <unordered_map>
+
+#include <stewkk/sql/logic/parser/parser.hpp>
+#include <stewkk/sql/logic/optimizer/optimizer.hpp>
+#include <stewkk/sql/logic/optimizer/cardinality.hpp>
+#include <stewkk/sql/logic/optimizer/rules.hpp>
+#include <stewkk/sql/logic/optimizer/reachability.hpp>
+#include <stewkk/sql/logic/optimizer/schema_catalog.hpp>
+#include <stewkk/sql/logic/optimizer/properties/sort_property.hpp>
+#include <stewkk/sql/logic/executor/plan_serializer.hpp>
+
+using ::testing::Eq;
+using ::testing::Gt;
+using ::testing::IsTrue;
+using ::testing::IsFalse;
+using ::testing::HasSubstr;
+
+namespace stewkk::sql {
+
+// FIXME: branch and bound
+// FIXME: сделать API в виде DoStep(), которое возвращает какой-то внутренний стейт оптимизатора
+// FIXME: применение правила (по крайней мере трансформации), должно создавать несколько выражений
+
+int64_t EstimateCardinality(
+    std::string_view sql, std::unordered_map<std::string, int64_t> table_sizes) {
+  std::stringstream s{std::string{sql}};
+  Memo memo;
+  auto root = memo.Populate(GetAST(s).value().op);
+  CardinalityEstimates cardinality{std::move(table_sizes)};
+  return cardinality.GetCardinality(root->group);
+}
+
+SchemaCatalog MakeTestSchema() {
+  return SchemaCatalog({
+      {"users", {Attribute{"users", "id"}, Attribute{"users", "age"},
+                 Attribute{"users", "name"}}},
+      {"orders", {Attribute{"orders", "id"}, Attribute{"orders", "user_id"},
+                  Attribute{"orders", "customer_id"}, Attribute{"orders", "total"}}},
+      {"customers", {Attribute{"customers", "id"}, Attribute{"customers", "region_id"}}},
+      {"regions", {Attribute{"regions", "id"}}},
+      {"departments", {Attribute{"departments", "id"}}},
+      {"lineorder", {Attribute{"lineorder", "suppkey"}, Attribute{"lineorder", "value"}}},
+      {"supplier", {Attribute{"supplier", "id"}, Attribute{"supplier", "region"}}},
+  });
+}
+
+size_t RuleLineageCount(const std::vector<RuleLineageStat>& stats,
+                        RuleLineageKind kind, std::string_view rule_name) {
+  for (const auto& stat : stats) {
+    if (stat.kind == kind && stat.rule_name == rule_name) {
+      return stat.count;
+    }
+  }
+  return 0;
+}
+
+TEST(CardinalityEstimatesTest, AppliesFilterHeuristics) {
+  ASSERT_THAT(EstimateCardinality("SELECT * FROM users WHERE users.id = 1;", {{"users", 1000}}),
+              Eq(100));
+  ASSERT_THAT(
+      EstimateCardinality("SELECT * FROM users WHERE users.age BETWEEN 18 AND 30;",
+                          {{"users", 1000}}),
+      Eq(250));
+  ASSERT_THAT(
+      EstimateCardinality("SELECT * FROM users WHERE users.id IN (1, 2, 3);",
+                          {{"users", 1000}}),
+      Eq(300));
+}
+
+TEST(SchemaCatalogTest, DerivesJoinWidth) {
+  std::stringstream s{"SELECT * FROM users JOIN orders ON users.id = orders.user_id;"};
+  Memo memo;
+  auto root = memo.Populate(GetAST(s).value().op);
+  SchemaCatalog schema({
+      {"users", {Attribute{"users", "id"}, Attribute{"users", "name"}}},
+      {"orders", {Attribute{"orders", "id"}, Attribute{"orders", "user_id"},
+                  Attribute{"orders", "total"}}},
+  });
+
+  ASSERT_THAT(schema.GetWidth(root->group), Eq(5));
+}
+
+TEST(SchemaCatalogTest, MissingTableSchemaThrows) {
+  std::stringstream s{"SELECT * FROM users;"};
+  Memo memo;
+  auto root = memo.Populate(GetAST(s).value().op);
+  SchemaCatalog schema;
+
+  ASSERT_THROW(schema.GetWidth(root->group), std::runtime_error);
+}
+
+TEST(ConstraintCatalogTest, LoadsUniqueAndForeignKeyMetadata) {
+  auto dir = std::filesystem::temp_directory_path() / "iu9_sql_constraints_test";
+  std::filesystem::create_directories(dir);
+  {
+    std::ofstream out{dir / "constraints.meta"};
+    out << "unique departments id\n";
+    out << "foreign_key users department_id departments id\n";
+  }
+
+  auto catalog = LoadConstraintCatalogFromCsvDir(dir);
+
+  EXPECT_TRUE(catalog.IsUnique(Attribute{"departments", "id"}));
+  EXPECT_TRUE(catalog.HasForeignKey(Attribute{"users", "department_id"},
+                                    Attribute{"departments", "id"}));
+  std::filesystem::remove_all(dir);
+}
+
+TEST(OptimizerTest, Simple) {
+  std::stringstream s{"SELECT * FROM users;"};
+  Operator op = GetAST(s).value().op;
+  Optimizer optimizer(op, MakeMainRules(), {}, MakeTestSchema());
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(SerializeDot(got),
+              Eq("digraph G { rankdir=BT;\n"
+                 "  n0 [label=\"SeqScan\\nusers\\ncard=10\\ncost=1000\"]\n"
+                 "}\n"));
+  ASSERT_THAT(optimizer.GetBestCost(), Eq(1000));
+}
+
+TEST(OptimizerTest, JoinCommutativity) {
+  std::stringstream s{"SELECT * FROM users JOIN orders ON users.id = orders.user_id;"};
+  Operator op = GetAST(s).value().op;
+  Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({
+      {"users", 10000},
+      {"orders", 100},
+  }), MakeTestSchema());
+
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(Serialize(got), Eq("(HashJoin Inner (= (attr users id) (attr orders user_id)) (SeqScan orders) (SeqScan users))"));
+}
+
+TEST(OptimizerTest, MultiwayJoinOCR) {
+  std::stringstream s{
+      "SELECT orders.id, customers.id, regions.id FROM orders "
+      "JOIN customers ON orders.customer_id = customers.id "
+      "JOIN regions ON customers.region_id = regions.id;"};
+  Operator op = GetAST(s).value().op;
+  Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({
+      {"regions", 10},
+      {"customers", 500},
+      {"orders", 5000},
+  }), MakeTestSchema());
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(
+      Serialize(got),
+      Eq("(PhysicalProjection (exprs (attr orders id) (attr customers id) (attr regions id))"
+         " (HashJoin Inner (= (attr orders customer_id) (attr customers id))"
+         " (HashJoin Inner (= (attr customers region_id) (attr regions id))"
+         " (SeqScan regions) (SeqScan customers)) (SeqScan orders)))"));
+}
+
+TEST(OptimizerTest, MultiwayJoinROC) {
+  std::stringstream s{
+      "SELECT orders.id, customers.id, regions.id FROM regions "
+      "JOIN customers ON customers.region_id = regions.id "
+      "JOIN orders ON orders.customer_id = customers.id;"};
+  Operator op = GetAST(s).value().op;
+  Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({
+      {"regions", 10},
+      {"customers", 500},
+      {"orders", 5000},
+  }), MakeTestSchema());
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(
+      Serialize(got),
+      Eq("(PhysicalProjection (exprs (attr orders id) (attr customers id) (attr regions id))"
+         " (HashJoin Inner (= (attr orders customer_id) (attr customers id))"
+         " (HashJoin Inner (= (attr customers region_id) (attr regions id))"
+         " (SeqScan regions) (SeqScan customers)) (SeqScan orders)))"));
+}
+
+TEST(OptimizerTest, OrderBy) {
+  std::stringstream s{"SELECT * FROM users ORDER BY users.id;"};
+  auto parsed = GetAST(s).value();
+  SchemaCatalog schema({{"users", {Attribute{"users", "id"}, Attribute{"users", "age"}}}});
+  PropertySet required = parsed.required_order
+      ? PropertySet{SortProperty{*parsed.required_order}}
+      : PropertySet::Any();
+  Optimizer optimizer(parsed.op, MakeMainRules(), {}, std::move(schema), std::move(required));
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(Serialize(got), Eq("(Sort (keys users.id Asc) (SeqScan users))"));
+}
+
+TEST(OptimizerTest, UsesStreamAggregateWhenOrderCanBeProvided) {
+  std::stringstream s{"SELECT users.id, COUNT(*) FROM users GROUP BY users.id ORDER BY users.id;"};
+  auto parsed = GetAST(s).value();
+  PropertySet required{SortProperty{*parsed.required_order}};
+  Optimizer optimizer(parsed.op, MakeMainRules(), CardinalityEstimates({{"users", 1000}}),
+                      MakeTestSchema(), std::move(required));
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(
+      Serialize(got),
+      HasSubstr("(StreamAggregate (group_by (attr users id)) (aggs (COUNT *))"
+                " (Sort (keys users.id Asc) (SeqScan users)))"));
+}
+
+TEST(OptimizerTest, OrderBySortsAfterCrossJoin) {
+  std::stringstream s{
+      "SELECT * FROM departments CROSS JOIN orders ORDER BY departments.id;"};
+  auto parsed = GetAST(s).value();
+  SchemaCatalog schema({
+      {"departments", {Attribute{"departments", "id"}}},
+      {"orders", {Attribute{"orders", "id"}}},
+  });
+  PropertySet required{SortProperty{*parsed.required_order}};
+  Optimizer optimizer(parsed.op, MakeMainRules(), {}, std::move(schema), std::move(required));
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(
+      Serialize(got),
+      Eq("(Sort (keys departments.id Asc)"
+         " (NestedLoopCrossJoin (SeqScan departments) (SeqScan orders)))"));
+}
+
+TEST(OptimizerTest, OrderBySortsAfterNestedLoopJoin) {
+  std::stringstream s{
+      "SELECT * FROM departments JOIN orders ON departments.id < orders.id "
+      "ORDER BY departments.id;"};
+  auto parsed = GetAST(s).value();
+  SchemaCatalog schema({
+      {"departments", {Attribute{"departments", "id"}}},
+      {"orders", {Attribute{"orders", "id"}}},
+  });
+  PropertySet required{SortProperty{*parsed.required_order}};
+  Optimizer optimizer(parsed.op, MakeMainRules(), {}, std::move(schema), std::move(required));
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(
+      Serialize(got),
+      HasSubstr("(Sort (keys departments.id Asc) (NestedLoopJoin Inner"));
+}
+
+TEST(OptimizerTest, AliasedJoinOptimizesWithAliasQualifiedAttrs) {
+  std::stringstream s{"SELECT c.id FROM customers AS c JOIN orders AS o ON c.id = o.customer_id WHERE c.region_id = 1;"};
+  Operator op = GetAST(s).value().op;
+  Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({
+      {"customers", 500},
+      {"orders", 5000},
+  }), MakeTestSchema());
+
+  auto got = optimizer.Optimize();
+  auto serialized = Serialize(got);
+
+  ASSERT_THAT(serialized, HasSubstr("(SeqScan customers c)"));
+  ASSERT_THAT(serialized, HasSubstr("(SeqScan orders o)"));
+  ASSERT_THAT(serialized, HasSubstr("(attr c id)"));
+  ASSERT_THAT(serialized, HasSubstr("(attr o customer_id)"));
+}
+
+TEST(OptimizerTest, PushesSelectiveFilterIntoHashBuildSide) {
+  std::stringstream s{
+      "SELECT * FROM lineorder AS lo "
+      "JOIN supplier AS s ON lo.suppkey = s.id "
+      "WHERE s.region = 'AMERICA';"};
+  Operator op = GetAST(s).value().op;
+  SchemaCatalog schema({
+      {"lineorder", {Attribute{"lineorder", "suppkey"}, Attribute{"lineorder", "value"}}},
+      {"supplier", {Attribute{"supplier", "id"}, Attribute{"supplier", "region"}}},
+  });
+  Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({
+      {"lineorder", 6000},
+      {"supplier", 100},
+  }), std::move(schema));
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(
+      Serialize(got),
+      Eq("(HashJoin Inner (= (attr lo suppkey) (attr s id))"
+         " (PhysicalFilter (= (attr s region) (str \"AMERICA\")) (SeqScan supplier s))"
+         " (SeqScan lineorder lo))"));
+}
+
+TEST(OptimizerTest, TracksSelectedPlanRuleLineage) {
+  std::stringstream s{
+      "SELECT * FROM lineorder AS lo "
+      "JOIN supplier AS s ON lo.suppkey = s.id "
+      "WHERE s.region = 'AMERICA';"};
+  Operator op = GetAST(s).value().op;
+  SchemaCatalog schema({
+      {"lineorder", {Attribute{"lineorder", "suppkey"}, Attribute{"lineorder", "value"}}},
+      {"supplier", {Attribute{"supplier", "id"}, Attribute{"supplier", "region"}}},
+  });
+  Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({
+      {"lineorder", 6000},
+      {"supplier", 100},
+  }), std::move(schema));
+
+  auto got = optimizer.Optimize();
+  auto stats = optimizer.GetSelectedPlanRuleLineage();
+
+  ASSERT_THAT(Serialize(got),
+              HasSubstr("(PhysicalFilter (= (attr s region) (str \"AMERICA\")) "
+                         "(SeqScan supplier s))"));
+  EXPECT_THAT(RuleLineageCount(stats, RuleLineageKind::kTransformation,
+                               "FilterPushdownThroughJoin"), Gt(0));
+  EXPECT_THAT(RuleLineageCount(stats, RuleLineageKind::kImplementation,
+                               "ImplementTable"), Eq(2));
+  EXPECT_THAT(RuleLineageCount(stats, RuleLineageKind::kImplementation,
+                               "ImplementFilter"), Eq(1));
+  EXPECT_THAT(RuleLineageCount(stats, RuleLineageKind::kImplementation,
+                               "ImplementHashJoin"), Eq(1));
+}
+
+TEST(OptimizerTest, TracksSelectedPlanEnforcerLineage) {
+  std::stringstream s{"SELECT * FROM users ORDER BY users.id;"};
+  auto parsed = GetAST(s).value();
+  SchemaCatalog schema({{"users", {Attribute{"users", "id"}, Attribute{"users", "age"}}}});
+  PropertySet required{SortProperty{*parsed.required_order}};
+  Optimizer optimizer(parsed.op, MakeMainRules(), {}, std::move(schema), std::move(required));
+
+  auto got = optimizer.Optimize();
+  auto stats = optimizer.GetSelectedPlanRuleLineage();
+
+  ASSERT_THAT(Serialize(got), Eq("(Sort (keys users.id Asc) (SeqScan users))"));
+  EXPECT_THAT(RuleLineageCount(stats, RuleLineageKind::kEnforcer, "SortEnforcer"), Eq(1));
+  EXPECT_THAT(RuleLineageCount(stats, RuleLineageKind::kImplementation,
+                               "ImplementTable"), Eq(1));
+}
+
+TEST(OptimizerTest, UsesHashJoinForConjunctiveEquiJoinPredicate) {
+  std::stringstream s{
+      "SELECT * FROM lineorder AS lo "
+      "JOIN supplier AS s ON lo.suppkey = s.id AND s.region = 'AMERICA';"};
+  Operator op = GetAST(s).value().op;
+  SchemaCatalog schema({
+      {"lineorder", {Attribute{"lineorder", "suppkey"}, Attribute{"lineorder", "value"}}},
+      {"supplier", {Attribute{"supplier", "id"}, Attribute{"supplier", "region"}}},
+  });
+  Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({
+      {"lineorder", 6000},
+      {"supplier", 100},
+  }), std::move(schema));
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(
+      Serialize(got),
+      Eq("(HashJoin Inner (and (= (attr lo suppkey) (attr s id))"
+         " (= (attr s region) (str \"AMERICA\")))"
+         " (SeqScan supplier s) (SeqScan lineorder lo))"));
+}
+
+TEST(OptimizerTest, UsesIndexSeekForIndexedIntegerPredicate) {
+  std::stringstream s{"SELECT * FROM users WHERE users.id = 8;"};
+  Operator op = GetAST(s).value().op;
+  Optimizer optimizer(op, MakeMainRules(IndexCatalog({
+      IndexInfo{.table = "users", .column = "id", .type = "sorted", .file = "users.id.sorted.idx"},
+  })), CardinalityEstimates({{"users", 1000}}), MakeTestSchema());
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(Serialize(got), Eq("(IndexSeek (= (attr users id) 8) users)"));
+}
+
+TEST(OptimizerTest, KeepsSequentialFilterWhenIndexMetadataIsAbsent) {
+  std::stringstream s{"SELECT * FROM users WHERE users.id = 8;"};
+  Operator op = GetAST(s).value().op;
+  Optimizer optimizer(op, MakeMainRules(), CardinalityEstimates({{"users", 1000}}),
+                      MakeTestSchema());
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(Serialize(got),
+              Eq("(PhysicalFilter (= (attr users id) 8) (SeqScan users))"));
+}
+
+TEST(OptimizerTest, IndexSeekSupportsAliasAndFullResidualPredicate) {
+  std::stringstream s{"SELECT * FROM users AS u WHERE u.id >= 8 AND u.age < 70;"};
+  Operator op = GetAST(s).value().op;
+  Optimizer optimizer(op, MakeMainRules(IndexCatalog({
+      IndexInfo{.table = "users", .column = "id", .type = "sorted", .file = "users.id.sorted.idx"},
+  })), CardinalityEstimates({{"users", 1000}}), MakeTestSchema());
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(Serialize(got),
+              Eq("(IndexSeek (and (>= (attr u id) 8) (< (attr u age) 70)) users u)"));
+}
+
+TEST(OptimizerTest, IndexSeekDeliversSortedIndexOrder) {
+  std::stringstream s{"SELECT * FROM users WHERE users.id >= 8 ORDER BY users.id;"};
+  auto parsed = GetAST(s).value();
+  Optimizer optimizer(parsed.op, MakeMainRules(IndexCatalog({
+      IndexInfo{.table = "users", .column = "id", .type = "sorted", .file = "users.id.sorted.idx"},
+  })), CardinalityEstimates({{"users", 1000}}), MakeTestSchema(),
+      PropertySet{SortProperty{*parsed.required_order}});
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(Serialize(got), Eq("(IndexSeek (>= (attr users id) 8) users)"));
+}
+
+TEST(OptimizerTest, IndexSeekCanChooseOrderCompatibleIndexedConjunct) {
+  std::stringstream s{
+      "SELECT * FROM users AS u WHERE u.id >= 8 AND u.age < 70 ORDER BY u.age;"};
+  auto parsed = GetAST(s).value();
+  Optimizer optimizer(parsed.op, MakeMainRules(IndexCatalog({
+      IndexInfo{.table = "users", .column = "id", .type = "sorted", .file = "users.id.sorted.idx"},
+      IndexInfo{.table = "users", .column = "age", .type = "sorted", .file = "users.age.sorted.idx"},
+  })), CardinalityEstimates({{"users", 1000}}), MakeTestSchema(),
+      PropertySet{SortProperty{*parsed.required_order}});
+
+  auto got = optimizer.Optimize();
+
+  ASSERT_THAT(Serialize(got),
+              Eq("(IndexSeek (and (>= (attr u id) 8) (< (attr u age) 70)) users u)"));
+}
+
+TEST(OptimizerTest, NaiveRulesDisableLogicalTransformations) {
+  std::stringstream s{
+      "SELECT * FROM lineorder AS lo "
+      "JOIN supplier AS s ON lo.suppkey = s.id "
+      "WHERE s.region = 'AMERICA';"};
+  Operator op = GetAST(s).value().op;
+  SchemaCatalog schema({
+      {"lineorder", {Attribute{"lineorder", "suppkey"}, Attribute{"lineorder", "value"}}},
+      {"supplier", {Attribute{"supplier", "id"}, Attribute{"supplier", "region"}}},
+  });
+  CardinalityEstimates cardinality({
+      {"lineorder", 6000},
+      {"supplier", 100},
+  });
+  Optimizer optimizer(op, MakeMainRules(), cardinality, schema);
+  auto optimized = optimizer.Optimize();
+
+  Optimizer naive_optimizer(op, MakeNaiveRules(), std::move(cardinality), std::move(schema));
+  auto naive = naive_optimizer.Optimize();
+
+  ASSERT_THAT(Serialize(optimized),
+              HasSubstr("(PhysicalFilter (= (attr s region) (str \"AMERICA\")) "
+                         "(SeqScan supplier s))"));
+  ASSERT_THAT(Serialize(naive),
+              Eq("(PhysicalFilter (= (attr s region) (str \"AMERICA\"))"
+                 " (NestedLoopJoin Inner (= (attr lo suppkey) (attr s id))"
+                 " (SeqScan lineorder lo) (SeqScan supplier s)))"));
+  ASSERT_THAT(naive_optimizer.GetBestCost(), Gt(optimizer.GetBestCost()));
+}
+
+TEST(ReachabilityTest, SeqScanReachable) {
+  std::stringstream s{"SELECT * FROM users;"};
+  auto result = IsPlanReachable(s, SeqScan{"users"}, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsTrue());
+  ASSERT_THAT(result.closest_distance, Eq(0));
+}
+
+TEST(ReachabilityTest, SeqScanWrongTable) {
+  std::stringstream s{"SELECT * FROM users;"};
+  auto result = IsPlanReachable(s, SeqScan{"orders"}, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsFalse());
+  ASSERT_THAT(result.mismatch, HasSubstr("users"));
+  ASSERT_THAT(result.closest_distance, Eq(1));
+}
+
+TEST(ReachabilityTest, IndexSeekReachableWithIndexCatalog) {
+  std::stringstream s{"SELECT * FROM users WHERE users.id >= 8;"};
+  Expression predicate = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kGe,
+      std::make_shared<Expression>(IntConst{8})};
+  auto result = IsPlanReachable(
+      s, IndexSeek{"users", std::nullopt, predicate}, {}, MakeTestSchema(),
+      IndexCatalog({
+          IndexInfo{.table = "users", .column = "id", .type = "sorted",
+                    .file = "users.id.sorted.idx"},
+      }));
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
+TEST(ReachabilityTest, WrongOperatorType) {
+  std::stringstream s{"SELECT * FROM users;"};
+  Expression qual = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(Attribute{"orders", "user_id"})};
+  auto result = IsPlanReachable(s, HashJoin{
+      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
+      std::make_shared<PhysicalPlanNode>(SeqScan{"orders"}),
+      JoinType::kInner,
+      qual}, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsFalse());
+}
+
+TEST(ReachabilityTest, BothJoinOrdersReachable) {
+  std::stringstream s1{"SELECT * FROM users JOIN orders ON users.id = orders.user_id;"};
+  std::stringstream s2{"SELECT * FROM users JOIN orders ON users.id = orders.user_id;"};
+  Expression qual = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(Attribute{"orders", "user_id"})};
+  CardinalityEstimates cardinality({{"users", 10000}, {"orders", 100}});
+
+  auto optimal = IsPlanReachable(s1, NestedLoopJoin{
+      std::make_shared<PhysicalPlanNode>(SeqScan{"orders"}),
+      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
+      JoinType::kInner, qual}, cardinality, MakeTestSchema());
+  ASSERT_THAT(optimal.reachable, IsTrue());
+
+  auto suboptimal = IsPlanReachable(s2, NestedLoopJoin{
+      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
+      std::make_shared<PhysicalPlanNode>(SeqScan{"orders"}),
+      JoinType::kInner, qual}, cardinality, MakeTestSchema());
+  ASSERT_THAT(suboptimal.reachable, IsTrue());
+}
+
+TEST(ReachabilityTest, HashJoinReachable) {
+  std::stringstream s{"SELECT * FROM users JOIN orders ON users.id = orders.user_id;"};
+  Expression qual = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(Attribute{"orders", "user_id"})};
+  auto result = IsPlanReachable(s, HashJoin{
+      std::make_shared<PhysicalPlanNode>(SeqScan{"orders"}),
+      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
+      JoinType::kInner, qual}, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
+TEST(ReachabilityTest, MergeJoinReachableWithSortedInputs) {
+  std::stringstream s{"SELECT * FROM users JOIN orders ON users.id = orders.user_id;"};
+  Expression qual = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(Attribute{"orders", "user_id"})};
+  SchemaCatalog schema({
+      {"users", {Attribute{"users", "id"}}},
+      {"orders", {Attribute{"orders", "user_id"}}},
+  });
+  auto result = IsPlanReachable(s, MergeJoin{
+      std::make_shared<PhysicalPlanNode>(PhysicalSort{
+          std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
+          SortOrder{{SortKey{"users", "id", Direction::kAsc}}}}),
+      std::make_shared<PhysicalPlanNode>(PhysicalSort{
+          std::make_shared<PhysicalPlanNode>(SeqScan{"orders"}),
+          SortOrder{{SortKey{"orders", "user_id", Direction::kAsc}}}}),
+      JoinType::kInner, qual}, {}, std::move(schema));
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
+TEST(ReachabilityTest, MergeJoinCanSatisfyOrderByJoinKey) {
+  std::stringstream s{
+      "SELECT * FROM users JOIN orders ON users.id = orders.user_id ORDER BY users.id;"};
+  Expression qual = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(Attribute{"orders", "user_id"})};
+  SchemaCatalog schema({
+      {"users", {Attribute{"users", "id"}}},
+      {"orders", {Attribute{"orders", "user_id"}}},
+  });
+  auto result = IsPlanReachable(s, MergeJoin{
+      std::make_shared<PhysicalPlanNode>(PhysicalSort{
+          std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
+          SortOrder{{SortKey{"users", "id", Direction::kAsc}}}}),
+      std::make_shared<PhysicalPlanNode>(PhysicalSort{
+          std::make_shared<PhysicalPlanNode>(SeqScan{"orders"}),
+          SortOrder{{SortKey{"orders", "user_id", Direction::kAsc}}}}),
+      JoinType::kInner, qual}, {}, std::move(schema));
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
+TEST(ReachabilityTest, WrongJoinQual) {
+  std::stringstream s{"SELECT * FROM users JOIN orders ON users.id = orders.user_id;"};
+  Expression wrong_qual = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(Attribute{"orders", "id"})};
+  auto result = IsPlanReachable(s, NestedLoopJoin{
+      std::make_shared<PhysicalPlanNode>(SeqScan{"orders"}),
+      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
+      JoinType::kInner, wrong_qual}, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsFalse());
+  ASSERT_THAT(result.mismatch, HasSubstr("qual"));
+}
+
+TEST(ReachabilityTest, InExpandsToOrChain) {
+  std::stringstream s{"SELECT * FROM users WHERE users.id IN (1, 2, 3);"};
+  Expression eq1 = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(IntConst{1})};
+  Expression eq2 = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(IntConst{2})};
+  Expression eq3 = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(IntConst{3})};
+  Expression or_chain = BinaryExpression{
+      std::make_shared<Expression>(BinaryExpression{
+          std::make_shared<Expression>(std::move(eq1)),
+          BinaryOp::kOr,
+          std::make_shared<Expression>(std::move(eq2))}),
+      BinaryOp::kOr,
+      std::make_shared<Expression>(std::move(eq3))};
+  auto result = IsPlanReachable(s, PhysicalFilter{
+      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}), or_chain}, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
+TEST(ReachabilityTest, NotInExpandedAndChainIgnoresComparisonOrder) {
+  std::stringstream s{"SELECT * FROM users WHERE users.id NOT IN (1, 2, 3);"};
+  Expression ne3 = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kNotEq,
+      std::make_shared<Expression>(IntConst{3})};
+  Expression ne2 = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kNotEq,
+      std::make_shared<Expression>(IntConst{2})};
+  Expression ne1 = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kNotEq,
+      std::make_shared<Expression>(IntConst{1})};
+  Expression and_chain = BinaryExpression{
+      std::make_shared<Expression>(BinaryExpression{
+          std::make_shared<Expression>(std::move(ne3)),
+          BinaryOp::kAnd,
+          std::make_shared<Expression>(std::move(ne2))}),
+      BinaryOp::kAnd,
+      std::make_shared<Expression>(std::move(ne1))};
+  auto result = IsPlanReachable(s, PhysicalFilter{
+      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}), and_chain}, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
+TEST(ReachabilityTest, NotBetweenMatchesExpandedRangeDisjunction) {
+  std::stringstream s{"SELECT * FROM users WHERE users.id NOT BETWEEN 1 AND 3;"};
+  Expression lt = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kLt,
+      std::make_shared<Expression>(IntConst{1})};
+  Expression gt = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kGt,
+      std::make_shared<Expression>(IntConst{3})};
+  Expression range = BinaryExpression{
+      std::make_shared<Expression>(std::move(lt)),
+      BinaryOp::kOr,
+      std::make_shared<Expression>(std::move(gt))};
+
+  auto result = IsPlanReachable(s, PhysicalFilter{
+      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}), range}, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
+TEST(ReachabilityTest, NegatedConjunctionMatchesDeMorganForm) {
+  std::stringstream s{"SELECT * FROM users WHERE NOT (users.id = 1 AND users.age >= 30);"};
+  Expression id_ne = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kNotEq,
+      std::make_shared<Expression>(IntConst{1})};
+  Expression age_lt = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "age"}),
+      BinaryOp::kLt,
+      std::make_shared<Expression>(IntConst{30})};
+  Expression demorgan = BinaryExpression{
+      std::make_shared<Expression>(std::move(age_lt)),
+      BinaryOp::kOr,
+      std::make_shared<Expression>(std::move(id_ne))};
+
+  auto result = IsPlanReachable(s, PhysicalFilter{
+      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}), demorgan}, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
+TEST(ReachabilityTest, ReversedComparisonOperandsMatch) {
+  std::stringstream s{"SELECT * FROM users WHERE 1 < users.id;"};
+  Expression gt = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kGt,
+      std::make_shared<Expression>(IntConst{1})};
+
+  auto result = IsPlanReachable(s, PhysicalFilter{
+      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}), gt}, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
+TEST(ReachabilityTest, JoinQualNormalizesInAndNotBetween) {
+  std::stringstream s{
+      "SELECT * FROM users CROSS JOIN orders "
+      "WHERE users.id IN (22) AND orders.id NOT BETWEEN 1 AND 3;"};
+  Expression users_eq = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"users", "id"}),
+      BinaryOp::kEq,
+      std::make_shared<Expression>(IntConst{22})};
+  Expression orders_lt = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"orders", "id"}),
+      BinaryOp::kLt,
+      std::make_shared<Expression>(IntConst{1})};
+  Expression orders_gt = BinaryExpression{
+      std::make_shared<Expression>(Attribute{"orders", "id"}),
+      BinaryOp::kGt,
+      std::make_shared<Expression>(IntConst{3})};
+  Expression orders_range = BinaryExpression{
+      std::make_shared<Expression>(std::move(orders_lt)),
+      BinaryOp::kOr,
+      std::make_shared<Expression>(std::move(orders_gt))};
+  Expression qual = BinaryExpression{
+      std::make_shared<Expression>(std::move(users_eq)),
+      BinaryOp::kAnd,
+      std::make_shared<Expression>(std::move(orders_range))};
+
+  auto result = IsPlanReachable(s, NestedLoopJoin{
+      std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
+      std::make_shared<PhysicalPlanNode>(SeqScan{"orders"}),
+      JoinType::kInner,
+      qual}, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
+
+
+TEST(ReachabilityTest, OrderByReachableViaSortEnforcer) {
+  std::stringstream s{"SELECT users.id FROM users ORDER BY users.id;"};
+  PhysicalSort target{
+      std::make_shared<PhysicalPlanNode>(PhysicalProjection{
+          std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
+          {Attribute{"users", "id"}},
+          {}}),
+      SortOrder{{SortKey{"users", "id", Direction::kAsc}}}};
+  auto result = IsPlanReachable(s, target, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsTrue());
+}
+
+
+
+TEST(ReachabilityTest, OrderByWrongDirectionNotReachable) {
+  std::stringstream s{"SELECT users.id FROM users ORDER BY users.id ASC;"};
+  PhysicalSort target{
+      std::make_shared<PhysicalPlanNode>(PhysicalProjection{
+          std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
+          {Attribute{"users", "id"}},
+          {}}),
+      SortOrder{{SortKey{"users", "id", Direction::kDesc}}}};
+  auto result = IsPlanReachable(s, target, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsFalse());
+  ASSERT_THAT(result.closest_distance, Eq(1));
+}
+
+
+
+TEST(ReachabilityTest, SortNotReachableWithoutOrderBy) {
+  std::stringstream s{"SELECT users.id FROM users;"};
+  PhysicalSort target{
+      std::make_shared<PhysicalPlanNode>(PhysicalProjection{
+          std::make_shared<PhysicalPlanNode>(SeqScan{"users"}),
+          {Attribute{"users", "id"}},
+          {}}),
+      SortOrder{{SortKey{"users", "id", Direction::kAsc}}}};
+  auto result = IsPlanReachable(s, target, {}, MakeTestSchema());
+  ASSERT_THAT(result.reachable, IsFalse());
+}
+
+}  // namespace stewkk::sql

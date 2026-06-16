@@ -1,0 +1,3 @@
+s_suppkey:int,s_name:string,s_address:string,s_city:string,s_nation:string,s_region:string,s_phone:string
+1000,Supplier#000001000,Supplier Addr 1000,RUSSIA   1,RUSSIA,EUROPE,30-333-333-3333
+2000,Supplier#000002000,Supplier Addr 2000,ARGENTINA1,ARGENTINA,AMERICA,40-444-444-4444
