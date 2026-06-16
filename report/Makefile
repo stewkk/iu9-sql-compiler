@@ -20,4 +20,4 @@ view:
 	@evince ./build/report.pdf
 
 pres:
-	@latexmk -f -pdf -output-directory=build -shell-escape ./presentation.tex
+	@latexmk -f -pdf -output-directory=build-vkr -shell-escape ./presentation-vkr.tex
