@@ -17,6 +17,7 @@ class DiskFileReader {
         DiskFileReader(DiskFileReader&& other) = default;
         DiskFileReader& operator=(DiskFileReader&& other) = default;
         Tuples Read();
+        void Rewind();
     private:
         fs::path path_;
         std::ifstream f_;
@@ -31,7 +32,7 @@ class DiskFileWriter {
     private:
         fs::path path_;
         std::ofstream f_;
-        std::size_t tuple_size_;
+        std::size_t tuple_size_ = 0;
 };
 
 }  // namespace stewkk::sql

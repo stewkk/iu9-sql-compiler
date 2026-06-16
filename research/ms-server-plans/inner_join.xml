@@ -1,0 +1,121 @@
+<?xml version="1.0" ?>
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.599" Build="17.0.4035.5">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementText="SELECT * FROM TitlePrincipals JOIN Principals ON TitlePrincipals.principalId = Principals.principalId" StatementId="1" StatementCompId="1" StatementType="SELECT" StatementSqlHandle="0x0900310B55D26862C1C0D3371E98A3BD71D00000000000000000000000000000000000000000000000000000" DatabaseContextSettingsId="4" ParentObjectId="0" StatementParameterizationType="0" RetrievedFromCache="true" StatementSubTreeCost="1.30484" StatementEstRows="30615.2" SecurityPolicyApplied="false" StatementOptmLevel="FULL" QueryHash="0x6CFE85218F74831B" QueryPlanHash="0x7666BA93A76BBFFF" CardinalityEstimationModelVersion="170">
+          <StatementSetOptions QUOTED_IDENTIFIER="true" ARITHABORT="true" CONCAT_NULL_YIELDS_NULL="true" ANSI_NULLS="true" ANSI_PADDING="true" ANSI_WARNINGS="true" NUMERIC_ROUNDABORT="false"/>
+          <QueryPlan DegreeOfParallelism="1" MemoryGrant="10464" CachedPlanSize="56" CompileTime="4" CompileCPU="4" CompileMemory="288">
+            <MissingIndexes>
+              <MissingIndexGroup Impact="95.6254">
+                <MissingIndex Database="[imdb]" Schema="[dbo]" Table="[TitlePrincipals]">
+                  <ColumnGroup Usage="EQUALITY">
+                    <Column Name="[principalId]" ColumnId="3"/>
+                  </ColumnGroup>
+                  <ColumnGroup Usage="INCLUDE">
+                    <Column Name="[professionId]" ColumnId="4"/>
+                    <Column Name="[knownForOrdinal]" ColumnId="5"/>
+                  </ColumnGroup>
+                </MissingIndex>
+              </MissingIndexGroup>
+            </MissingIndexes>
+            <MemoryGrantInfo SerialRequiredMemory="1024" SerialDesiredMemory="10464" RequiredMemory="1024" DesiredMemory="10464" RequestedMemory="10464" GrantWaitTime="0" MaxQueryMemory="387152" GrantedMemory="10464" MaxUsedMemory="1536" LastRequestedMemory="0" IsMemoryGrantFeedbackAdjusted="No: First Execution"/>
+            <OptimizerHardwareDependentProperties EstimatedAvailableMemoryGrant="79270" EstimatedPagesCached="39635" EstimatedAvailableDegreeOfParallelism="4" MaxCompileMemory="1350416"/>
+            <OptimizerStatsUsage>
+              <StatisticsInfo LastUpdate="2026-05-20T15:09:31.07" ModificationCount="0" SamplingPercent="100" Statistics="[PK_TitlePrincipals]" Table="[TitlePrincipals]" Schema="[dbo]" Database="[imdb]"/>
+              <StatisticsInfo LastUpdate="2026-05-20T15:09:30.62" ModificationCount="2784" SamplingPercent="100" Statistics="[PK_Principals]" Table="[Principals]" Schema="[dbo]" Database="[imdb]"/>
+              <StatisticsInfo LastUpdate="2026-05-20T15:09:31.04" ModificationCount="0" SamplingPercent="100" Statistics="[_WA_Sys_00000003_6D0D32F4]" Table="[TitlePrincipals]" Schema="[dbo]" Database="[imdb]"/>
+            </OptimizerStatsUsage>
+            <QueryTimeStats ElapsedTime="58" CpuTime="58"/>
+            <RelOp NodeId="0" PhysicalOp="Hash Match" LogicalOp="Inner Join" EstimateRows="30615.2" EstimateIO="0" EstimateCPU="1.17698" AvgRowSize="155" EstimatedTotalSubtreeCost="1.30484" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+              <OutputList>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitlePrincipals]" Column="titleId"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitlePrincipals]" Column="ordinal"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitlePrincipals]" Column="principalId"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitlePrincipals]" Column="professionId"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitlePrincipals]" Column="knownForOrdinal"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Principals]" Column="principalId"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Principals]" Column="primaryName"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Principals]" Column="birthYear"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Principals]" Column="deathYear"/>
+              </OutputList>
+              <MemoryFractions Input="1" Output="1"/>
+              <RunTimeInformation>
+                <RunTimeCountersPerThread Thread="0" ActualRows="27832" Batches="0" ActualElapsedms="31" ActualCPUms="31" ActualScans="0" ActualLogicalReads="0" ActualPhysicalReads="0" ActualReadAheads="0" ActualLobLogicalReads="0" ActualLobPhysicalReads="0" ActualLobReadAheads="0" ActualEndOfScans="1" ActualExecutions="1" InputMemoryGrant="10464" OutputMemoryGrant="10464" UsedMemoryGrant="1536" ActualExecutionMode="Row"/>
+              </RunTimeInformation>
+              <Hash>
+                <DefinedValues/>
+                <HashKeysBuild>
+                  <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Principals]" Column="principalId"/>
+                </HashKeysBuild>
+                <HashKeysProbe>
+                  <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitlePrincipals]" Column="principalId"/>
+                </HashKeysProbe>
+                <RelOp NodeId="1" PhysicalOp="Clustered Index Scan" LogicalOp="Clustered Index Scan" EstimateRows="14418" EstimatedRowsRead="14418" EstimateIO="0.0371991" EstimateCPU="0.0160168" AvgRowSize="141" EstimatedTotalSubtreeCost="0.0532159" TableCardinality="14418" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                  <OutputList>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Principals]" Column="principalId"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Principals]" Column="primaryName"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Principals]" Column="birthYear"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Principals]" Column="deathYear"/>
+                  </OutputList>
+                  <RunTimeInformation>
+                    <RunTimeCountersPerThread Thread="0" ActualRows="14418" Batches="0" ActualElapsedms="7" ActualCPUms="7" ActualScans="1" ActualLogicalReads="49" ActualPhysicalReads="0" ActualReadAheads="0" ActualLobLogicalReads="0" ActualLobPhysicalReads="0" ActualLobReadAheads="0" ActualRowsRead="14418" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row"/>
+                  </RunTimeInformation>
+                  <IndexScan Ordered="0" ForcedIndex="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                    <DefinedValues>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Principals]" Column="principalId"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Principals]" Column="primaryName"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Principals]" Column="birthYear"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Principals]" Column="deathYear"/>
+                      </DefinedValue>
+                    </DefinedValues>
+                    <Object Database="[imdb]" Schema="[dbo]" Table="[Principals]" Index="[PK_Principals]" IndexKind="Clustered" Storage="RowStore"/>
+                  </IndexScan>
+                </RelOp>
+                <RelOp NodeId="2" PhysicalOp="Clustered Index Scan" LogicalOp="Clustered Index Scan" EstimateRows="27832" EstimatedRowsRead="27832" EstimateIO="0.0438657" EstimateCPU="0.0307722" AvgRowSize="20" EstimatedTotalSubtreeCost="0.0746379" TableCardinality="27832" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                  <OutputList>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitlePrincipals]" Column="titleId"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitlePrincipals]" Column="ordinal"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitlePrincipals]" Column="principalId"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitlePrincipals]" Column="professionId"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitlePrincipals]" Column="knownForOrdinal"/>
+                  </OutputList>
+                  <RunTimeInformation>
+                    <RunTimeCountersPerThread Thread="0" ActualRows="27832" Batches="0" ActualElapsedms="10" ActualCPUms="10" ActualScans="1" ActualLogicalReads="58" ActualPhysicalReads="0" ActualReadAheads="0" ActualLobLogicalReads="0" ActualLobPhysicalReads="0" ActualLobReadAheads="0" ActualRowsRead="27832" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row"/>
+                  </RunTimeInformation>
+                  <IndexScan Ordered="0" ForcedIndex="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                    <DefinedValues>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitlePrincipals]" Column="titleId"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitlePrincipals]" Column="ordinal"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitlePrincipals]" Column="principalId"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitlePrincipals]" Column="professionId"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitlePrincipals]" Column="knownForOrdinal"/>
+                      </DefinedValue>
+                    </DefinedValues>
+                    <Object Database="[imdb]" Schema="[dbo]" Table="[TitlePrincipals]" Index="[PK_TitlePrincipals]" IndexKind="Clustered" Storage="RowStore"/>
+                  </IndexScan>
+                </RelOp>
+              </Hash>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>

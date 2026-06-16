@@ -1,0 +1,1336 @@
+% !TeX TXS-program:bibliography = txs:///biber
+% chktex-file 1
+\documentclass[fontsize=14pt, russian]{scrartcl}
+\input{header.tex}
+\addbibresource{biblio.bib}
+
+\begin{document}
+\sloppy
+
+\def\figurename{Рисунок}
+
+\newcommand{\sqlkw}[1]{\texttt{#1}}
+\newcommand{\SELECT}{\sqlkw{SELECT}}
+\newcommand{\FROM}{\sqlkw{FROM}}
+\newcommand{\WHERE}{\sqlkw{WHERE}}
+\newcommand{\JOIN}{\sqlkw{JOIN}}
+\newcommand{\GROUPBY}{\sqlkw{GROUP BY}}
+\newcommand{\ORDERBY}{\sqlkw{ORDER BY}}
+
+\newcommand{\SeqScan}{\sqlkw{SeqScan}}
+\newcommand{\HashJoin}{\sqlkw{HashJoin}}
+\newcommand{\NestedLoopJoin}{\sqlkw{NestedLoopJoin}}
+\newcommand{\Sort}{\sqlkw{Sort}}
+\newcommand{\FilterOp}{\sqlkw{Filter}}
+\newcommand{\ProjectionOp}{\sqlkw{Projection}}
+
+\newcommand{\screenplaceholder}[3]{%
+  \begin{figure}[H]
+    \centering
+    \fbox{%
+      \begin{minipage}[c][2.5cm][c]{0.91\textwidth}
+        \centering
+        \textbf{МЕСТО ДЛЯ СКРИНШОТА}\\[0.4cm]
+        #3
+      \end{minipage}%
+    }
+    \caption{#1}
+    \label{#2}
+  \end{figure}
+}
+
+\newcommand{\graphplaceholder}[3]{%
+  \begin{figure}[H]
+    \centering
+    \fbox{%
+      \begin{minipage}[c][4.5cm][c]{0.91\textwidth}
+        \centering
+        \textbf{МЕСТО ДЛЯ ГРАФИКА}\\[0.4cm]
+        #3
+      \end{minipage}%
+    }
+    \caption{#1}
+    \label{#2}
+  \end{figure}
+}
+
+\setcounter{page}{2}
+
+\newpage
+\renewcommand\contentsname{\hfill{\normalfont{СОДЕРЖАНИЕ}}\hfill}
+\tableofcontents
+\newpage
+
+\anonsection{ВВЕДЕНИЕ}
+
+В эпоху стремительного роста объемов данных системы управления базами данных
+(СУБД) являются важной частью информационных систем. По данным аналитических
+исследований, объем мирового рынка СУБД ежегодно увеличивается, что обусловлено
+как расширением круга решаемых задач, так и усложнением структуры обрабатываемых
+данных и увеличением их объема. Реляционные базы данных, работающие с различными
+диалектами языка SQL, продолжают занимать доминирующее положение в сегменте
+обработки транзакций и аналитических запросов.
+
+Одним из определяющих факторов конкурентоспособности между различными
+реализациями СУБД является качество оптимизатора запросов. Оптимизатор
+представляет собой компонент, ответственный за преобразование декларативного
+SQL-запроса в эффективный физический план исполнения. Именно от качества работы
+оптимизатора в значительной степени зависит производительность всей системы:
+выбор неоптимального плана исполнения может привести к увеличению времени
+выполнения запроса в десятки раз относительно оптимального случая.
+
+Также оптимизатор запросов считается наиболее сложной составной частью любой
+СУБД. Задача нахождения оптимального плана является NP-полной в общем случае,
+что обуславливает необходимость применения эвристических методов и алгоритмов
+ограниченного перебора. Одним из первых практических подходов к стоимостной
+оптимизации стал алгоритм System~R~\cite{Selinger1979}. В дальнейшем были
+разработаны расширяемые архитектуры Volcano~\cite{GraefeMcKenna1993} и
+Cascades~\cite{Graefe1995}.
+
+Преимущества архитектуры Cascades заключаются в расширяемости, модульности и
+возможности управлять поиском с помощью набора правил.
+
+Целью данной работы является разработка и реализация оптимизатора подмножества
+SQL-запросов на основе архитектуры Cascades, а также создание каркаса для его
+итеративного улучшения путем сравнения с промышленными реализациями.
+
+Для достижения поставленной цели необходимо решить следующие задачи:
+\begin{itemize}
+  \item изучить существующие архитектуры оптимизаторов запросов;
+  \item реализовать разбор подмножества SQL и внутреннее представление
+        операторов реляционной алгебры;
+  \item реализовать структуру данных Memo и алгоритм поиска оптимального плана
+        на основе архитектуры Cascades;
+  \item реализовать набор правил трансформации и реализации для основных
+        операторов реляционной алгебры;
+  \item реализовать метод ветвей и границ для эффективного отсечения
+        неоптимальных планов;
+  \item реализовать исполнение физических планов над таблицами в формате CSV;
+  \item реализовать метод дифференциального анализа физических планов для
+        автоматизированного поиска примеров неоптимальных планов.
+\end{itemize}
+
+\section{Проектирование}
+
+В рамках данной работы был разработан оптимизатор запросов для модельной
+реляционной СУБД.
+
+Структурно реализация модельной СУБД состоит из следующих модулей:
+\begin{itemize}
+  \item модуль синтаксического анализа SQL-запросов;
+  \item модуль построения логического представления запроса;
+  \item модуль стоимостной оптимизации на основе структуры Memo;
+  \item подсистема физического хранения на основе статических CSV-таблиц;
+  \item модуль исполнения физических операторов.
+\end{itemize}
+
+Основой для проектирования оптимизатора была выбрана архитектура Cascades. В ней
+пространство допустимых планов формируется с помощью набора правил
+преобразования и хранится в структуре Memo. Эта структура объединяет логически
+эквивалентные выражения в группы, что позволяет избежать повторного рассмотрения
+одинаковых поддеревьев. Поиск оптимального физического плана выполняется с учетом
+стоимостной модели и требуемых свойств результата, например порядка сортировки.
+
+Данная архитектура была выбрана по причине ее модульности и расширяемости.
+Добавление новых логических преобразований и физических операторов выполняется
+путем реализации отдельных правил и не требует изменения основного алгоритма
+поиска. Это также удобно для итеративного процесса разработки, предполагающего
+постепенное улучшение качества итоговых планов путем уточнения и расширения
+пространства поиска.
+
+Модуль синтаксического анализа SQL-запросов отвечает за лексический и
+синтаксический разбор поступающих на вход SQL-запросов. Для реализации этого
+модуля было решено использовать генератор синтаксических и лексических
+анализаторов, ввиду того, что грамматика SQL является очень объемной, и
+использование готового формального описания для генератора гарантирует
+совместимость с одним из диалектов языка.
+
+Модуль построения логического представления запроса отвечает за преобразование
+результата синтаксического анализа во внутреннее представление, пригодное для
+оптимизации. В качестве такого представления решено использовать дерево
+операторов реляционной алгебры. Этот подход является общепринятым и позволяет
+отделить особенности синтаксиса SQL от последующих этапов обработки запроса, а
+также выполнять оптимизацию над ограниченным набором формализованных операций:
+фильтрацией, проекцией, соединением, агрегацией и сортировкой.
+
+Подсистема физического хранения отвечает за предоставление модулю исполнения
+табличных данных. Для хранения выбраны статические таблицы в формате CSV.
+Использование простого текстового формата позволяет сосредоточиться на
+проектировании оптимизатора и не усложнять прототип реализацией транзакций,
+индексов, буферного кэша и управления дисковыми страницами. Кроме того,
+CSV-файлы удобно создавать, изменять и использовать при проведении тестов.
+
+Модуль исполнения физических операторов отвечает за выполнение выбранного
+оптимизатором плана и формирование результата запроса. Физический план решено
+представлять в виде дерева операторов с единым интерфейсом взаимодействия.
+Каждый оператор получает данные от дочерних узлов, выполняет определенное
+преобразование и передает результат вышестоящему оператору. Такой подход
+обеспечивает модульность подсистемы исполнения и позволяет добавлять новые
+физические операторы независимо от уже реализованных.
+
+% TODO: Описание выбранных правил реализации / трансформации
+% TODO: Описание подмножества SQL.
+
+\section{Реализация}
+
+Программа написана на языке C++ с использованием стандарта C++23. Этот язык
+популярен в сфере разработки СУБД, являясь достаточно низкоуровневым и
+производительным, но в то же время удобным для реализации больших систем. Для
+сборки применяется CMake и его встроенные средства для зависимостей в виде
+библиотек на C++. Окружение для разработки описывается декларативно и
+воспроизводимо при помощи функционального доменно-специфичного языка \verb|nix|
+для соответствующего пакетного менеджера.
+
+Для синтаксического анализа выбран генератор парсеров ANTLR4, ввиду простоты и
+удобства в использовании. Асинхронное взаимодействие физических операторов
+построено на Boost.Asio, по причине совместимости со встроенными в язык
+корутинами и понятной модели асинхронности. Для тестирования корректности и
+производительности используется Google Tests, Google Benchmarks и pytest.
+
+\subsection{Модуль синтаксического анализа}
+
+Для реализации парсера был выбран ANTLR4, ввиду его удобства и возможности
+генерировать лексические и синтаксические анализаторы под практически любой язык
+программирования.
+
+Грамматика PostgreSQL была взята из официального репозитория проекта
+ANTLR4~\cite{Antlr4PostgreSQL}. Она была портирована автоматически из грамматики
+для Bison~\cite{PostgresBisonGrammar} из официального репозитория Postgres,
+поэтому является наиболее полной из существующих.
+
+ANTLR4 генерирует несколько файлов на C++, в том числе лексический и
+синтаксический анализаторы, а также класс \verb|Visitor| для обхода дерева
+разбора. Для интересующих конструкций SQL переопределены методы посещения узлов
+грамматики. Например, предложение \WHERE{} преобразуется в логический оператор
+фильтрации, список выражений после \SELECT{} преобразуется в проекцию, а список
+таблиц после \FROM{} --- в дерево соединений.
+
+Результатом работы парсера является структура \texttt{ParsedQuery}. Она содержит
+логический оператор верхнего уровня и необязательное требование к порядку строк
+для \ORDERBY{}. Логические операторы и скалярные выражения представлены
+алгебраическими типами на основе \texttt{std::variant}. В них входят операторы
+таблицы, фильтрации, проекции, агрегации, соединения, ссылки на атрибуты,
+константы и арифметические выражения~\refAlgo{lst:logical}.
+
+\begin{listing}[H]
+  \caption{Объявление типов для операторов реляционной алегебры и выражений.}
+  \label{lst:logical}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{C++}
+using Operator = std::variant<Table, Projection, Filter, Aggregation, CrossJoin, Join>;
+
+using Expression = std::variant<BinaryExpression, Attribute, IntConst, StringConst, UnaryExpression, InExpression, AggregateExpression, Literal>;
+
+struct Projection {
+    std::vector<Expression> expressions;
+    std::shared_ptr<Operator> source;
+    std::vector<std::optional<std::string>> aliases;
+
+    bool operator==(const Projection& other) const;
+};
+  \end{minted}
+\end{listing}
+
+Выражения хранятся в алгебраическом типе \verb|Expression|, реализованном
+аналогично \verb|Operator|.
+
+Функция \verb|GetAST| внутри строит абстрактное синтаксическое дерево и обходит
+его с помощью \verb|Visitor|, который и генерирует представление запроса в виде
+дерева из \verb|Operator|.
+
+Дополнительно реализована визуализация дерева из операторов реляционной алгебры
+в формате Graphviz с помощью функции \verb|GetDotRepresentation|.
+
+\subsection{Модуль оптимизации запросов}
+
+Модуль оптимизации запросов отвечает за преобразование логического дерева
+операторов в физический план исполнения с минимальной оцененной стоимостью.
+Пространство исследуемых эквивалентных планов эффективно хранится в структуре
+Memo и расширяется с помощью добавления новых правил. Поиск выполняется сверху
+вниз с использованием стоимостной модели, физических свойств и метода ветвей и
+границ.
+
+\subsubsection{Структура Memo}
+
+Структура Memo хранит группы логически эквивалентных выражений. Выражения из
+одной группы возвращают одинаковый результат. Например, $A \Join B$ и
+$B \Join A$ являются эквивалентными.
+
+Дочерние узлы выражения ссылаются не на конкретные операторы, а на группы.
+Благодаря этому одно выражение компактно представляет множество деревьев.
+Объявления классов \verb|Memo| и \verb|Group| приведены в
+листинге~\ref{lst:memo}.
+
+\begin{listing}[H]
+  \caption{Основные элементы структуры Memo.}
+  \label{lst:memo}
+  \begin{minted}[style=bw, breaklines, frame=single,
+    fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{cpp}
+class Memo {
+public:
+  utils::NotNull<LogicalExpr*> AddGroup(LogicalOperator op);
+  utils::NotNull<LogicalExpr*> AddLogicalExprToGroup(
+      utils::NotNull<Group*> group, LogicalOperator op);
+  utils::NotNull<LogicalExpr*> Populate(const Operator& op);
+
+private:
+  std::deque<Group> groups_;
+  std::unordered_map<std::string, LogicalExpr*> expr_index_;
+};
+
+class Group {
+public:
+  utils::NotNull<LogicalExpr*> AddLogicalExpr(LogicalOperator op);
+  utils::NotNull<PhysicalExpr*> AddPhysicalExpr(
+      PhysicalOperator op, bool is_enforcer = false);
+
+  LogicalExprs GetLogicalExprs();
+  PhysicalExprs GetPhysicalExprs();
+};
+  \end{minted}
+\end{listing}
+
+Метод \verb|Memo::Populate| рекурсивно обходит исходное логическое дерево и
+создает первоначальные группы. Для предотвращения повторного добавления
+выражений используется отображение \verb|expr_index_|. Ключ строится из типа
+оператора, его параметров и идентификаторов дочерних групп. Таким образом,
+одинаковые выражения добавляются в Memo только один раз.
+
+Каждая группа содержит логические и физические выражения. Логические выражения
+описывают семантику запроса, а физические выражения определяют конкретный способ
+исполнения. Например, логическому соединению могут соответствовать физические
+операторы соединения вложенными циклами и хеш-соединения.
+
+\subsubsection{Правила оптимизации}
+
+Расширение пространства поиска выполняется с помощью правил. Реализовано два
+типа правил: трансформационные и реализационные. Их интерфейсы приведены в
+листинге~\ref{lst:optimizer-rules}.
+
+\begin{listing}[H]
+  \caption{Интерфейсы правил оптимизации.}
+  \label{lst:optimizer-rules}
+  \begin{minted}[style=bw, breaklines, frame=single,
+    fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{cpp}
+class TransformationRule {
+public:
+  virtual bool IsApplicable(utils::NotNull<LogicalExpr*> expr) = 0;
+  utils::NotNull<LogicalExpr*> Apply(
+      utils::NotNull<LogicalExpr*> expr, Memo& memo);
+
+private:
+  virtual LogicalOperator ApplyImpl(
+      utils::NotNull<LogicalExpr*> expr, Memo& memo) = 0;
+};
+
+class ImplementationRule {
+public:
+  virtual bool IsApplicable(utils::NotNull<LogicalExpr*> expr) = 0;
+  virtual utils::NotNull<PhysicalExpr*> Apply(
+      utils::NotNull<LogicalExpr*> expr, Memo& memo) = 0;
+};
+  \end{minted}
+\end{listing}
+
+Правило трансформации создает новое логическое выражение и добавляет его в
+ту же группу Memo, что и исходное выражение. Следовательно, правило должно
+сохранять семантику запроса. Правило реализации создает физическое выражение,
+которое может быть передано модулю исполнения.
+
+Реализованы следующие трансформационные правила:
+\begin{itemize}
+  \item коммутативность соединения;
+  \item ассоциативность соединения;
+  \item разбиение конъюнкции на последовательность фильтров;
+  \item объединение последовательных фильтров;
+  \item проталкивание фильтра через проекцию;
+  \item проталкивание фильтра во входы соединения;
+  \item преобразование выражения \verb|IN| в цепочку сравнений.
+\end{itemize}
+
+Например, правило коммутативности преобразует выражение $A \Join B$ в
+$B \Join A$. Для левого и правого внешнего соединения одновременно изменяется
+тип соединения. Реализация правила приведена в
+листинге~\ref{lst:join-commutativity}.
+
+\begin{listing}[H]
+  \caption{Правило коммутативности соединения.}
+  \label{lst:join-commutativity}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize,
+    linenos=false, xleftmargin=1.5em]{cpp}
+LogicalOperator JoinCommutativity::ApplyImpl(
+    utils::NotNull<LogicalExpr*> expr, Memo&) {
+  auto join = std::get<logical::Join>(expr->root_operator);
+  std::swap(join.lhs, join.rhs);
+
+  if (join.type == JoinType::kLeft) {
+    join.type = JoinType::kRight;
+  } else if (join.type == JoinType::kRight) {
+    join.type = JoinType::kLeft;
+  }
+  return join;
+}
+  \end{minted}
+\end{listing}
+
+Правило проталкивания фильтра через соединение разбивает предикат на конъюнкты.
+Каждый конъюнкт анализируется отдельно. Если он ссылается только на атрибуты
+одного входа соединения, фильтр переносится ближе к соответствующей таблице. Это
+позволяет уменьшить число кортежей до выполнения соединения. Для внешних
+соединений учитывается направление: фильтр нельзя переносить в такой вход, для
+которого это изменит семантику результата.
+
+Реализационные правила создают:
+\begin{itemize}
+  \item последовательное сканирование таблицы;
+  \item фильтрацию;
+  \item проекцию;
+  \item агрегацию;
+  \item декартово произведение вложенными циклами;
+  \item соединение вложенными циклами;
+  \item хеш-соединение.
+\end{itemize}
+
+Хеш-соединение применяется только для внутреннего эквисоединения двух атрибутов.
+Для остальных условий доступно соединение вложенными циклами. Проверка
+применимости правила приведена в листинге~\ref{lst:implement-hash-join}.
+
+\begin{listing}[H]
+  \caption{Проверка применимости хеш-соединения.}
+  \label{lst:implement-hash-join}
+  \begin{minted}[style=bw, breaklines, frame=single,
+    fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{cpp}
+bool ImplementHashJoin::IsApplicable(
+    utils::NotNull<LogicalExpr*> expr) {
+  if (!std::holds_alternative<logical::Join>(
+          expr->root_operator)) {
+    return false;
+  }
+
+  const auto& join =
+      std::get<logical::Join>(expr->root_operator);
+
+  if (join.type != JoinType::kInner) return false;
+
+  const auto* bin =
+      std::get_if<BinaryExpression>(&join.qual);
+
+  return bin && bin->binop == BinaryOp::kEq
+      && std::holds_alternative<Attribute>(*bin->lhs)
+      && std::holds_alternative<Attribute>(*bin->rhs);
+}
+  \end{minted}
+\end{listing}
+
+Для каждого выражения хранится информация о ранее примененных правилах. Это
+предотвращает повторное выполнение одного правила над одним выражением и
+ограничивает образование циклов при заполнении Memo.
+
+\subsubsection{Оценка кардинальности}
+
+Стоимость физического плана зависит от количества обрабатываемых кортежей.
+Для получения этой величины используется класс
+\verb|CardinalityEstimates| из файла
+\verb|src/stewkk/sql/logic/optimizer/cardinality.cpp|.
+
+Оценка кардинальности вычисляется для группы Memo и кэшируется. В текущей
+версии используются следующие эвристики:
+\begin{itemize}
+  \item для таблицы используется известное количество строк или значение по
+        умолчанию;
+  \item фильтрация и проекция сохраняют оценку кардинальности входа;
+  \item скалярная агрегация возвращает одну строку;
+  \item декартово произведение имеет кардинальность $N_l N_r$;
+  \item для соединения используется произведение кардинальностей входов и
+        коэффициента селективности.
+\end{itemize}
+
+Для эквисоединения двух атрибутов коэффициент селективности оценивается как
+\[
+  S = \frac{1}{\max(1, N_l, N_r)}.
+\]
+Для конъюнкции условий коэффициенты селективности перемножаются.
+
+\subsubsection{Стоимостная модель}
+
+Стоимость плана вычисляется как сумма локальных стоимостей физических
+операторов. Коэффициенты были подобраны с помощью бенчмарков отдельных
+операторов, описанных в разделе тестирования.
+
+Для входных кардинальностей $N$, $N_l$ и $N_r$ используются следующие формулы:
+\[
+\begin{aligned}
+  C_{\text{scan}} &= 100N, \\
+  C_{\text{filter}} &= 100N, \\
+  C_{\text{projection}} &= 22N, \\
+  C_{\text{aggregation}} &= 510N, \\
+  C_{\text{nested-loop join}} &= 70N_lN_r, \\
+  C_{\text{cross join}} &= 104N_lN_r, \\
+  C_{\text{hash join}} &= 69(N_l + N_r), \\
+  C_{\text{sort}} &\approx 11N\log_2N.
+\end{aligned}
+\]
+
+Фрагмент реализации стоимостной модели приведен в
+листинге~\ref{lst:optimizer-cost}.
+
+\begin{listing}[H]
+  \caption{Вычисление локальной стоимости физических операторов.}
+  \label{lst:optimizer-cost}
+  \begin{minted}[style=bw, breaklines, frame=single,
+    fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{cpp}
+int64_t CalcCost(PhysicalExpr* expr,
+                  CardinalityEstimates& cardinality) {
+  return std::visit(utils::Overloaded{
+    [&](const physical::SeqScan&) {
+      return 100 * cardinality.GetCardinality(expr->group);
+    },
+    [&](const physical::NestedLoopJoin& j) {
+      return 70 * cardinality.GetCardinality(j.lhs)
+                * cardinality.GetCardinality(j.rhs);
+    },
+    [&](const physical::HashJoin& j) {
+      return 69 * (cardinality.GetCardinality(j.lhs)
+                  + cardinality.GetCardinality(j.rhs));
+    },
+    [&](const physical::Sort& s) {
+      auto n = cardinality.GetCardinality(s.input);
+      return 11 * n * std::bit_width(
+          static_cast<uint64_t>(n));
+    },
+    ...
+  }, expr->root_operator);
+}
+  \end{minted}
+\end{listing}
+
+\subsubsection{Алгоритм поиска}
+
+Класс \verb|Optimizer| реализует алгоритм поиска. При создании объекта исходное
+логическое дерево помещается в Memo. Поиск запускается для корневой группы и
+требуемых физических свойств результата.
+
+Алгоритм использует стек отложенных задач. Это позволяет разделить процесс на
+небольшие операции: исследование группы, применение правила, оптимизацию
+физического выражения и обработку его дочерних узлов.
+
+Основной метод оптимизации группы приведен в
+листинге~\ref{lst:optimize-group}.
+
+\begin{listing}[H]
+  \caption{Оптимизация группы Memo.}
+  \label{lst:optimize-group}
+  \begin{minted}[style=bw, breaklines, frame=single,
+    fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{cpp}
+void Optimizer::OptimizeGroup(Group* group,
+                              PropertySet required,
+                              Limit limit) {
+  WinnerKey key{group, required};
+  if (winner_.contains(key)) return;
+
+  if (IsExplored(group)
+      && limit
+      && LowerBoundCost(group) >= *limit) {
+    return;
+  }
+
+  if (!IsExplored(group)) {
+    tasks_.emplace([=] {
+      OptimizeGroup(group, required, limit);
+    });
+    tasks_.emplace([=] {
+      ExploreGroup(group, limit);
+    });
+    return;
+  }
+
+  for (auto expr : group->GetPhysicalExprs()) {
+    if (expr->is_enforcer) continue;
+    auto cost = local_cost_[expr.get()];
+    if (!limit || cost < *limit) {
+      tasks_.emplace([=] {
+        OptimizeInputs(expr, required, {}, cost, limit);
+      });
+    }
+  }
+
+  AddEnforcers(group, required, limit);
+}
+  \end{minted}
+\end{listing}
+
+Если группа еще не исследована, в стек добавляются две задачи. Первая расширяет
+группу с помощью правил, вторая повторно запускает ее оптимизацию после
+расширения. Если группа уже исследована, для каждого физического выражения
+вычисляется полная стоимость с учетом дочерних групп.
+
+Для каждой пары из группы и требуемого набора свойств хранится лучший найденный
+вариант. Ключ такого варианта представлен структурой \verb|WinnerKey|:
+
+\begin{minted}[style=bw, breaklines, frame=single,
+  fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{cpp}
+struct WinnerKey {
+  Group* group;
+  PropertySet required;
+};
+\end{minted}
+
+Хранение победителя отдельно для каждого набора свойств необходимо, поскольку
+самый дешевый неотсортированный план может отличаться от самого дешевого плана,
+удовлетворяющего требованию \verb|ORDER BY|.
+
+Дочерние группы физического выражения оптимизируются последовательно. После
+получения победителя дочерней группы его стоимость прибавляется к накопленной
+стоимости. Если все дочерние группы обработаны, проверяются выходные свойства
+плана. Затем найденный вариант при необходимости становится новым победителем.
+
+\subsubsection{Метод ветвей и границ}
+
+Полный перебор пространства планов быстро становится непрактичным при
+увеличении количества соединяемых таблиц. Для сокращения перебора используется
+метод ветвей и границ.
+
+Для каждой группы вычисляется нижняя граница стоимости. Она равна минимальной
+сумме нижней оценки локального оператора и нижних оценок дочерних групп.
+Например, для логического соединения выбирается минимум между стоимостью
+хеш-соединения и стоимостью соединения вложенными циклами:
+\[
+  LB_{\text{join}} =
+  \min(69(N_l + N_r), 70N_lN_r).
+\]
+
+Если нижняя граница не меньше стоимости уже известного решения, исследование
+ветви прекращается. Фрагмент реализации приведен в
+листинге~\ref{lst:lower-bound}.
+
+\begin{listing}[H]
+  \caption{Вычисление нижней границы стоимости группы.}
+  \label{lst:lower-bound}
+  \begin{minted}[style=bw, breaklines, frame=single,
+    fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{cpp}
+int64_t Optimizer::LowerBoundCost(Group* group) {
+  if (auto it = lower_bounds_.find(group);
+      it != lower_bounds_.end()) {
+    return it->second;
+  }
+
+  int64_t best = std::numeric_limits<int64_t>::max();
+
+  for (auto expr : group->GetLogicalExprs()) {
+    int64_t cost = LowerBoundLocalCost(expr, cardinality_);
+
+    for (auto child : GetChildren(expr)) {
+      cost += LowerBoundCost(child);
+    }
+    best = std::min(best, cost);
+  }
+
+  lower_bounds_[group] = best;
+  return best;
+}
+  \end{minted}
+\end{listing}
+
+Метод \verb|OptimizeInputs| также уменьшает границу для очередного дочернего
+узла. Из общей допустимой стоимости вычитаются уже накопленная стоимость и
+нижние оценки еще не обработанных дочерних групп. Благодаря этому заведомо
+неоптимальные ветви отбрасываются до построения полного плана.
+
+Для исследовательских задач предусмотрен метод \verb|OptimizeExhaustive|. Он
+запускает тот же алгоритм без ограничения стоимости и используется при
+проверке достижимости внешних физических планов.
+
+\subsubsection{Физические свойства}
+
+Некоторые требования к результату нельзя выразить только стоимостью. Например,
+конструкция \verb|ORDER BY| требует от результата определенного порядка
+кортежей. Для представления таких требований используется класс
+\verb|PropertySet|.
+
+В текущей версии реализовано свойство сортировки \verb|SortProperty|. Порядок
+считается удовлетворяющим требованию, если требуемые ключи являются префиксом
+фактически полученного порядка. Например, сортировка по $(a, b)$ удовлетворяет
+требованию сортировки по $a$.
+
+Некоторые операторы сохраняют порядок дочернего узла. Фильтрация и проекция
+сохраняют свойства входа. Соединение вложенными циклами сохраняет свойства
+левого входа. Хеш-соединение и агрегация не гарантируют сохранение порядка.
+
+Если подходящий план не найден, оптимизатор пытается добавить обеспечивающий
+оператор. Для сортировки используется класс \verb|SortEnforcer|. Он проверяет
+наличие требуемых атрибутов в схеме группы и создает физический оператор
+сортировки.
+
+\begin{listing}[H]
+  \caption{Добавление оператора сортировки для обеспечения свойства.}
+  \label{lst:sort-enforcer}
+  \begin{minted}[style=bw, breaklines, frame=single,
+    fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{cpp}
+std::optional<PhysicalOperator> SortEnforcer::TryBuild(
+    utils::NotNull<Group*> group,
+    const PropertySet& required,
+    SchemaCatalog& schema) const {
+  const auto* sort = required.Get<SortProperty>();
+  if (!sort) return std::nullopt;
+
+  if (!ContainsRequiredKeys(schema.GetSchema(group),
+                            sort->order)) {
+    return std::nullopt;
+  }
+
+  return physical::Sort{group, sort->order};
+}
+  \end{minted}
+\end{listing}
+
+\subsubsection{Формирование физического плана}
+
+После завершения поиска метод \verb|BuildOptimalPlan| рекурсивно восстанавливает
+итоговое дерево физических операторов. Для каждой группы выбирается сохраненный
+победитель с учетом требуемых свойств. Затем аналогичным образом
+восстанавливаются планы дочерних групп.
+
+Результатом работы оптимизатора является объект \verb|PhysicalPlanNode|, который
+не зависит от структуры Memo. Он может быть сериализован для анализа или передан
+модулю исполнения запросов.
+
+Таким образом, модуль оптимизации разделяет представление пространства планов,
+правила его расширения, стоимостную модель и алгоритм поиска. Такая организация
+позволяет добавлять новые правила и физические операторы без изменения основной
+логики оптимизатора.
+
+\subsection{Модуль физического хранения данных}
+
+Данные хранятся в одной директории, где каждому отношению соответствует
+файл с CSV-таблицей. Название файла совпадает с названием отношения.
+Первая строка CSV-файла содержит описание атрибутов и их типов,
+последующие строки содержат кортежи отношения.
+
+Для чтения таблиц реализован класс
+\verb|CsvDirSequentialScanner|~\refAlgo{lst:csv-dir-scanners}. Он
+выполняет последовательное сканирование CSV-файла и передает прочитанные
+кортежи модулю исполнения физических операторов.
+
+\begin{listing}[H]
+  \caption{Объявления классов сканирования CSV-таблиц.}
+  \label{lst:csv-dir-scanners}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{C++}
+struct CsvDirSequentialScanner {
+    std::string dir;
+
+    boost::asio::awaitable<Result<>> operator()(
+        const std::string& table_name,
+        const std::string& output_table_name,
+        AttributesInfoChannel& attrs_chan,
+        TuplesChannel& tuples_chan) const;
+};
+
+struct CsvDirIndexedScanner {
+    std::string dir;
+
+    boost::asio::awaitable<Result<>> operator()(
+        const std::string& table_name,
+        const std::string& output_table_name,
+        const Expression& predicate,
+        AttributesInfoChannel& attrs_chan,
+        TuplesChannel& tuples_chan) const;
+};
+  \end{minted}
+\end{listing}
+
+Дополнительно реализована поддержка индексов. Индекс представляет собой
+отсортированный бинарный файл, содержащий целочисленные ключи и смещения
+соответствующих строк в CSV-файле. Использование смещений позволяет
+извлекать подходящие кортежи без полного сканирования отношения.
+
+Список доступных индексов задается в файле \verb|indexes.meta|,
+расположенном в директории с данными. Каждая строка файла содержит
+название отношения, название индексируемого атрибута, тип индекса и имя
+бинарного файла~\refAlgo{lst:meta}.
+
+\begin{listing}[H]
+  \caption{Пример файла с метаданными о доступных индексах.}
+  \label{lst:meta}
+\begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{text}
+users id sorted users.id.sorted.idx
+\end{minted}
+\end{listing}
+
+Для чтения данных с использованием индекса реализован класс
+\verb|CsvDirIndexedScanner|~\refAlgo{lst:csv-dir-scanners}. Если указанный в
+метаданных бинарный файл отсутствует, индекс строится при первом обращении к
+таблице. Для поиска диапазона подходящих ключей используется упорядоченность
+записей индекса.
+
+Поддерживаются индексы только для целочисленных атрибутов. Индексное
+сканирование применяется для предикатов сравнения атрибута с
+целочисленной константой. Поддерживаются операции равенства, строгого и
+нестрогого сравнения. После чтения найденных строк дополнительно
+вычисляется исходный предикат, что обеспечивает корректную обработку
+составных условий.
+
+\subsection{Модуль исполнения физических планов}
+
+За исполнение запросов отвечает класс \verb|Executor|~\refAlgo{lst:executor}.
+Он получает физический план, запускает исполнение его операторов и формирует
+результирующее отношение. Физический план представлен деревом объектов типа
+\verb|PhysicalPlanNode|. Для каждого типа узла предусмотрена отдельная функция
+исполнения.
+
+Поддерживается исполнение последовательного и индексного сканирования,
+фильтрации, проекции, сортировки, агрегации, декартова произведения, соединения
+вложенными циклами и хеш-соединения. Операторы могут обрабатывать дочерние узлы
+плана независимо и передавать результаты вышестоящим операторам по мере их
+готовности.
+
+\begin{listing}[H]
+  \caption{Основные элементы объявления класса Executor.}
+  \label{lst:executor}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{C++}
+template <typename ExpressionExecutor = InterpretedExpressionExecutor>
+class Executor {
+public:
+  using SequentialScan = std::function<boost::asio::awaitable<Result<>>(
+      const std::string& table_name,
+      const std::string& output_table_name,
+      AttributesInfoChannel& attr_chan,
+      TuplesChannel& tuples_chan)>;
+
+  using IndexScan = std::function<boost::asio::awaitable<Result<>>(
+      const std::string& table_name,
+      const std::string& output_table_name,
+      const Expression& predicate,
+      AttributesInfoChannel& attr_chan,
+      TuplesChannel& tuples_chan)>;
+
+  Executor(SequentialScan seq_scan,
+            IndexScan index_scan,
+            boost::asio::any_io_executor executor);
+
+  boost::asio::awaitable<Result<Relation>>
+  Execute(const PhysicalPlanNode& op);
+
+private:
+  SequentialScan sequential_scan_;
+  IndexScan index_scan_;
+  ExpressionExecutor expression_executor_;
+};
+  \end{minted}
+\end{listing}
+
+Класс параметризуется интерфейсами \verb|SequentialScan|, \verb|IndexScan| и
+\verb|ExpressionExecutor|. Первые два интерфейса отделяют исполнение физического
+плана от конкретного способа хранения данных. \verb|SequentialScan| выполняет
+полное чтение таблицы, а \verb|IndexScan| получает дополнительный предикат и
+извлекает строки с использованием индекса. Благодаря этому исполнитель не
+зависит от формата CSV-файлов и устройства индексных структур.
+
+Параметр \verb|ExpressionExecutor| определяет способ вычисления скалярных
+выражений. Реализованы стратегии для интерпретации выражений и для
+JIT-компиляции. По умолчанию используется интерпретируемый вариант.
+
+Значения атрибутов представлены структурой \verb|Value|. Она содержит признак
+\verb|NULL| и значение одного из поддерживаемых типов: целого числа, логического
+значения или идентификатора строки. Исходное значение для строк сохраняется в
+пул, а в кортеже хранится числовой идентификатор строки. Кортеж представлен
+вектором значений, а отношение состоит из описания атрибутов и списка кортежей.
+
+Коммуникация между физическими операторами осуществляется с помощью асинхронных
+каналов. Используются два типа каналов: \verb|AttributesInfoChannel| для
+однократной передачи схемы отношения и \verb|TuplesChannel| для передачи данных.
+Кортежи передаются векторами. Это уменьшает число операций синхронизации и
+позволяет потоковым операторам начинать обработку до полного завершения дочерних
+узлов плана.
+
+Для реализации каналов используется
+\verb|boost::asio::experimental::concurrent_channel|. Данный класс обеспечивает
+потокобезопасность, буферизацию, асинхронную передачу данных и совместимость с
+корутинами. Такой подход позволяет единообразно организовать взаимодействие
+между операторами независимо от конкретных алгоритмов для их реализации.
+
+\subsection{Руководство пользователя}
+
+Для сборки программы требуются CMake, компилятор C++ с поддержкой C++23, LLVM,
+ANTLR4 и библиотеки Boost. Дополнительно требуется Python, pytest и Docker. В
+репозитории присутствует файл \texttt{flake.nix}, описывающий необходимые
+зависимости, поэтому в системе с пакетным менеджером Nix рекомендуется открыть
+окружение при помощи команды \verb|nix develop|.
+
+Все команды далее выполняются из корневого каталога проекта.
+
+\subsubsection{Сборка программы}
+
+Для выполнения конфигурации и сборки следует запустить команды на листинге~\ref{lst:build}.
+
+\begin{listing}[H]
+  \caption{Конфигурация и сборка проекта.}
+  \label{lst:build}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{bash}
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -- -j 6
+  \end{minted}
+\end{listing}
+
+После успешной сборки исполняемый файл находится по пути
+\texttt{build/bin/sql}. Для повторной сборки также можно использовать цель
+\texttt{make build}.
+
+\subsubsection{Запуск программы}
+
+Пользователь должен создать отдельную директорию и поместить в нее CSV-файлы.
+Имя каждого файла без расширения считается именем таблицы. В заголовке каждого
+файла для столбца указывается имя и тип через двоеточие. Поддерживаются типы
+\texttt{int} и \texttt{string}. Пустое SQL-значение записывается как
+\texttt{NULL}.
+
+Для первого запуска можно использовать готовые тестовые данные в \verb|test/static/executor/test_data|.
+
+SQL-запрос передается программе через стандартный поток ввода. Простейший
+пример запуска представлен на листинге~\ref{lst:run-example}.
+
+\begin{listing}[H]
+  \caption{Простейший пример запуска программы.}
+  \label{lst:run-example}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{bash}
+echo 'SELECT users.id FROM users;' | \
+  ./build/bin/sql --data-dir test/static/executor/test_data
+  \end{minted}
+\end{listing}
+
+Программа выводит заголовок отношения, содержащий имена и типы столбцов, а
+затем полученные строки. Если запрос не содержит \ORDERBY{}, строки вывода
+сортируются лексикографически для воспроизводимости результата.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{run-example.png}
+\caption{Выполнение SQL-запроса над тестовыми данными}%
+\label{fig:practice-run}
+\end{figure}
+
+\subsubsection{Вывод логического и физического планов}
+
+Для диагностики предусмотрены параметры \texttt{--print-ast} и
+\texttt{--print-plan}. Первый параметр выводит логическое дерево после
+синтаксического анализа, второй --- выбранный физический план.
+Пример использования представлен на листинге~\ref{lst:run-plan}.
+
+\begin{listing}[H]
+  \caption{Запуск программы с выводом логического дерева и физического плана.}
+  \label{lst:run-plan}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize, linenos=false, xleftmargin=1.5em]{bash}
+echo 'SELECT users.id FROM users WHERE users.age > 18 \
+ORDER BY users.id;' | \
+  ./build/bin/sql --data-dir test/static/executor/test_data \
+  --print-ast --print-plan
+  \end{minted}
+\end{listing}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{run-with-prints.png}
+\caption{Вывод логического дерева и физического плана}%
+\label{fig:practice-plan}
+\end{figure}
+
+Для проверки полноты набора правил оптимизации предусмотрен режим
+\verb|--check-reachable|. В этом режиме программа получает SQL-запрос и
+сериализованный физический план, после чего выполняет полный перебор
+пространства поиска без отсечения по стоимости. Если заданный план может быть
+получен с помощью реализованных правил, программа выводит сообщение
+\verb|REACHABLE|.
+
+План передается в отдельном файле в формате S-expression. Например, содержимое
+файла \verb|target.plan| может иметь вид, представленный на листинге~\ref{lst:target-plan}.
+
+\begin{listing}[H]
+  \caption{Пример содержимого файла с целевым физическим планом.}
+  \label{lst:target-plan}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
+(PhysicalProjection (exprs (attr users id))
+  (PhysicalFilter (> (attr users age) 18)
+    (SeqScan users)))
+  \end{minted}
+\end{listing}
+
+Проверка выполняется командой на листинге~\ref{lst:check-reachable}.
+
+\begin{listing}[H]
+  \caption{Запуск программы в режиме проверки достижимости плана.}
+  \label{lst:check-reachable}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
+echo 'SELECT users.id FROM users WHERE users.age > 18;' | \
+  ./build/bin/sql \
+  --data-dir test/static/executor/test_data \
+  --check-reachable target.plan
+  \end{minted}
+\end{listing}
+
+Если план недостижим, программа выводит сообщение \verb|NOT REACHABLE| и
+описание первого обнаруженного расхождения. Параметр \verb|--data-dir|
+необходим для загрузки схем таблиц. В частности, схема используется при
+проверке достижимости планов с сортировкой.
+
+Для автоматизированной проверки достижимости планов используется Microsoft SQL
+Server. Контейнер с СУБД запускается с помощью Docker Compose. Перед запуском
+скриптов в директории research, следует выполнить команды на листинге~\ref{lst:docker-up}.
+
+\begin{listing}[H]
+  \caption{Запуск контейнера с Microsoft SQL Server.}
+  \label{lst:docker-up}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
+cd research
+docker compose up -d
+cd ..
+  \end{minted}
+\end{listing}
+
+Для запуска модульных тестов C++ следует выполнить команду на листинге~\ref{lst:ctest}.
+
+\begin{listing}[H]
+  \caption{Запуск модульных тестов C++.}
+  \label{lst:ctest}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
+ctest --test-dir build --output-on-failure
+  \end{minted}
+\end{listing}
+
+Модульные тесты проверяют синтаксический анализ запросов, вычисление выражений,
+исполнение физических операторов, индексное сканирование, сериализацию планов,
+структуру Memo, правила оптимизации и физические свойства.
+
+Для запуска Python-тестов преобразователя планов Microsoft SQL Server
+необходимо предварительно запустить контейнер, после чего выполнить команды на листинге~\ref{lst:pytest-converter}.
+
+\begin{listing}[H]
+  \caption{Запуск тестов преобразователя планов Microsoft SQL Server.}
+  \label{lst:pytest-converter}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
+cd research
+pytest -q test_converter.py
+cd ..
+  \end{minted}
+\end{listing}
+
+Тесты инструментов Star Schema Benchmark запускаются командой на листинге~\ref{lst:pytest-ssb}.
+
+\begin{listing}[H]
+  \caption{Запуск тестов инструментов Star Schema Benchmark.}
+  \label{lst:pytest-ssb}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
+pytest -q benchmarks/datasets/ssb
+  \end{minted}
+\end{listing}
+
+Для поиска ошибок исполнения реализован дифференциальный фаззер. Он генерирует
+случайные SQL-запросы, выполняет их в модельной СУБД и Microsoft SQL Server,
+после чего сравнивает полученные результаты. Перед запуском необходимо поднять
+контейнер с Microsoft SQL Server.
+
+Фаззер запускается из корневого каталога проекта командой на листинге~\ref{lst:diff-fuzz}.
+
+\begin{listing}[H]
+  \caption{Запуск дифференциального фаззера.}
+  \label{lst:diff-fuzz}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
+python -m research.fuzz.diff_fuzz \
+  --cli build/bin/sql \
+  --data-dir test/static/executor/test_data
+  \end{minted}
+\end{listing}
+
+Для проверки режима JIT-компиляции можно дополнительно передать параметр
+\verb|--jit|. При обнаружении расхождения фаззер выводит начальное значение
+генератора случайных чисел и текст запроса, что позволяет воспроизвести ошибку.
+
+Второй фаззер проверяет полноту набора правил оптимизатора. Он получает
+физический план запроса из Microsoft SQL Server, преобразует его во внутренний
+формат проекта и запускает программу в режиме \verb|--check-reachable|, как показано на листинге~\ref{lst:reach-fuzz}.
+
+\begin{listing}[H]
+  \caption{Запуск фаззера проверки полноты правил оптимизатора.}
+  \label{lst:reach-fuzz}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
+python -m research.fuzz.reach_fuzz \
+  --cli build/bin/sql \
+  --data-dir test/static/executor/test_data
+  \end{minted}
+\end{listing}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{reach-fuzz.png}
+\caption{Пример вывода фаззера проверки полноты правил оптимизатора}%
+\label{fig:reach-fuzz}
+\end{figure}
+
+Оба фаззера поддерживают параметр \verb|--start-seed|. Он задает начальное
+значение генератора и используется для воспроизводимого повторного запуска,
+как показано на листинге~\ref{lst:reach-fuzz-seed}.
+
+\begin{listing}[H]
+  \caption{Запуск фаззера с фиксированным начальным значением генератора.}
+  \label{lst:reach-fuzz-seed}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize=\footnotesize]{text}
+python -m research.fuzz.reach_fuzz \
+  --cli build/bin/sql \
+  --data-dir test/static/executor/test_data \
+  --start-seed 1000
+  \end{minted}
+\end{listing}
+
+\begin{longtable}{|p{4.2cm}|p{9.3cm}|}
+  \caption{Параметры командной строки программы.}\label{tbl:practice-cli}\\
+  \hline
+  Параметр & Назначение \\
+  \hline
+  \endfirsthead
+  \multicolumn{2}{l}{\small Продолжение таблицы~\ref{tbl:practice-cli}}\\
+  \hline
+  Параметр & Назначение \\
+  \hline
+  \endhead
+  \texttt{--data-dir DIR} &
+  Директория с CSV-файлами таблиц. Обязательна при обычном исполнении запроса. \\
+  \hline
+  \texttt{--print-ast} &
+  Вывод логического дерева операторов после синтаксического анализа. \\
+  \hline
+  \texttt{--print-plan} &
+  Вывод выбранного физического плана в формате S-expression. \\
+  \hline
+  \texttt{--jit} &
+  Использование кэшируемой JIT-компиляции скалярных выражений. \\
+  \hline
+  \texttt{--check-reachable FILE} &
+  Проверка достижимости физического плана, сериализованного в файле. \\
+  \hline
+\end{longtable}
+
+\section{Тестирование}
+
+Тестирование разработанной модельной СУБД выполнялось на нескольких уровнях. Для
+проверки отдельных компонентов использовались модульные тесты. Корректность
+выполнения запросов и полнота пространства поиска оптимизатора дополнительно
+проверялись с помощью фаззинга. Для оценки производительности и калибровки
+стоимостной модели были реализованы бенчмарки. Вспомогательные инструменты на
+языке Python проверяются с помощью библиотеки \verb|pytest|.
+
+\subsection{Модульные тесты}
+
+Модульные тесты реализованы с использованием библиотеки GoogleTest. Они
+проверяют синтаксический анализ SQL-запросов, исполнение физических операторов,
+индексное сканирование, вычисление выражений, сериализацию физических планов,
+структуру Memo, правила оптимизации и обработку свойств сортировки.
+
+Отдельные тесты проверяют выбор физического плана. Например, при различных
+оценках кардинальности оптимизатор должен выбирать подходящий порядок соединения
+таблиц. Также проверяется достижимость физических планов при полном переборе
+пространства поиска.
+
+Пример теста синтаксического анализатора приведен в
+листинге~\ref{lst:googletest}.
+
+\begin{listing}[H]
+  \caption{Пример модульного теста.}
+  \label{lst:googletest}
+  \begin{minted}[style=bw, breaklines, frame=single, fontsize = \footnotesize, linenos=false, xleftmargin = 1.5em]{cpp}
+TEST(ParserTest, SelectSingleColumnFromSingleTable) {
+  std::stringstream s{"SELECT users.id FROM users;"};
+
+  Operator got = GetAST(s).value().op;
+
+  ASSERT_THAT(got, VariantWith<Projection>(
+      Projection{
+          std::vector<Expression>{{Attribute{"users", "id"}}},
+          std::make_shared<Operator>(Table{"users"})
+      }));
+}
+  \end{minted}
+\end{listing}
+
+\subsection{Python-тесты}
+
+Для проверки вспомогательных инструментов используются тесты на языке Python,
+запускаемые с помощью библиотеки \verb|pytest|. Они разделены на две группы.
+
+Первая группа проверяет преобразование физических планов Microsoft SQL Server из
+формата ShowPlanXML во внутренний текстовый формат проекта. Рассматриваются
+последовательное и индексное сканирование, фильтрация, сортировка, агрегация и
+соединения. Часть тестов использует заранее подготовленные XML-фрагменты, часть
+может быть запущена с подключением к экземпляру Microsoft SQL Server.
+
+Вторая группа относится к Star Schema Benchmark. Она проверяет преобразование
+исходных таблиц SSB в CSV-формат модельной СУБД, обработку некорректных входных
+данных и успешное выполнение стандартных аналитических запросов.
+
+\subsection{Фаззинг}
+
+Для проверки системы на большом количестве входных данных реализован генератор
+случайных SQL-запросов. Он строит запросы из поддерживаемого подмножества языка:
+проекции, фильтры, соединения, группировки, агрегатные функции, сортировки,
+строковые выражения, \verb|IN| и \verb|BETWEEN|. Использование фиксированного
+начального значения генератора позволяет воспроизводить найденные ошибки.
+
+% TODO: заменить на макросы \sqkkw
+
+Дифференциальный фаззер выполняет каждый сгенерированный запрос в модельной СУБД
+и в Microsoft SQL Server. Результаты сравниваются как мультимножества строк.
+Для запросов с \verb|ORDER BY| дополнительно проверяется корректность порядка
+результатов. При обнаружении расхождения выводятся начальное значение
+генератора, текст запроса и результаты обеих систем.
+
+Отдельный фаззер используется для исследования полноты набора правил
+оптимизации. Для случайного запроса из Microsoft SQL Server извлекается
+физический план, после чего план преобразуется во внутренний формат проекта.
+Затем модельный оптимизатор выполняет полный перебор пространства поиска и
+проверяет, достижим ли полученный план с помощью реализованных правил. Такой
+подход позволяет находить отсутствующие преобразования и физические операторы.
+
+\subsection{Бенчмарки}
+
+Тесты производительности реализованы с помощью библиотеки Google Benchmark.
+Для запросов предусмотрены два режима построения физического плана:
+\verb|Naive| и \verb|Optimized|. В первом случае физический план строится
+непосредственно по логическому дереву без применения оптимизатора. Во втором
+случае используется стоимостная оптимизация. Сравнение этих режимов позволяет
+оценить влияние выбранного физического плана на время выполнения запроса.
+
+Бенчмарки выполняются как для небольших синтетических тестовых запросов, так и
+для набора аналитических запросов Star Schema Benchmark. Дополнительно
+поддерживается сравнение интерпретируемого и JIT-компилируемого способов
+вычисления выражений.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{naive-vs-optimizer.png}
+\caption{Сравнение времени выполнения запросов при наивном и оптимизированном
+   построении физического плана.}
+\label{fig:benchmark-naive-optimized}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{optimizer-speedup.png}
+\caption{Относительное ускорение выполнения запросов после применения оптимизатора.}
+\label{fig:benchmark-speedup}
+\end{figure}
+
+В таблице~\ref{tbl:ssb-benchmark} приведено среднее время выполнения трех
+повторений запросов SSB для набора данных масштаба \texttt{sf001}. Ускорение
+рассчитывается как отношение времени выполнения наивного плана ко времени
+выполнения оптимизированного плана.
+
+\begin{table}[H]
+  \centering
+  \caption{Результаты выполнения запросов Star Schema Benchmark.}
+  \label{tbl:ssb-benchmark}
+  \begin{tabular}{|l|r|r|r|}
+    \hline
+    Запрос & \texttt{Naive}, мс & \texttt{Optimized}, мс & Ускорение \\
+    \hline
+    \texttt{q1.1} & 8.11 & 6.51 & 1.25 \\
+    \texttt{q1.2} & 8.20 & 6.59 & 1.24 \\
+    \texttt{q1.3} & 8.00 & 6.58 & 1.22 \\
+    \texttt{q2.1} & 8.80 & 9.33 & 0.94 \\
+    \texttt{q2.2} & 8.84 & 6.18 & 1.43 \\
+    \texttt{q2.3} & 8.68 & 5.80 & 1.50 \\
+    \texttt{q3.1} & 35.67 & 5.90 & 6.04 \\
+    \texttt{q3.2} & 35.88 & 5.58 & 6.43 \\
+    \texttt{q3.3} & 38.05 & 5.86 & 6.49 \\
+    \texttt{q3.4} & 37.12 & 5.77 & 6.43 \\
+    \texttt{q4.1} & 9.06 & 12.21 & 0.74 \\
+    \texttt{q4.2} & 9.05 & 11.12 & 0.81 \\
+    \texttt{q4.3} & 9.28 & 6.31 & 1.47 \\
+    \hline
+  \end{tabular}
+\end{table}
+
+\subsection{Калибровка стоимостной модели}
+
+Для калибровки коэффициентов в стоимостных формулах реализованы отдельные
+бенчмарки физических операторов. Измеряется время выполнения последовательного
+сканирования, фильтрации, проекции, сортировки, агрегации, хеш-соединения,
+соединения вложенными циклами и декартова произведения.
+
+При выполнении этих бенчмарков данные хранятся в оперативной памяти. Это
+позволяет уменьшить влияние файловой системы и измерять преимущественно
+стоимость самого физического оператора. Для каждого оператора выполняются замеры
+на таблицах различного размера.
+
+Дополнительно формируются группы запусков с приблизительно одинаковой расчетной
+стоимостью. Для этого размер входных отношений выбирается на основе стоимостной
+формулы оператора. Сопоставление расчетной стоимости с фактическим временем
+выполнения позволяет сравнить операторы между собой и скорректировать
+коэффициенты модели. Благодаря этому оптимизатор принимает решения на основе
+оценок, соответствующих характеристикам реализованного исполнителя.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{scaling.png}
+\caption{Зависимость времени выполнения физических операторов от размера входных
+   данных.}
+\label{fig:operator-benchmark}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{calibration.png}
+\caption{Сопоставление расчетной стоимости физических операторов с фактическим
+   временем выполнения.}
+\label{fig:cost-model-calibration}
+\end{figure}
+
+Стоимостные формулы физических операторов, полученные по результатам
+калибровки, приведены в таблице~\ref{tbl:cost-model-coefficients}. 
+
+\begin{table}[H]
+  \centering
+  \caption{Стоимостные формулы физических операторов.}
+  \label{tbl:cost-model-coefficients}
+  \small
+  \begin{tabular}{|p{0.40\textwidth}|l|}
+    \hline
+    Физический оператор & Формула стоимости \\
+    \hline
+    Последовательное сканирование & $100\,n$ \\
+    Фильтрация                    & $100\,n_{out}$ \\
+    Проекция                      & $22\,n_{out}$ \\
+    Сортировка                    & $11\,n\bigl(\lfloor\log_2 n\rfloor + 1\bigr)$ \\
+    Агрегация                     & $510\,n$ \\
+    Соединение вложенными циклами & $70\,n_l n_r$ \\
+    Декартово произведение        & $104\,n_l n_r$ \\
+    Хеш-соединение                & $100\,n_b w_b + 35\,n_p + 10\,n_o w_o$ \\
+    \hline
+  \end{tabular}
+\end{table}
+
+\anonsection{ЗАКЛЮЧЕНИЕ}
+
+В ходе практики разработана модельная СУБД и оптимизатор для нее. Программа
+работает с CSV-файлами, поддерживает основные операторы реляционной алгебры и
+формирует оптимальный физический план на основе стоимостной модели.
+
+Ключевой частью проекта является расширяемый оптимизатор, использующий структуру
+Memo и правила преобразования. Реализован поиск планов с учетом физических
+свойств, нижних оценок стоимости и метода ветвей и границ.
+
+Корректность основных компонентов проверена модульными тестами. Дополнительно
+подготовлены бенчмарки физических операторов, оценен прирост производительности
+относительно наивного плана и реализованы инструменты дифференциального
+сравнения с промышленной СУБД Microsoft SQL Server.
+
+Цель курсовой работы была достигнута. Получена стабильная и расширяемая система,
+демонстрирующая возможности оптимизатора.
+
+В заключение, несмотря на достигнутые положительные результаты, существует
+потенциал для дальнейшего улучшения реализации оптимихатора. Это включает в себя
+реализацию дедупликации групп в процессе поиска, добавление новых правил
+трансформации и реализации и поддержку подзапросов.
+
+\renewcommand\refname{СПИСОК ИСПОЛЬЗОВАННЫХ ИСТОЧНИКОВ}
+{\catcode`"\active\def"{\relax}
+    \addcontentsline{toc}{section}{\protect\numberline{}\refname}%
+    \printbibliography
+}
+
+\end{document}

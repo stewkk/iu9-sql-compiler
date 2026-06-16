@@ -11,7 +11,7 @@
 
 namespace stewkk::sql {
 
-Result<Operator> GetAST(std::istream& in) {
+Result<ParsedQuery> GetAST(std::istream& in) {
   antlr4::ANTLRInputStream antlr_input(in);
   codegen::PostgreSQLLexer lexer(&antlr_input);
 
@@ -44,11 +44,12 @@ Result<Operator> GetAST(std::istream& in) {
     return std::unexpected(ex);
   }
 
-  if (Operator* op = std::any_cast<Operator>(&res)) {
-    return std::move(*op);
+  Operator op = Table{kEmptyTableName};
+  if (Operator* p = std::any_cast<Operator>(&res)) {
+    op = std::move(*p);
   }
 
-  return Table{kEmptyTableName};
+  return ParsedQuery{std::move(op), visitor.GetRequiredOrder()};
 }
 
 std::string GetDotRepresentation(const Expression& expr) {
@@ -60,11 +61,20 @@ std::string GetDotRepresentation(const Expression& expr) {
     std::string operator()(const UnaryExpression& expr) {
       return std::format("({} {})",ToString(expr.op), std::visit(DotFormatter{}, *expr.child));
     }
+    std::string operator()(const InExpression& expr) {
+      return ToString(Expression{expr});
+    }
+    std::string operator()(const AggregateExpression& expr) {
+      return ToString(Expression{expr});
+    }
     std::string operator()(const Attribute& expr) {
       return ToString(expr);
     }
     std::string operator()(const IntConst& expr) {
       return std::to_string(expr);
+    }
+    std::string operator()(const StringConst& expr) {
+      return ToString(Expression{expr});
     }
     std::string operator()(const Literal& expr) {
       return ToString(expr);
@@ -89,8 +99,20 @@ std::string GetDotRepresentation(const Operator& op) {
           auto [source_node, rest] = std::visit(DotFormatter{}, *op.source);
           return {node, std::format("\"{}\"\n\"{}\" -> \"{}\"\n{}", node, source_node, node, rest)};
         }
+        std::pair<std::string, std::string> operator()(const Aggregation& op) {
+          auto groups = op.group_by
+                        | std::views::transform([](const Expression& expr) { return ToString(expr); })
+                        | std::views::join_with(',') | std::ranges::to<std::string>();
+          auto aggregates = op.aggregates
+                            | std::views::transform([](const Expression& expr) { return ToString(expr); })
+                            | std::views::join_with(',') | std::ranges::to<std::string>();
+          auto node = std::format("γ group_by=[{}] aggregates=[{}]", groups, aggregates);
+          auto [source_node, rest] = std::visit(DotFormatter{}, *op.source);
+          return {node, std::format("\"{}\"\n\"{}\" -> \"{}\"\n{}", node, source_node, node, rest)};
+        }
         std::pair<std::string, std::string> operator()(const Table& op) {
-          auto node = std::format("{}", op.name);
+          auto node = op.alias ? std::format("{} AS {}", op.name, *op.alias)
+                               : std::format("{}", op.name);
           return {node, std::format("\"{}\"", node)};
         }
         std::pair<std::string, std::string> operator()(const CrossJoin& op) {

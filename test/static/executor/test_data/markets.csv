@@ -1,0 +1,4 @@
+id:int,region:string,note:string
+1,AMERICA,"North, South"
+2,EUROPE,Old World
+3,AMERICA,Fast lane

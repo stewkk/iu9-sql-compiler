@@ -1,0 +1,71 @@
+<?xml version="1.0" ?>
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.599" Build="17.0.4035.5">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementText="SELECT * FROM TitleTypes CROSS JOIN Genres" StatementId="1" StatementCompId="1" StatementType="SELECT" StatementSqlHandle="0x09008811554A49DE4EF2DE61AD889D9232940000000000000000000000000000000000000000000000000000" DatabaseContextSettingsId="4" ParentObjectId="0" StatementParameterizationType="0" RetrievedFromCache="true" StatementSubTreeCost="0.00708862" StatementEstRows="69" SecurityPolicyApplied="false" StatementOptmLevel="FULL" QueryHash="0x14C29B8A77B66750" QueryPlanHash="0x798F27E35C9F0B3F" StatementOptmEarlyAbortReason="GoodEnoughPlanFound" CardinalityEstimationModelVersion="170">
+          <StatementSetOptions QUOTED_IDENTIFIER="true" ARITHABORT="true" CONCAT_NULL_YIELDS_NULL="true" ANSI_NULLS="true" ANSI_PADDING="true" ANSI_WARNINGS="true" NUMERIC_ROUNDABORT="false"/>
+          <QueryPlan DegreeOfParallelism="1" CachedPlanSize="24" CompileTime="5" CompileCPU="5" CompileMemory="184">
+            <MemoryGrantInfo SerialRequiredMemory="0" SerialDesiredMemory="0" GrantedMemory="0" MaxUsedMemory="0"/>
+            <OptimizerHardwareDependentProperties EstimatedAvailableMemoryGrant="79270" EstimatedPagesCached="39635" EstimatedAvailableDegreeOfParallelism="4" MaxCompileMemory="1350584"/>
+            <QueryTimeStats ElapsedTime="0" CpuTime="0"/>
+            <RelOp NodeId="0" PhysicalOp="Nested Loops" LogicalOp="Inner Join" EstimateRows="69" EstimateIO="0" EstimateCPU="0.00028842" AvgRowSize="91" EstimatedTotalSubtreeCost="0.00708862" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+              <OutputList>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitleTypes]" Column="titleTypeId"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitleTypes]" Column="titleType"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Genres]" Column="genreId"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Genres]" Column="genre"/>
+              </OutputList>
+              <Warnings NoJoinPredicate="1"/>
+              <RunTimeInformation>
+                <RunTimeCountersPerThread Thread="0" ActualRows="69" Batches="0" ActualElapsedms="0" ActualCPUms="0" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row"/>
+              </RunTimeInformation>
+              <NestedLoops Optimized="0">
+                <RelOp NodeId="1" PhysicalOp="Clustered Index Scan" LogicalOp="Clustered Index Scan" EstimateRows="3" EstimatedRowsRead="3" EstimateIO="0.003125" EstimateCPU="0.0001603" AvgRowSize="62" EstimatedTotalSubtreeCost="0.0032853" TableCardinality="3" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                  <OutputList>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitleTypes]" Column="titleTypeId"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitleTypes]" Column="titleType"/>
+                  </OutputList>
+                  <RunTimeInformation>
+                    <RunTimeCountersPerThread Thread="0" ActualRows="3" Batches="0" ActualElapsedms="0" ActualCPUms="0" ActualScans="1" ActualLogicalReads="2" ActualPhysicalReads="0" ActualReadAheads="0" ActualLobLogicalReads="0" ActualLobPhysicalReads="0" ActualLobReadAheads="0" ActualRowsRead="3" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row"/>
+                  </RunTimeInformation>
+                  <IndexScan Ordered="0" ForcedIndex="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                    <DefinedValues>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitleTypes]" Column="titleTypeId"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[TitleTypes]" Column="titleType"/>
+                      </DefinedValue>
+                    </DefinedValues>
+                    <Object Database="[imdb]" Schema="[dbo]" Table="[TitleTypes]" Index="[PK_TitleTypes]" IndexKind="Clustered" Storage="RowStore"/>
+                  </IndexScan>
+                </RelOp>
+                <RelOp NodeId="2" PhysicalOp="Clustered Index Scan" LogicalOp="Clustered Index Scan" EstimateRows="23" EstimatedRowsRead="23" EstimateIO="0.0032035" EstimateCPU="0.0001038" AvgRowSize="38" EstimatedTotalSubtreeCost="0.0035149" TableCardinality="23" Parallel="0" EstimateRebinds="0" EstimateRewinds="2" EstimatedExecutionMode="Row">
+                  <OutputList>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Genres]" Column="genreId"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Genres]" Column="genre"/>
+                  </OutputList>
+                  <RunTimeInformation>
+                    <RunTimeCountersPerThread Thread="0" ActualRows="69" Batches="0" ActualElapsedms="0" ActualCPUms="0" ActualScans="1" ActualLogicalReads="7" ActualPhysicalReads="0" ActualReadAheads="0" ActualLobLogicalReads="0" ActualLobPhysicalReads="0" ActualLobReadAheads="0" ActualRowsRead="69" ActualEndOfScans="3" ActualExecutions="3" ActualExecutionMode="Row"/>
+                  </RunTimeInformation>
+                  <IndexScan Ordered="0" ForcedIndex="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                    <DefinedValues>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Genres]" Column="genreId"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Genres]" Column="genre"/>
+                      </DefinedValue>
+                    </DefinedValues>
+                    <Object Database="[imdb]" Schema="[dbo]" Table="[Genres]" Index="[PK_Genres]" IndexKind="Clustered" Storage="RowStore"/>
+                  </IndexScan>
+                </RelOp>
+              </NestedLoops>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>

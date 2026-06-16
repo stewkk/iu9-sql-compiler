@@ -1,0 +1,67 @@
+#include <stewkk/sql/logic/optimizer/rules_applier.hpp>
+
+namespace stewkk::sql {
+
+template<size_t NTransformation, size_t NImplementation>
+RulesApplier<NTransformation, NImplementation>::RulesApplier(Rules<NTransformation, NImplementation> rules)
+    : rules_(std::move(rules)) {}
+
+template<size_t NTransformation, size_t NImplementation>
+bool RulesApplier<NTransformation, NImplementation>::IsApplicable(
+    TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr, RuleContext& ctx) {
+    return !applied_transformation_rules_[expr.get()][rule.value] &&
+           rules_.transformation_rules[rule.value]->IsApplicable(expr, ctx);
+}
+
+template<size_t NTransformation, size_t NImplementation>
+utils::NotNull<LogicalExpr*> RulesApplier<NTransformation, NImplementation>::Apply(
+    TransformationRuleId rule, utils::NotNull<LogicalExpr*> expr, Memo& memo, RuleContext& ctx) {
+    applied_transformation_rules_[expr.get()][rule.value] = 1;
+    Memo::ScopedLogicalProvenance provenance{
+        memo,
+        Memo::LogicalProvenance{
+            .rule_id = rule.value,
+            .rule_name = rules_.transformation_rule_names[rule.value],
+            .source = expr.get(),
+        },
+    };
+    return rules_.transformation_rules[rule.value]->Apply(expr, memo, ctx);
+}
+
+template<size_t NTransformation, size_t NImplementation>
+bool RulesApplier<NTransformation, NImplementation>::IsApplicable(ImplementationRuleId rule, utils::NotNull<LogicalExpr*> expr) {
+    return !applied_implementation_rules_[expr.get()][rule.value] &&
+           rules_.implementation_rules[rule.value]->IsApplicable(expr);
+}
+
+template<size_t NTransformation, size_t NImplementation>
+std::vector<utils::NotNull<PhysicalExpr*>> RulesApplier<NTransformation, NImplementation>::Apply(ImplementationRuleId rule, utils::NotNull<LogicalExpr*> expr, Memo& memo) {
+    applied_implementation_rules_[expr.get()][rule.value] = 1;
+    auto result = rules_.implementation_rules[rule.value]->Apply(expr, memo);
+    for (auto physical_expr : result) {
+        physical_expr->provenance = PhysicalExpr::Provenance{
+            .kind = PhysicalExpr::ProvenanceKind::kImplementation,
+            .rule_id = rule.value,
+            .rule_name = rules_.implementation_rule_names[rule.value],
+            .source = expr.get(),
+        };
+    }
+    return result;
+}
+
+template<size_t NTransformation, size_t NImplementation>
+std::string_view RulesApplier<NTransformation, NImplementation>::GetTransformationRuleName(
+    TransformationRuleId rule) const {
+    return rules_.transformation_rule_names[rule.value];
+}
+
+template<size_t NTransformation, size_t NImplementation>
+std::string_view RulesApplier<NTransformation, NImplementation>::GetImplementationRuleName(
+    ImplementationRuleId rule) const {
+    return rules_.implementation_rule_names[rule.value];
+}
+
+template class RulesApplier<14, 9>;
+template class RulesApplier<0, 6>;
+
+}  // namespace stewkk::sql

@@ -1,0 +1,136 @@
+<?xml version="1.0" ?>
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.599" Build="17.0.4035.5">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementText="SELECT * FROM Titles LEFT OUTER JOIN Episodes ON Titles.titleId = Episodes.episodeId" StatementId="1" StatementCompId="1" StatementType="SELECT" StatementSqlHandle="0x09001F27CF97A72AC3A1D831ED783B863F900000000000000000000000000000000000000000000000000000" DatabaseContextSettingsId="4" ParentObjectId="0" StatementParameterizationType="0" RetrievedFromCache="true" StatementSubTreeCost="0.109019" StatementEstRows="10000" SecurityPolicyApplied="false" StatementOptmLevel="FULL" QueryHash="0xCA9DD3C3225621E0" QueryPlanHash="0xBF2BC742A857C646" StatementOptmEarlyAbortReason="GoodEnoughPlanFound" CardinalityEstimationModelVersion="170">
+          <StatementSetOptions QUOTED_IDENTIFIER="true" ARITHABORT="true" CONCAT_NULL_YIELDS_NULL="true" ANSI_NULLS="true" ANSI_PADDING="true" ANSI_WARNINGS="true" NUMERIC_ROUNDABORT="false"/>
+          <QueryPlan DegreeOfParallelism="1" CachedPlanSize="32" CompileTime="3" CompileCPU="3" CompileMemory="256">
+            <MemoryGrantInfo SerialRequiredMemory="0" SerialDesiredMemory="0" GrantedMemory="0" MaxUsedMemory="0"/>
+            <OptimizerHardwareDependentProperties EstimatedAvailableMemoryGrant="79270" EstimatedPagesCached="39635" EstimatedAvailableDegreeOfParallelism="4" MaxCompileMemory="1350416"/>
+            <OptimizerStatsUsage>
+              <StatisticsInfo LastUpdate="2026-05-20T15:09:30.56" ModificationCount="0" SamplingPercent="100" Statistics="[PK_Titles]" Table="[Titles]" Schema="[dbo]" Database="[imdb]"/>
+              <StatisticsInfo LastUpdate="2026-05-20T15:38:08.07" ModificationCount="0" SamplingPercent="100" Statistics="[PK_Episodes]" Table="[Episodes]" Schema="[dbo]" Database="[imdb]"/>
+            </OptimizerStatsUsage>
+            <QueryTimeStats ElapsedTime="9" CpuTime="9"/>
+            <RelOp NodeId="0" PhysicalOp="Merge Join" LogicalOp="Left Outer Join" EstimateRows="10000" EstimateIO="0" EstimateCPU="0.0486" AvgRowSize="46" EstimatedTotalSubtreeCost="0.109019" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+              <OutputList>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="titleId"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="titleTypeId"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="isAdult"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="startYear"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="endYear"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="runtime"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="voteCount"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="averageRating"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Episodes]" Column="parentId"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Episodes]" Column="episodeId"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Episodes]" Column="season"/>
+                <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Episodes]" Column="episode"/>
+              </OutputList>
+              <RunTimeInformation>
+                <RunTimeCountersPerThread Thread="0" ActualRows="10000" Batches="0" ActualElapsedms="5" ActualCPUms="5" ActualScans="0" ActualLogicalReads="0" ActualPhysicalReads="0" ActualReadAheads="0" ActualLobLogicalReads="0" ActualLobPhysicalReads="0" ActualLobReadAheads="0" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row"/>
+              </RunTimeInformation>
+              <Merge ManyToMany="0">
+                <InnerSideJoinColumns>
+                  <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Episodes]" Column="episodeId"/>
+                </InnerSideJoinColumns>
+                <OuterSideJoinColumns>
+                  <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="titleId"/>
+                </OuterSideJoinColumns>
+                <Residual>
+                  <ScalarOperator ScalarString="[imdb].[dbo].[Titles].[titleId]=[imdb].[dbo].[Episodes].[episodeId]">
+                    <Compare CompareOp="EQ">
+                      <ScalarOperator>
+                        <Identifier>
+                          <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="titleId"/>
+                        </Identifier>
+                      </ScalarOperator>
+                      <ScalarOperator>
+                        <Identifier>
+                          <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Episodes]" Column="episodeId"/>
+                        </Identifier>
+                      </ScalarOperator>
+                    </Compare>
+                  </ScalarOperator>
+                </Residual>
+                <RelOp NodeId="1" PhysicalOp="Clustered Index Scan" LogicalOp="Clustered Index Scan" EstimateRows="10000" EstimatedRowsRead="10000" EstimateIO="0.0238657" EstimateCPU="0.011157" AvgRowSize="31" EstimatedTotalSubtreeCost="0.0350227" TableCardinality="10000" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                  <OutputList>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="titleId"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="titleTypeId"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="isAdult"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="startYear"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="endYear"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="runtime"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="voteCount"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="averageRating"/>
+                  </OutputList>
+                  <RunTimeInformation>
+                    <RunTimeCountersPerThread Thread="0" ActualRows="10000" Batches="0" ActualElapsedms="4" ActualCPUms="4" ActualScans="1" ActualLogicalReads="31" ActualPhysicalReads="0" ActualReadAheads="0" ActualLobLogicalReads="0" ActualLobPhysicalReads="0" ActualLobReadAheads="0" ActualRowsRead="10000" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row"/>
+                  </RunTimeInformation>
+                  <IndexScan Ordered="1" ScanDirection="FORWARD" ForcedIndex="0" ForceSeek="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                    <DefinedValues>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="titleId"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="titleTypeId"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="isAdult"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="startYear"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="endYear"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="runtime"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="voteCount"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Titles]" Column="averageRating"/>
+                      </DefinedValue>
+                    </DefinedValues>
+                    <Object Database="[imdb]" Schema="[dbo]" Table="[Titles]" Index="[PK_Titles]" IndexKind="Clustered" Storage="RowStore"/>
+                  </IndexScan>
+                </RelOp>
+                <RelOp NodeId="2" PhysicalOp="Clustered Index Scan" LogicalOp="Clustered Index Scan" EstimateRows="10000" EstimatedRowsRead="10000" EstimateIO="0.0142361" EstimateCPU="0.011157" AvgRowSize="21" EstimatedTotalSubtreeCost="0.0253931" TableCardinality="10000" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                  <OutputList>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Episodes]" Column="parentId"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Episodes]" Column="episodeId"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Episodes]" Column="season"/>
+                    <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Episodes]" Column="episode"/>
+                  </OutputList>
+                  <RunTimeInformation>
+                    <RunTimeCountersPerThread Thread="0" ActualRows="1" Batches="0" ActualElapsedms="0" ActualCPUms="0" ActualScans="1" ActualLogicalReads="3" ActualPhysicalReads="0" ActualReadAheads="0" ActualLobLogicalReads="0" ActualLobPhysicalReads="0" ActualLobReadAheads="0" ActualRowsRead="1" ActualEndOfScans="0" ActualExecutions="1" ActualExecutionMode="Row"/>
+                  </RunTimeInformation>
+                  <IndexScan Ordered="1" ScanDirection="FORWARD" ForcedIndex="0" ForceSeek="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                    <DefinedValues>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Episodes]" Column="parentId"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Episodes]" Column="episodeId"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Episodes]" Column="season"/>
+                      </DefinedValue>
+                      <DefinedValue>
+                        <ColumnReference Database="[imdb]" Schema="[dbo]" Table="[Episodes]" Column="episode"/>
+                      </DefinedValue>
+                    </DefinedValues>
+                    <Object Database="[imdb]" Schema="[dbo]" Table="[Episodes]" Index="[PK_Episodes]" IndexKind="Clustered" Storage="RowStore"/>
+                  </IndexScan>
+                </RelOp>
+              </Merge>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>
